@@ -1,0 +1,9 @@
+# 의존성 (설치는 환경마다)
+**/node_modules/
+# 로그인 세션 — 민감, 절대 커밋 금지
+**/auth.json
+# 브라우저 프로파일 / 출력물
+**/pw-profile/
+**/captures/
+*.log
+.DS_Store

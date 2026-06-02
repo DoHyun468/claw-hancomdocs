@@ -1,0 +1,7 @@
+{
+  "name": "claw-hancomdocs",
+  "version": "0.1.0",
+  "private": true,
+  "description": "한컴독스 webhwp 드라이브 (Playwright headless) — 페이지 캡처 / 영역 확대 / 텍스트 검색 + (Phase 2) 직접 편집.",
+  "dependencies": { "playwright": "^1.40.0" }
+}
