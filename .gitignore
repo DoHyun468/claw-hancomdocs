@@ -1,5 +1,6 @@
 # 의존성 (설치는 환경마다)
 **/node_modules/
+**/package-lock.json
 # 로그인 세션 — 민감, 절대 커밋 금지
 **/auth.json
 # 브라우저 프로파일 / 출력물
@@ -7,3 +8,8 @@
 **/captures/
 *.log
 .DS_Store
+# 테스트/임시 산출물 (검증용 생성물 — 커밋 금지)
+test_*.hwp
+test_*.hwpx
+_*.json
+_*.js
