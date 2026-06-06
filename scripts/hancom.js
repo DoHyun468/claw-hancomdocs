@@ -17,6 +17,9 @@ const MYDRIVE = 'https://www.hancomdocs.com/ko/mydrive';
 // 세로로 긴 뷰포트: A4 한 장이 통째로 들어가게
 const VIEW = { width: 1280, height: 1500 };
 const PAGE_H = 1143; // 100% 줌·A4 기준 페이지당 스크롤 높이(px), 문서 무관 일정
+// 브라우저 표시 모드 — 기본은 headless(창 없음). --headed면 창을 띄워 동작을 눈으로 볼 수 있다(디버그용).
+// (OS 분기 아님 — 런타임 옵션. headed일 때만 slowMo로 동작을 천천히 보여줌.)
+let HEADED = false, SLOWMO = 0;
 
 function parseArgs(argv) {
   const a = { _: argv[0] };
@@ -35,14 +38,17 @@ function stamp() {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
 }
 const log = (...x) => console.log(...x);
-const out = (o) => log('RESULT_JSON=' + JSON.stringify(o));
+// RESULT_JSON은 기계 판독용 — 비ASCII를 \uXXXX로 이스케이프해 어떤 콘솔 코드페이지(Win CP949 등)서도
+// 깨지지 않게 한다. 여전히 유효한 JSON이라 파싱하면 한글이 그대로 복원됨. (OS 무관)
+const asciiSafe = (s) => Array.from(s).map((c) => c.charCodeAt(0) > 126 ? '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0') : c).join('');
+const out = (o) => log('RESULT_JSON=' + asciiSafe(JSON.stringify(o)));
 
 async function ensureLoggedIn(page, url) {
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   // 리다이렉트가 마무리될 짧은 여유만 (networkidle 대신 domcontentloaded + 0.8s)
   await page.waitForTimeout(800);
   if (page.url().includes('accounts.hancom.com') || page.url().includes('/login')) {
-    throw new Error('AUTH_EXPIRED — node login2.js 로 재로그인 필요');
+    throw new Error('AUTH_EXPIRED — node login.js 로 재로그인 필요');
   }
 }
 
@@ -138,13 +144,44 @@ async function detectOpenError(editor) {
 
 class CannotOpenError extends Error { constructor(name) { super('CANNOT_OPEN'); this.docName = name; } }
 
-// 협업 커서 이름표(.user_cursor_container)·협업 패널·채팅 위젯 숨기기 (캡처 혼동 방지)
+// 협업/오버레이 흔적 숨기기 (캡처 혼동 방지).
+//   DOM 흔적: 협업 커서 이름표·협업자 패널·채팅 위젯 → CSS로 가림.
+//   캔버스 흔적: webhwp 는 캔버스를 2층으로 쌓는다 — '문서' 캔버스(흰 배경=불투명 픽셀 다수)와
+//     '오버레이' 캔버스(거의 투명; 진입 presence '파란 물방울'·캐럿·원격커서가 여기 그려짐).
+//     오버레이 캔버스만 visibility:hidden 하면 본문은 그대로 두고 물방울/커서를 즉시 제거(대기 0초).
+//     (과거엔 '캔버스라 못 가림 → 단일 세션 보장만이 해결'로 오진했으나, 층을 나눠 가리면 됨.)
 async function hideOverlays(ed) {
   await ed.addStyleTag({ content: `
     .user_cursor_container, .collaborationusers, .user_list, .collabo_user_list,
     .aori_widget, .aori_temp_widget, .aori_main_btn, .aori_main_area
     { display: none !important; visibility: hidden !important; }
   ` }).catch(() => {});
+  await hideOverlayCanvases(ed);
+}
+
+// 오버레이 캔버스(거의 투명) 숨김. 문서/타일 캔버스(불투명 픽셀 다수)는 보존.
+// 불투명 픽셀이 가장 많은 캔버스의 5% 미만인 캔버스만 오버레이로 보고 숨긴다(문서 타일 보호).
+async function hideOverlayCanvases(ed) {
+  await ed.evaluate(() => {
+    const cvs = [...document.querySelectorAll('canvas')];
+    if (cvs.length < 2) return; // 캔버스 1장이면 가릴 오버레이 없음
+    const stats = cvs.map((c) => {
+      let opaque = -1; // -1 = tainted/판독불가 → 건드리지 않음
+      try {
+        const d = c.getContext('2d').getImageData(0, 0, c.width, Math.min(c.height, 1200)).data;
+        opaque = 0;
+        for (let i = 3; i < d.length; i += 4) if (d[i] > 10) opaque++;
+      } catch { opaque = -1; }
+      return { c, opaque };
+    });
+    const maxOpaque = Math.max(...stats.map((s) => s.opaque));
+    if (maxOpaque <= 0) return;
+    for (const s of stats) {
+      if (s.opaque >= 0 && s.opaque < maxOpaque * 0.05) {
+        s.c.style.setProperty('visibility', 'hidden', 'important');
+      }
+    }
+  }).catch(() => {});
 }
 
 async function openDoc(ctx, page, name) {
@@ -152,14 +189,18 @@ async function openDoc(ctx, page, name) {
   const row = page.getByText(name, { exact: false }).first();
   // 고정 대기 대신 행이 뜰 때까지만 (없으면 null → 업로드 경로)
   try { await row.waitFor({ timeout: 6000 }); } catch { return null; }
+  // 드라이브는 '한 번 클릭 = 열기'. dblclick 은 열기를 2번 트리거해 편집기 탭이 2개 뜨고
+  // 둘째(방치) 탭이 같은 계정 협업자로 잡힐 수 있어 단일 click 으로 연다(중복 세션 예방).
   const [editor] = await Promise.all([
     ctx.waitForEvent('page', { timeout: 12000 }),
-    row.dblclick(),
+    row.click(),
   ]);
   await editor.waitForLoadState('networkidle').catch(() => {});
   // 고정 대기 대신 "준비되면 진행"(내용 렌더 or 에러 다이얼로그 즉시 감지) — 매 호출 ~5초 절약
   const st = await waitForReady(editor);
   if (st === 'error') throw new CannotOpenError(name);
+  // 진입 presence(파란 물방울)는 대기로 빼지 않고, 스크린샷 직전 hideOverlays 에서
+  // '오버레이 캔버스 숨김'으로 즉시 제거한다(대기 0초).
   return editor; // 'timeout'이어도 진행(렌더 매우 느린 예외 케이스)
 }
 
@@ -196,7 +237,7 @@ async function uploadFile(page, filePath) {
 }
 
 async function withEditor(scale, fn) {
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({ headless: !HEADED, slowMo: SLOWMO });
   const ctx = await browser.newContext({ storageState: AUTH, viewport: VIEW, deviceScaleFactor: scale, acceptDownloads: true });
   try { return await fn(ctx, await ctx.newPage()); }
   finally { await browser.close(); }
@@ -260,11 +301,34 @@ async function cmdZoom(args) {
   });
 }
 
+// 찾기 다이얼로그 열기 — 툴바 '찾기' 버튼을 DOM 셀렉터(title)로, 드롭다운의 '찾기...' 항목은
+// 실제 위치를 DOM에서 읽어 클릭. (기존 하드코딩 좌표 click(309,95)/(335,167)는 창크기·UI버전·
+// 배율에 따라 어긋나 다이얼로그가 안 열려 실패 → 셀렉터/DOM-위치로 견고화. OS 무관.)
+async function openFindDialog(ed) {
+  await ed.locator('a[title="찾기"]').first().click(); // 메인 찾기 버튼(title 고정 = 좌표 무관)
+  await ed.waitForTimeout(900);
+  // 드롭다운에서 '보이는' 찾기... 메뉴 항목의 실제 중심좌표를 읽어 클릭(좌표 드리프트 무관).
+  // 숨은 동음 항목(툴바 버튼 라벨)을 피하려 offsetParent!=null 로 가시성 필터.
+  const item = await ed.evaluate(() => {
+    for (const el of document.querySelectorAll('a, div, span')) {
+      const t = (el.textContent || '').trim();
+      if (/^찾기\.\.\./.test(t) && t.length < 16) {
+        const r = el.getBoundingClientRect();
+        if (r.width > 20 && r.height > 8 && el.offsetParent !== null)
+          return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+      }
+    }
+    return null;
+  });
+  if (!item) throw new Error('찾기 메뉴 항목(찾기...) 탐색 실패');
+  await ed.mouse.click(item.x, item.y);
+  await ed.waitForTimeout(1200);
+}
+
 // 찾기 다이얼로그를 열고 text를 검색해 매치로 점프. 검색칸에만 입력(편집 사고 방지).
 // 반환: {found, scrollTop, page} | null
 async function findText(ed, text) {
-  await ed.mouse.click(309, 95); await ed.waitForTimeout(900);   // 찾기 드롭다운(툴바, 위치 고정)
-  await ed.mouse.click(335, 167); await ed.waitForTimeout(1200); // "찾기..." 메뉴
+  await openFindDialog(ed);
   // 새로 뜬 보이는 input = 검색칸
   const box = await ed.evaluate(() => {
     const ins = Array.from(document.querySelectorAll('input')).map(el => { const r = el.getBoundingClientRect(); return { el, x: r.x, y: r.y, w: r.width, h: r.height, vis: r.width > 60 && r.height > 10 && getComputedStyle(el).visibility !== 'hidden' && el.getAttribute('aria-label') !== '문서 편집 영역' }; });
@@ -274,17 +338,30 @@ async function findText(ed, text) {
   });
   if (!box) throw new Error('검색칸 탐색 실패');
   await ed.mouse.click(box.x + Math.min(box.w / 2, 40), box.y + box.h / 2);
-  await ed.keyboard.press('Meta+A');
+  await ed.keyboard.press('ControlOrMeta+A'); // 전체선택: Win/Linux→Ctrl+A, Mac→Cmd+A 자동 매핑(OS 무관)
   await ed.keyboard.type(text, { delay: 25 });
   // "다음 찾기" 버튼 ≈ 검색칸 오른쪽(+70, 같은 행)
   const nextBtn = { x: box.x + box.w + 70, y: box.y - 1 };
   await ed.mouse.click(nextBtn.x, nextBtn.y); await ed.waitForTimeout(1600);
   // 찾기 직후 캐럿이 매치로 이동 → 상태바 '현재 쪽'이 매치의 실제 페이지(정확)
   const page = await readCurrentPage(ed);
+  // 캐럿(매치) 뷰포트 픽셀 위치 = '텍스트 위치로 바로 확대'의 앵커. 닫기 전에 읽어둔다.
+  const caret = await readCaretRect(ed);
   await ed.mouse.click(nextBtn.x, nextBtn.y + 53); await ed.waitForTimeout(700); // 닫기
   await ed.keyboard.press('Escape'); await ed.waitForTimeout(400); // 검색 하이라이트 제거(혼동 방지)
   // 새 세션이라 캐럿이 1쪽에서 시작 → 매치가 2쪽 이상이면 page>1. (1쪽 매치/미발견 구분은 한계)
-  return page && page > 0 ? { found: true, page } : { found: false };
+  return page && page > 0 ? { found: true, page, caret } : { found: false };
+}
+
+// 찾기 직후 캐럿(매치 위치) 요소의 뷰포트 사각형. webhwp 는 캐럿을 DOM 요소로 그린다.
+async function readCaretRect(ed) {
+  return await ed.evaluate(() => {
+    const el = document.querySelector('#HWP_CURSOR_VIEW, .BLINK_CURSOR');
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 && r.height === 0) return null;
+    return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
+  }).catch(() => null);
 }
 
 // 상태바 "현재 쪽 / 전체쪽" 에서 현재 쪽(캐럿 기준) 읽기
@@ -301,14 +378,34 @@ async function readCurrentPage(ed) {
 
 async function cmdAround(args) {
   if (!args.name || !args.text) throw new Error('--name 과 --text 필요');
-  const scale = Number(args.scale) || 1.5;
+  // --zoom: 매치 줄을 확대(고배율 기본). 일반 around 는 페이지 전체(1.5).
+  const scale = Number(args.scale) || (args.zoom ? 2.5 : 1.5);
   fs.mkdirSync(CAPDIR, { recursive: true });
   await withEditor(scale, async (ctx, page) => {
     const editor = await openDoc(ctx, page, args.name);
     if (!editor) throw new Error('문서를 못 찾음: ' + args.name);
     const r = await findText(editor, String(args.text));
     if (!r.found) { out({ cmd: 'around', found: false, text: args.text }); return; }
-    // 매치 페이지를 깔끔히 정렬 후 클린 캡처
+
+    // --zoom: 격자 읽기 없이 '텍스트 위치로 바로 확대'. 찾기가 이미 매치로 스크롤했으므로
+    //   gotoPage 생략하고, 그 스크롤 상태에서 캐럿 줄을 가로 밴드로 잘라낸다.
+    if (args.zoom && r.caret) {
+      const rect = await detectPageRect(editor);
+      if (!rect || rect.width < 100) throw new Error('A4 페이지 영역 검출 실패');
+      await hideOverlays(editor);
+      const band = Number(args.band) || 180;               // 매치 줄 위아래 포함 높이(페이지 px)
+      const top = Math.max(rect.y, r.caret.y - Math.round(band / 2));
+      const clip = {
+        x: rect.x, y: top, width: rect.width,
+        height: Math.max(40, Math.min(band, rect.y + rect.height - top)),
+      };
+      const shot = args.out || path.join(CAPDIR, `${String(args.name).replace(/\.[^.]+$/, '')}_findzoom_${stamp()}.png`);
+      await editor.screenshot({ path: shot, clip });
+      out({ cmd: 'around', found: true, zoom: true, text: args.text, page: r.page, shot, pageWidth: rect.width, band, scale });
+      return;
+    }
+
+    // 기본: 매치 페이지를 깔끔히 정렬 후 페이지 전체 클린 캡처
     await gotoPage(editor, r.page);
     const rect = await detectPageRect(editor);
     if (!rect || rect.width < 100) throw new Error('A4 페이지 영역 검출 실패');
@@ -327,7 +424,7 @@ async function cmdLocate(args) {
   if (!clues.length) throw new Error('--clues 가 비어있음');
   const scale = Number(args.scale) || 1.5;
   fs.mkdirSync(CAPDIR, { recursive: true });
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({ headless: !HEADED, slowMo: SLOWMO });
   try {
     const results = [];
     for (const clue of clues) {
@@ -367,6 +464,8 @@ async function cmdLocate(args) {
 
 (async () => {
   const args = parseArgs(process.argv.slice(2));
+  HEADED = !!args.headed;                                    // --headed: 창 띄워 보기(디버그)
+  SLOWMO = args.slowmo ? Number(args.slowmo) : (HEADED ? 400 : 0); // headed면 동작을 천천히
   try {
     if (args._ === 'capture') await cmdCapture(args);
     else if (args._ === 'zoom') await cmdZoom(args);
