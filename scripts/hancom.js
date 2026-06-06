@@ -394,10 +394,21 @@ async function cmdAround(args) {
       if (!rect || rect.width < 100) throw new Error('A4 페이지 영역 검출 실패');
       await hideOverlays(editor);
       const band = Number(args.band) || 180;               // 매치 줄 위아래 포함 높이(페이지 px)
-      const top = Math.max(rect.y, r.caret.y - Math.round(band / 2));
+      // 세로 경계는 '문서 캔버스'(캐럿을 항상 포함)로 클램프하고, detectPageRect 는 가로(x/width)에만 쓴다.
+      // 찾기가 매치를 뷰포트 하단으로 스크롤하면 뷰포트가 두 페이지에 걸쳐, detectPageRect 가 캐럿이 없는
+      // 옆 페이지의 흰 영역(더 큰 쪽)을 잡는다 → 그 rect 바닥이 캐럿보다 위라 height 가 음수로 붕괴(40px)하고
+      // 밴드가 매치 위(이전 줄/제목)로 어긋나던 버그. 캐럿은 항상 보이므로 캔버스 세로범위로 클램프하면 안전. (OS 무관)
+      const view = await editor.evaluate(() => {
+        const cvs = [...document.querySelectorAll('canvas')]; if (!cvs.length) return null;
+        let c = cvs[0]; for (const x of cvs) if (x.width * x.height > c.width * c.height) c = x;
+        const b = c.getBoundingClientRect(); return { top: Math.round(b.top), bottom: Math.round(b.top + b.height) };
+      });
+      const vTop = view ? view.top : rect.y;
+      const vBot = view ? view.bottom : rect.y + rect.height;
+      const top = Math.max(vTop, r.caret.y - Math.round(band / 2));
       const clip = {
         x: rect.x, y: top, width: rect.width,
-        height: Math.max(40, Math.min(band, rect.y + rect.height - top)),
+        height: Math.max(40, Math.min(band, vBot - top)),
       };
       const shot = args.out || path.join(CAPDIR, `${String(args.name).replace(/\.[^.]+$/, '')}_findzoom_${stamp()}.png`);
       await editor.screenshot({ path: shot, clip });
