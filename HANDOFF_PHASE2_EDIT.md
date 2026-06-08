@@ -62,7 +62,8 @@ Phase 1 = 캡처/검색 작동 검증됨. Phase 2 = 한컴독스 web UI 를 Play
 
 ## 4. 구현 원칙
 
-**CLAUDE.md (claw-hwp 측) 의 "Hop 동작 먼저 확인" 원칙을 그대로 차용:**
+**원칙: 한컴독스 UI가 실제로 어떻게 동작하는지 먼저 관찰하고 그 flow를 그대로 미러한다 (spec 추측 금지).**
+> ⚠️ Hop(맥 네이티브 HWP 앱) 등 외부 뷰어는 claw-hancomdocs와 무관 — 우리는 한컴독스 web UI 위에서만 편집하고 캡처로 검증한다. (claw-hwp 의 "Hop 동작 먼저 확인"은 byte-patch 전용 원칙이라 용어만 닮았을 뿐 별개.)
 
 1. **한컴독스에서 사용자가 직접 같은 동작 수행** (insert text / set cell / save). 어떤 메뉴를 클릭하는지 / 어떤 dialog 가 뜨는지 / 어떤 키를 누르는지 직접 관찰
 2. **그 UI flow 를 Playwright 로 그대로 미러**
