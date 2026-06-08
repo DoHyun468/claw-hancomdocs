@@ -104,7 +104,7 @@ webhwp 가 web UI 라 좌표 / DOM 구조가 바뀌면 자동화 깨짐. 대응:
 ## 8. 기존 자산 (재사용)
 
 - `scripts/hancom.js` — 4개 명령 (capture/zoom/around/locate) + Playwright 세팅 + 캐릭 영역 검출 + 협업 커서 hide
-- `scripts/login.js` — Kakao OAuth → auth.json (storageState 패턴)
+- `scripts/login.js` — OAuth → auth.json (storageState 패턴)
 - `SKILL.md` — Claude Code 스킬 정의, 첫 실행 자동 점검
 - `DEBUG_NOTES.md` — webhwp 리버스 결과 / 안전 교훈 (반드시 읽기)
 - `ORDER_SPEC.txt` — 에이전트 주문 명세
