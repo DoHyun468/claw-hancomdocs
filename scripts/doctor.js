@@ -91,12 +91,12 @@ async function checkAuthLive() {
              note: 'Chromium만 누락(에이전트가 바로 실행). 수백 MB 다운로드, 1~2분.' };
   } else if (!authOk) {
     status = 'AUTH_MISSING'; code = 12;
-    next = { who: 'user', commands: ['node login.js'],
-             note: '로그인 세션이 없다. ⚠️ 에이전트가 직접 실행하지 말 것 — Windows에선 에이전트 세션에 뜬 창이 사용자에게 안 보인다. 사용자에게 "당신 세션에서 직접 `! node login.js` 를 실행하고, 뜬 창에서 한컴독스에 로그인(카카오 등 평소대로)하세요. 홈 화면이 뜨면 자동 저장됩니다 — 창 닫을 필요 없어요."라고 안내하라.' };
+    next = { who: 'agent', commands: ['node login.js'],
+             note: '로그인 세션이 없다. 기본은 에이전트가 직접 `node login.js`로 로그인 창을 띄우는 것 — 뜬 창에서 사용자가 한컴독스에 로그인(평소 쓰는 방식대로)하면 자동 저장된다(창 닫을 필요 없음). 예외: 네가 SSH/원격 비대화형 셸이라(대표적으로 Windows OpenSSH = Session 0) 띄운 창이 사용자 화면에 안 보이는 상황이면, 직접 실행하지 말고 사용자에게 "당신 세션에서 `! node login.js` 를 실행하세요"라고 부탁하라. (SSH 여부 힌트: 환경변수 SSH_CONNECTION 존재)' };
   } else if (authLive === false) {
     status = 'AUTH_EXPIRED'; code = 4;
-    next = { who: 'user', commands: ['node login.js'],
-             note: '세션이 만료됐다(라이브 확인). AUTH_MISSING과 동일하게 ⚠️ 에이전트가 직접 실행하지 말고, 사용자에게 "당신 세션에서 직접 `! node login.js` 로 재로그인하세요"라고 안내하라.' };
+    next = { who: 'agent', commands: ['node login.js'],
+             note: '세션이 만료됐다(라이브 확인). AUTH_MISSING과 동일 — 기본은 에이전트가 직접 `node login.js`로 재로그인 창을 띄운다. 창이 안 보이는 원격/SSH 상황이면 사용자에게 `! node login.js` 실행을 부탁하라.' };
   } else {
     status = 'READY'; code = 0;
     const caveat = authLive === true ? ' (세션 라이브 확인됨)'
@@ -107,7 +107,7 @@ async function checkAuthLive() {
 
   // ── 사람용 출력 ──────────────────────────────────────────────────────────
   const mark = (b) => (b ? 'OK  ' : 'MISS');
-  const authLine = !authOk ? '없음 → 사용자가 node login.js 실행'
+  const authLine = !authOk ? '없음 → node login.js 로 로그인(기본 에이전트, SSH면 사용자)'
                  : authLive === true ? '세션 유효 (라이브 확인됨)'
                  : authLive === false ? '세션 만료 (라이브 확인) → 사용자 재로그인'
                  : authLive === null && DEEP ? '세션 파일 있음 (라이브 확인 실패 — 네트워크?)'
