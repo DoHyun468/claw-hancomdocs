@@ -9,7 +9,7 @@ license: MIT
 한컴독스 web (webhwp) 을 Playwright 로 드라이브 — 업로드 / 페이지 캡처 / 영역 확대 / 텍스트 검색 / 문서에 한 줄 추가.
 
 Playwright headless로 동작 — **보이는 창 없음**, 물리 마우스/키보드 안 건드림, 백그라운드 가능.
-스크립트는 `scripts/`에 있고 `capture` / `zoom` / `around` / `locate` / `insert-text` / `replace-text` / `set-cell-text` / `format-text` / `align` 명령을 제공한다.
+스크립트는 `scripts/`에 있고 `capture` / `zoom` / `around` / `locate` / `insert-text` / `replace-text` / `set-cell-text` / `format-text` / `align` / `list` 명령을 제공한다.
 
 > **Local-machine 전용.** Cowork sandbox 에서는 `www.hancomdocs.com` proxy 차단 + `auth.json` 머신 종속으로 실행 불가. 사용자 Mac / Windows / Linux 머신에서 직접 실행.
 
@@ -77,6 +77,7 @@ node hancom.js replace-text --name <문서이름> --find "<바꿀 대상>" --to 
 node hancom.js set-cell-text --name <문서이름> --cell "<기준 셀 텍스트>" --text "<채울 값>" [--tab N] [--apply]
 node hancom.js format-text  --name <문서이름> --text "<구절>" --bold|--italic|--underline [--apply]
 node hancom.js align        --name <문서이름> --anchor "<단락 안 텍스트>" --to left|center|right|justify [--apply]
+node hancom.js list         --name <문서이름> --anchor "<단락 안 텍스트>" --type bullet|number [--apply]
 ```
 
 - **capture**: 파일을 (필요시) 업로드하고 N쪽(기본 1)을 **A4 한 장 깔끔히** 캡처(툴바·여백 없음, 잘림 없음). 반환 `{shot, docName, page, totalPages, estTotalPages, pageWidth, pageHeight}`.
@@ -167,6 +168,19 @@ node hancom.js format-text --name <문서이름> --text "<구절>" --bold [--ita
 - **구절 고르기**: 문서에 **한 번만 나오는 구체적 구절**로(여러 번 나오면 첫 매치에만 적용).
 
 > ⚠️ 편집은 headless 전용(`--headed`는 보기 전용). **토글**이라 이미 그 서식이 걸린 구절에 다시 적용하면 해제된다 — 결과를 `shot`(또는 `capture`)으로 확인.
+
+## • 편집 — 목록 (`list`)
+
+기준 텍스트가 있는 **단락을 글머리표/문단번호 목록**으로 만든다(토글).
+
+```bash
+node hancom.js list --name <문서이름> --anchor "<단락 안 텍스트>" --type bullet|number [--apply]
+```
+
+- **동작**: `--anchor` 단락에 캐럿을 두고 `--type bullet`(글머리표 ●) 또는 `number`(문단번호)를 토글. **단락 단위**.
+- **`--apply` 없으면 dry-run(read-only)**. 반환 `{applied:true, anchor, type, page, docId, shot}`. 단락을 못 찾으면 `{status:"anchor_not_found"}`.
+
+> ⚠️ 편집은 headless 전용(`--headed`는 보기 전용).
 
 ## ⬌ 편집 — 단락 정렬 (`align`)
 

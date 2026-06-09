@@ -910,6 +910,45 @@ async function cmdAlign(args) {
   });
 }
 
+// 캐럿 기반 단락 op 공통: 기준 텍스트로 단락에 캐럿 → 본문 포커스 → 셀렉터 클릭 → 캡처.
+async function caretParagraphOp(args, cmd, sel, extra) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (!args.anchor) throw new Error('--anchor 필요 (대상 단락 안의 텍스트)');
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
+  const anchor = String(args.anchor).normalize('NFC');
+  const scale = Number(args.scale) || 1.5;
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(scale, async (ctx, page) => {
+    const name = String(args.name).normalize('NFC');
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    const r = await findText(editor, anchor);
+    if (!r.found) { out({ cmd, status: 'anchor_not_found', anchor, docId: editor.__docId || null }); return; }
+    const n = r.page || 1;
+    if (!apply) { out({ cmd, dryRun: true, anchor, ...extra, foundPage: n, docId: editor.__docId || null, note: '--apply 없으면 read-only.' }); return; }
+    await focusBody(editor);
+    await clickSel(editor, sel);
+    await editor.waitForTimeout(1000);
+    const pc = await readPageCount(editor);
+    await gotoPage(editor, n);
+    const rect2 = await detectPageRect(editor);
+    await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_${cmd}_p${n}_${stamp()}.png`);
+    await editor.screenshot(rect2 ? { path: shot, clip: rect2 } : { path: shot });
+    out({ cmd, applied: true, anchor, ...extra, page: n, totalPages: pc ? pc.total : null, docId: editor.__docId || null, shot });
+  });
+}
+
+// list: 단락을 글머리표(bullet) 또는 문단번호(number) 목록으로 토글.
+async function cmdList(args) {
+  const type = String(args.type || 'bullet').toLowerCase();
+  const SEL = { bullet: '.bullet_list', number: '.number_list' };
+  if (!SEL[type]) throw new Error('--type 는 bullet | number');
+  await caretParagraphOp(args, 'list', SEL[type], { type });
+}
+
+
 (async () => {
   const args = parseArgs(process.argv.slice(2));
   HEADED = !!args.headed;                                    // --headed: 창 띄워 보기(디버그)
@@ -924,6 +963,7 @@ async function cmdAlign(args) {
     else if (args._ === 'set-cell-text') await cmdSetCellText(args);
     else if (args._ === 'format-text') await cmdFormatText(args);
     else if (args._ === 'align') await cmdAlign(args);
+    else if (args._ === 'list') await cmdList(args);
     else { log('사용법: capture --file <경로> [--page N] [--grid] | zoom --name <이름> --clip "x,y,w,h" [--page N] | around --name <이름> --text "<검색어>" [--grid] | locate --name <이름> --clues "a,b,c" [--grid] | insert-text --name <이름> --anchor "<기준 텍스트>" --text "<추가할 줄>" [--apply] | replace-text --name <이름> --find "<대상>" --to "<교체>" [--apply] | set-cell-text --name <이름> --cell "<기준 셀 텍스트>" --text "<값>" [--tab N] [--apply] | format-text --name <이름> --text "<구절>" --bold|--italic|--underline [--apply]'); process.exit(2); }
     process.exit(0);
   } catch (e) {
