@@ -854,6 +854,62 @@ async function cmdFormatText(args) {
   });
 }
 
+// 본문(편집 영역 input)에 포커스 — 닫힌 다이얼로그/찾기 뒤 키보드·툴바가 캐럿에 안 먹는 문제 방지.
+async function focusBody(ed) {
+  await ed.evaluate(() => { const el = document.querySelector('input[aria-label="문서 편집 영역"]'); if (el) el.focus(); }).catch(() => {});
+  await ed.waitForTimeout(150);
+}
+
+// 셀렉터로 요소(툴바 버튼 등) 클릭 — DOM 위치 기반(좌표 하드코딩 회피).
+async function clickSel(ed, sel) {
+  const xy = await ed.evaluate((s) => {
+    const el = document.querySelector(s);
+    if (!el || el.offsetParent === null) return null;
+    const r = el.getBoundingClientRect();
+    if (r.width < 3 || r.height < 3) return null;
+    return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+  }, sel);
+  if (!xy) throw new Error('버튼 탐색 실패: ' + sel);
+  await ed.mouse.click(xy.x, xy.y);
+  await ed.waitForTimeout(400);
+}
+
+// align: 단락 정렬(왼/가운데/오른/양쪽). 단락 단위라 선택 불필요 — 기준 텍스트(--anchor)로 그 단락에
+// 캐럿을 두고, 본문 포커스 후 툴바 정렬 셀렉터 클릭.
+async function cmdAlign(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (!args.anchor) throw new Error('--anchor 필요 (정렬할 단락 안의 텍스트)');
+  const to = String(args.to || '').toLowerCase();
+  const SEL = { left: '.align_left', center: '.align_center', right: '.align_right', justify: '.align_justify' };
+  if (!SEL[to]) throw new Error('--to 는 left | center | right | justify');
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
+  const anchor = String(args.anchor).normalize('NFC');
+  const scale = Number(args.scale) || 1.5;
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(scale, async (ctx, page) => {
+    const name = String(args.name).normalize('NFC');
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    const r = await findText(editor, anchor);
+    if (!r.found) { out({ cmd: 'align', status: 'anchor_not_found', anchor, docId: editor.__docId || null }); return; }
+    const n = r.page || 1;
+    if (!apply) {
+      out({ cmd: 'align', dryRun: true, anchor, to, foundPage: n, docId: editor.__docId || null, note: '--apply 없으면 read-only. 적용 시: 단락 캐럿 → 정렬 ' + to + '.' });
+      return;
+    }
+    await focusBody(editor);
+    await clickSel(editor, SEL[to]);
+    await editor.waitForTimeout(900);
+    await gotoPage(editor, n);
+    const rect2 = await detectPageRect(editor);
+    await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_align_p${n}_${stamp()}.png`);
+    await editor.screenshot(rect2 ? { path: shot, clip: rect2 } : { path: shot });
+    out({ cmd: 'align', applied: true, anchor, to, page: n, docId: editor.__docId || null, shot });
+  });
+}
+
 (async () => {
   const args = parseArgs(process.argv.slice(2));
   HEADED = !!args.headed;                                    // --headed: 창 띄워 보기(디버그)
@@ -867,6 +923,7 @@ async function cmdFormatText(args) {
     else if (args._ === 'replace-text') await cmdReplaceText(args);
     else if (args._ === 'set-cell-text') await cmdSetCellText(args);
     else if (args._ === 'format-text') await cmdFormatText(args);
+    else if (args._ === 'align') await cmdAlign(args);
     else { log('사용법: capture --file <경로> [--page N] [--grid] | zoom --name <이름> --clip "x,y,w,h" [--page N] | around --name <이름> --text "<검색어>" [--grid] | locate --name <이름> --clues "a,b,c" [--grid] | insert-text --name <이름> --anchor "<기준 텍스트>" --text "<추가할 줄>" [--apply] | replace-text --name <이름> --find "<대상>" --to "<교체>" [--apply] | set-cell-text --name <이름> --cell "<기준 셀 텍스트>" --text "<값>" [--tab N] [--apply] | format-text --name <이름> --text "<구절>" --bold|--italic|--underline [--apply]'); process.exit(2); }
     process.exit(0);
   } catch (e) {
