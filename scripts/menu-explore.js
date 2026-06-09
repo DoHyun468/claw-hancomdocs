@@ -205,7 +205,7 @@ async function detectPageRect(ed) {
   const MENU = RAW ? process.argv[3] : ((SWEEP || TABLE) ? null : (process.argv[2] || '입력'));
   const HOVER = (RAW || SWEEP || TABLE) ? null : (process.argv[3] || null);
 
-  const browser = await chromium.launch({ headless: !COLLAB, slowMo: COLLAB ? 200 : 0 }); // --collab 은 보이게(headed)
+  const browser = await chromium.launch({ headless: true });
   const ctx = await browser.newContext({ storageState: AUTH, viewport: VIEW, deviceScaleFactor: 1.5 });
   try {
     const page = await ctx.newPage();
@@ -261,31 +261,18 @@ async function detectPageRect(ed) {
       await editor.screenshot({ path: shot });
       out({ raw: MENU, count: raw.length, items: raw, shot });
     } else if (COLLAB) {
-      const read = () => editor.evaluate(() => {
-        const all = (s) => [...document.querySelectorAll(s)];
-        let countText = null;
+      // 편집 전 안전게이트용 단발 체크 — 신뢰 신호 = "편집 (N)" 카운트. N>=2 = 사용자가 같은 문서 열어둔 협업 모드.
+      const s = await editor.evaluate(() => {
+        let count = null;
         for (const el of document.querySelectorAll('*')) {
           const t = (el.textContent || '').trim();
           const m = t.match(/편집\s*\((\d+)\)/);
-          if (m && t.length < 40) { countText = { text: t, count: Number(m[1]) }; break; }
+          if (m && t.length < 40) { count = Number(m[1]); break; }
         }
-        return {
-          countText,
-          has_no_collab_class: !!document.querySelector('.no_collaborationusers'),
-          user_list: all('.user_list, .collaborationusers, .collabo_user_list').map((e) => ({ cls: (e.className || '').toString().slice(0, 50), text: (e.textContent || '').trim().slice(0, 40), kids: e.childElementCount })),
-          remote_cursors: all('.user_cursor_container').length,
-        };
+        const collaborators = [...document.querySelectorAll('.user_list, .collaborationusers')].map((e) => (e.textContent || '').trim().slice(0, 40)).filter(Boolean);
+        return { count, collaborators };
       });
-      const isActive = (s) => !!(s.countText && s.countText.count >= 2); // 신뢰 신호 = "편집 (N)" N>=2 (cursors/list는 우리 세션 자체 노이즈)
-      log('협업 감지 폴링 시작 (60s) — 같은 문서(' + DOC + ')를 당신 한컴독스에서도 열어보세요.');
-      let last = '', finalSig = null;
-      for (let i = 0; i < 20; i++) {
-        const s = await read(); finalSig = s;
-        const snap = JSON.stringify({ active: isActive(s), count: s.countText ? s.countText.count : null, cursors: s.remote_cursors, list: s.user_list.length });
-        if (snap !== last) { log('[' + (i * 3) + 's] ' + snap); last = snap; }
-        await editor.waitForTimeout(3000);
-      }
-      out({ collab: true, doc: DOC, collabActive: isActive(finalSig), signals: finalSig });
+      out({ collab: true, doc: DOC, collabActive: s.count >= 2, editorCount: s.count, collaborators: s.collaborators });
     } else if (TOOLBAR) {
       const tb = await dumpToolbar(editor);
       out({ toolbar: true, count: tb.length, row2: tb.filter((t) => t.row === 2), row3: tb.filter((t) => t.row === 3) });
