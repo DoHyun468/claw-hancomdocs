@@ -571,6 +571,136 @@ async function cmdInsertText(args) {
   });
 }
 
+// 한컴독스 네이티브 "찾아 바꾸기" 다이얼로그 열기 (편집 메뉴 > 찾기 > 찾아 바꾸기 = .find_replace).
+// 좌표 하드코딩 없이 셀렉터/DOM위치로만 — 메뉴 버전·창크기 바뀌어도 견고.
+async function openReplaceDialog(ed) {
+  // 편집 탭 클릭(메뉴 열기)
+  const editTab = await ed.evaluate(() => {
+    for (const el of document.querySelectorAll('*')) {
+      const t = (el.textContent || '').trim();
+      if (t === '편집' && el.childElementCount === 0) {
+        const r = el.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0 && r.top < 140) return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+      }
+    }
+    return null;
+  });
+  if (!editTab) throw new Error('편집 탭 탐색 실패');
+  await ed.mouse.click(editTab.x, editTab.y); await ed.waitForTimeout(700);
+  // '찾기' 서브그룹 호버 → 플라이아웃
+  const fg = await ed.evaluate(() => {
+    for (const el of document.querySelectorAll('.sub_group_title')) {
+      if ((el.textContent || '').trim() === '찾기') { const r = el.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; }
+    }
+    return null;
+  });
+  if (!fg) throw new Error('찾기 서브그룹 탐색 실패');
+  await ed.mouse.move(fg.x, fg.y); await ed.waitForTimeout(900);
+  // '찾아 바꾸기...' (.find_replace) 클릭
+  const fr = await ed.evaluate(() => {
+    const el = document.querySelector('.find_replace');
+    if (!el || el.offsetParent === null) return null;
+    const r = el.getBoundingClientRect();
+    return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+  });
+  if (!fr) throw new Error('찾아 바꾸기 항목(.find_replace) 탐색 실패');
+  await ed.mouse.click(fr.x, fr.y); await ed.waitForTimeout(1300);
+}
+
+// 다이얼로그의 보이는 입력칸들(본문 편집 영역 제외) — 위→아래 순. 찾을내용=[0], 바꿀내용=[1].
+async function dialogInputs(ed) {
+  return await ed.evaluate(() => {
+    return Array.from(document.querySelectorAll('input'))
+      .map((el) => { const r = el.getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height), al: el.getAttribute('aria-label') || '', vis: r.width > 60 && r.height > 10 && getComputedStyle(el).visibility !== 'hidden' && el.getAttribute('aria-label') !== '문서 편집 영역' }; })
+      .filter((i) => i.vis).sort((a, b) => a.y - b.y);
+  });
+}
+
+// replace-text: 네이티브 '찾아 바꾸기'로 find → to 전부 교체. --to "" 면 삭제.
+// 안전: 다이얼로그 입력칸만 타이핑(본문 미입력), dry-run 기본, 편집 headless 전용, 끝 캡처.
+async function cmdReplaceText(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (args.find == null || args.find === true) throw new Error('--find 필요 (바꿀 대상 텍스트)');
+  if (args.to === undefined) throw new Error('--to 필요 (바꿀 결과 텍스트 — 삭제는 --to "")');
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기(캡처) 전용 — 편집 금지.');
+  const findText0 = String(args.find).normalize('NFC');
+  const toText = String(args.to === true ? '' : args.to).normalize('NFC');
+  const scale = Number(args.scale) || 1.5;
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(scale, async (ctx, page) => {
+    const name = String(args.name).normalize('NFC');
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    if (!apply) {
+      // dry-run: 찾기(읽기전용)로 대상 존재만 확인. (찾아 바꾸기 다이얼로그를 열기 전 단독 호출이라 충돌 없음)
+      const r = await findText(editor, findText0);
+      if (!r.found) { out({ cmd: 'replace-text', status: 'find_not_found', find: findText0, docId: editor.__docId || null }); return; }
+      out({ cmd: 'replace-text', dryRun: true, find: findText0, to: toText, foundPage: r.page, caret: r.caret,
+            docId: editor.__docId || null, note: '--apply 없으면 read-only. 적용 시: 찾아 바꾸기로 모두 교체.' });
+      return;
+    }
+    // 적용: 네이티브 찾아 바꾸기 다이얼로그 (findText 선호출 금지 — 다이얼로그 충돌로 교체 0 됨)
+    await openReplaceDialog(editor);
+    const ins = await dialogInputs(editor);
+    const findBox = ins.find((i) => /찾을/.test(i.al)) || ins[0];
+    const replBox = ins.find((i) => /바꿀/.test(i.al)) || ins[1];
+    if (!findBox || !replBox) throw new Error('찾아 바꾸기 입력칸 탐색 실패(현재 ' + ins.length + '개)');
+    // 찾을 내용
+    await editor.mouse.click(findBox.x + Math.min(findBox.w / 2, 40), findBox.y + findBox.h / 2);
+    await editor.keyboard.press('ControlOrMeta+A'); await editor.keyboard.press('Delete');
+    await editor.keyboard.type(findText0, { delay: 20 });
+    // 바꿀 내용 (빈 문자열이면 비워둠 = 삭제)
+    await editor.mouse.click(replBox.x + Math.min(replBox.w / 2, 40), replBox.y + replBox.h / 2);
+    await editor.keyboard.press('ControlOrMeta+A'); await editor.keyboard.press('Delete');
+    if (toText) await editor.keyboard.type(toText, { delay: 20 });
+    // '모두 바꾸기'
+    const allBtn = await editor.evaluate(() => {
+      for (const el of document.querySelectorAll('a, button, div, span')) {
+        const t = (el.textContent || '').trim();
+        if (t === '모두 바꾸기' && el.offsetParent !== null && el.childElementCount === 0) {
+          const r = el.getBoundingClientRect(); if (r.width > 20 && r.height > 10) return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+        }
+      }
+      return null;
+    });
+    if (!allBtn) throw new Error("'모두 바꾸기' 버튼 탐색 실패");
+    await editor.mouse.click(allBtn.x, allBtn.y); await editor.waitForTimeout(1400);
+    // 결과 팝업 텍스트로 교체 횟수 판정 ("문서의 끝까지 바꾸기를 N번 했습니다" / "찾을 수 없습니다")
+    const popup = await editor.evaluate(() => {
+      const t = [];
+      for (const el of document.querySelectorAll('div, span, p')) {
+        const s = (el.textContent || '').trim();
+        if (s && s.length < 60 && /바꿨|바꾸기를|찾을 수 없|없습니다|완료|개를/.test(s) && el.offsetParent !== null && el.childElementCount === 0) t.push(s);
+      }
+      return [...new Set(t)];
+    });
+    const joined = popup.join(' ');
+    const mm = joined.match(/(\d+)\s*번/);
+    const replaced = mm ? Number(mm[1]) : (/찾을 수 없|없습니다/.test(joined) ? 0 : null);
+    // 결과 팝업 '확인' → 다이얼로그 '닫기'(Esc)
+    const okBtn = await editor.evaluate(() => {
+      for (const el of document.querySelectorAll('a, button, div, span')) {
+        const t = (el.textContent || '').trim();
+        if (t === '확인' && el.offsetParent !== null && el.childElementCount === 0) { const r = el.getBoundingClientRect(); if (r.width > 15 && r.height > 10) return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; }
+      }
+      return null;
+    });
+    if (okBtn) await editor.mouse.click(okBtn.x, okBtn.y); else await editor.keyboard.press('Enter').catch(() => {});
+    await editor.waitForTimeout(500);
+    await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(1300); // 다이얼로그 닫기 + 자동저장 여유
+
+    // regression 캡처 (교체 후 현재 쪽)
+    const n = (await readCurrentPage(editor)) || 1;
+    await gotoPage(editor, n);
+    const rect2 = await detectPageRect(editor);
+    await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_replace_p${n}_${stamp()}.png`);
+    await editor.screenshot(rect2 ? { path: shot, clip: rect2 } : { path: shot });
+    out({ cmd: 'replace-text', applied: true, find: findText0, to: toText, replaced, page: n, docId: editor.__docId || null, shot });
+  });
+}
+
 (async () => {
   const args = parseArgs(process.argv.slice(2));
   HEADED = !!args.headed;                                    // --headed: 창 띄워 보기(디버그)
@@ -581,7 +711,8 @@ async function cmdInsertText(args) {
     else if (args._ === 'around') await cmdAround(args);
     else if (args._ === 'locate') await cmdLocate(args);
     else if (args._ === 'insert-text') await cmdInsertText(args);
-    else { log('사용법: capture --file <경로> [--page N] [--grid] | zoom --name <이름> --clip "x,y,w,h" [--page N] | around --name <이름> --text "<검색어>" [--grid] | locate --name <이름> --clues "a,b,c" [--grid] | insert-text --name <이름> --anchor "<기준 텍스트>" --text "<추가할 줄>" [--apply]'); process.exit(2); }
+    else if (args._ === 'replace-text') await cmdReplaceText(args);
+    else { log('사용법: capture --file <경로> [--page N] [--grid] | zoom --name <이름> --clip "x,y,w,h" [--page N] | around --name <이름> --text "<검색어>" [--grid] | locate --name <이름> --clues "a,b,c" [--grid] | insert-text --name <이름> --anchor "<기준 텍스트>" --text "<추가할 줄>" [--apply] | replace-text --name <이름> --find "<대상>" --to "<교체>" [--apply]'); process.exit(2); }
     process.exit(0);
   } catch (e) {
     if (e instanceof CannotOpenError || e.message === 'CANNOT_OPEN') {

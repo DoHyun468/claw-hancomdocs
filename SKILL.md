@@ -118,6 +118,21 @@ node hancom.js insert-text --name <문서이름> --anchor "<기준 텍스트>" -
 > ⚠️ **편집은 headless 전용.** `--headed`로는 편집할 수 없다(보기/캡처 전용) — 편집 중 창을 보면 스크롤·상호작용으로 캐럿 위치가 어긋난다. 결과를 보고 싶으면 적용 뒤 `shot`(또는 `capture --page`)으로 확인.
 > ⚠️ **안전**: 본문/제목 input에 **블라인드로 직접 입력하지 않는다**. 캐럿은 항상 찾기(앵커)로 본문에 위치시킨 뒤에만 타이핑하며, 캐럿이 본문 영역을 벗어나면 `{status:"caret_out_of_body"}`로 중단한다(오편집 방지).
 
+## 🔁 편집 — 텍스트 교체 (`replace-text`)
+
+문서에서 **특정 텍스트를 찾아 다른 텍스트로 모두 바꾼다**(한컴독스 "찾아 바꾸기"). `--to ""`이면 그 텍스트를 **삭제**한다.
+
+```bash
+node hancom.js replace-text --name <문서이름> --find "<바꿀 대상>" --to "<바꿀 결과>" [--apply]
+```
+
+- **동작**: `--find` 텍스트를 문서 전체에서 찾아 `--to`로 모두 교체. `--to ""`(빈 문자열)이면 `--find`를 삭제.
+- **`--apply` 없으면 dry-run(read-only)**: 대상이 문서에 있는지(`foundPage`)만 확인하고 바꾸지 않는다. 먼저 dry-run으로 대상 확인 후 `--apply` 권장.
+- **반환**: 적용 시 `{applied:true, find, to, replaced:<교체된 개수>, page, docId, shot}`. dry-run은 `{dryRun:true, foundPage}`. 대상이 없으면 `{status:"find_not_found"}`.
+- **find 고르기**: 의도한 곳만 바뀌도록 **충분히 구체적인 문자열**로(너무 짧으면 여러 곳이 바뀐다 — 반환 `replaced` 개수로 확인).
+
+> ⚠️ `insert-text`와 동일: **편집은 headless 전용**(`--headed`는 보기 전용), 다이얼로그 입력칸에만 입력하고 본문에 블라인드 입력하지 않는다.
+
 ## 🚫 열 수 없는 파일
 
 손상/형식오류로 webhwp가 못 여는 파일은 캡처 대신 `{"status":"cannot_open","docName":"...","reason":"..."}` 반환(exit 5, hwp·hwpx 동일).
