@@ -9,7 +9,7 @@ license: MIT
 한컴독스 web (webhwp) 을 Playwright 로 드라이브 — 업로드 / 페이지 캡처 / 영역 확대 / 텍스트 검색 / 문서에 한 줄 추가.
 
 Playwright headless로 동작 — **보이는 창 없음**, 물리 마우스/키보드 안 건드림, 백그라운드 가능.
-스크립트는 `scripts/`에 있고 `capture` / `zoom` / `around` / `locate` / `insert-text` 명령을 제공한다.
+스크립트는 `scripts/`에 있고 `capture` / `zoom` / `around` / `locate` / `insert-text` / `replace-text` / `set-cell-text` 명령을 제공한다.
 
 > **Local-machine 전용.** Cowork sandbox 에서는 `www.hancomdocs.com` proxy 차단 + `auth.json` 머신 종속으로 실행 불가. 사용자 Mac / Windows / Linux 머신에서 직접 실행.
 
@@ -72,7 +72,9 @@ node hancom.js capture --file <절대경로> [--page N] [--grid] [--scale N] [--
 node hancom.js zoom    --name <문서이름>  --clip "x,y,w,h" [--page N] [--scale N] [--out <png>]
 node hancom.js around  --name <문서이름>  --text "<검색어>" [--zoom [--band N]] [--grid] [--out <png>]
 node hancom.js locate  --name <문서이름>  --clues "a,b,c" [--grid] [--out <png>]
-node hancom.js insert-text --name <문서이름> --anchor "<기준 텍스트>" --text "<추가할 한 줄>" [--apply]
+node hancom.js insert-text  --name <문서이름> --anchor "<기준 텍스트>" --text "<추가할 한 줄>" [--apply]
+node hancom.js replace-text --name <문서이름> --find "<바꿀 대상>" --to "<바꿀 결과>" [--apply]
+node hancom.js set-cell-text --name <문서이름> --cell "<기준 셀 텍스트>" --text "<채울 값>" [--tab N] [--apply]
 ```
 
 - **capture**: 파일을 (필요시) 업로드하고 N쪽(기본 1)을 **A4 한 장 깔끔히** 캡처(툴바·여백 없음, 잘림 없음). 반환 `{shot, docName, page, totalPages, estTotalPages, pageWidth, pageHeight}`.
