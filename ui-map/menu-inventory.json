@@ -1,0 +1,1187 @@
+{
+  "doc": "case01-memo.hwpx",
+  "capturedAt": "sweep",
+  "menus": [
+    {
+      "name": "파일",
+      "items": [
+        {
+          "text": "저장하기",
+          "sel": ".d_save",
+          "group": false,
+          "shortcut": "Cmd+S",
+          "gray": true
+        },
+        {
+          "text": "다른 이름으로 저장하기",
+          "sel": ".d_save_as_button",
+          "group": false,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "공유",
+          "sel": ".share",
+          "group": false,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "이름 바꾸기",
+          "sel": ".rename",
+          "group": false,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "다운로드",
+          "sel": ".d_download",
+          "group": false,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "PDF로 다운로드",
+          "sel": ".d_pdf_download",
+          "group": false,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "편집 용지...",
+          "sel": ".d_page_setup",
+          "group": false,
+          "shortcut": "F7",
+          "gray": false
+        },
+        {
+          "text": "인쇄",
+          "sel": ".d_print",
+          "group": false,
+          "shortcut": "Cmd+P",
+          "gray": false
+        },
+        {
+          "text": "문서 정보...",
+          "sel": ".d_info",
+          "group": false,
+          "shortcut": "",
+          "gray": false
+        }
+      ],
+      "submenus": {}
+    },
+    {
+      "name": "편집",
+      "items": [
+        {
+          "text": "되돌리기",
+          "sel": ".e_undo",
+          "group": false,
+          "shortcut": "Cmd+Z",
+          "gray": true
+        },
+        {
+          "text": "다시 실행",
+          "sel": ".e_redo",
+          "group": false,
+          "shortcut": "Cmd+Shift+Z",
+          "gray": true
+        },
+        {
+          "text": "오려 두기",
+          "sel": ".e_cut",
+          "group": false,
+          "shortcut": "Cmd+X",
+          "gray": true
+        },
+        {
+          "text": "복사하기",
+          "sel": ".e_copy",
+          "group": false,
+          "shortcut": "Cmd+C",
+          "gray": true
+        },
+        {
+          "text": "붙이기",
+          "sel": ".e_paste",
+          "group": false,
+          "shortcut": "Cmd+V",
+          "gray": false
+        },
+        {
+          "text": "모양 복사...",
+          "sel": ".e_format_copy",
+          "group": false,
+          "shortcut": "Opt+C",
+          "gray": false
+        },
+        {
+          "text": "지우기",
+          "sel": ".e_delete",
+          "group": false,
+          "shortcut": "Cmd+E",
+          "gray": true
+        },
+        {
+          "text": "조판 부호 지우기",
+          "sel": ".d_delete_ctrls",
+          "group": false,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "모두 선택",
+          "sel": ".e_select",
+          "group": false,
+          "shortcut": "Cmd+A",
+          "gray": false
+        },
+        {
+          "text": "찾기",
+          "sel": ".sub_group_title",
+          "group": true,
+          "shortcut": "",
+          "gray": false
+        }
+      ],
+      "submenus": {
+        "찾기": [
+          {
+            "text": "쪽",
+            "sel": ".property_title"
+          },
+          {
+            "text": "표",
+            "sel": ".property_title"
+          },
+          {
+            "text": "그림",
+            "sel": "."
+          },
+          {
+            "text": "찾기",
+            "sel": ".btn_combo_arrow"
+          },
+          {
+            "text": "도형",
+            "sel": ".btn_combo_arrow"
+          },
+          {
+            "text": "찾기...Cmd+F",
+            "sel": ".find"
+          },
+          {
+            "text": "찾아 바꾸기...Cmd+Shift+H",
+            "sel": ".find_replace"
+          },
+          {
+            "text": "찾아가기Opt+G",
+            "sel": ".goto"
+          }
+        ]
+      }
+    },
+    {
+      "name": "보기",
+      "items": [
+        {
+          "text": "확대/축소",
+          "sel": ".sub_group_title",
+          "group": true,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "쪽 모양한 쪽두 쪽세 쪽",
+          "sel": ".sub_group",
+          "group": true,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "쪽 모양",
+          "sel": ".sub_group_title",
+          "group": true,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "쪽 윤곽",
+          "sel": ".e_view_option_paper",
+          "group": false,
+          "shortcut": "Ctrl+G+L",
+          "gray": false
+        },
+        {
+          "text": "표시/숨기기조판 부호Ctrl+G+C문단 부호Ctrl+G+T투명 선",
+          "sel": ".mark_show_hide",
+          "group": true,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "표시/숨기기",
+          "sel": ".sub_group_title",
+          "group": true,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "격자 보기",
+          "sel": ".d_grid",
+          "group": false,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "도구 상자기본서식",
+          "sel": ".view_toolbar",
+          "group": true,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "도구 상자",
+          "sel": ".sub_group_title",
+          "group": true,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "문서 창눈금자",
+          "sel": ".document_window",
+          "group": true,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "문서 창",
+          "sel": ".sub_group_title",
+          "group": true,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "메모모든 메모 표시메모 안내선 표시",
+          "sel": ".e_memo",
+          "group": true,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "메모",
+          "sel": ".sub_group_title",
+          "group": true,
+          "shortcut": "",
+          "gray": false
+        }
+      ],
+      "submenus": {
+        "확대/축소": [
+          {
+            "text": "쪽",
+            "sel": ".property_title"
+          },
+          {
+            "text": "표",
+            "sel": ".property_title"
+          },
+          {
+            "text": "검토",
+            "sel": ".property_title"
+          },
+          {
+            "text": "50%",
+            "sel": ".e_view_scale"
+          },
+          {
+            "text": "그림",
+            "sel": "."
+          },
+          {
+            "text": "75%",
+            "sel": ".e_view_scale"
+          },
+          {
+            "text": "도형",
+            "sel": ".btn_combo_arrow"
+          },
+          {
+            "text": "차트",
+            "sel": ".btn_combo_arrow"
+          },
+          {
+            "text": "100%",
+            "sel": ".e_view_scale"
+          },
+          {
+            "text": "125%",
+            "sel": ".e_view_scale"
+          },
+          {
+            "text": "150%",
+            "sel": ".e_view_scale"
+          },
+          {
+            "text": "200%",
+            "sel": ".e_view_scale"
+          },
+          {
+            "text": "300%",
+            "sel": ".e_view_scale"
+          },
+          {
+            "text": "쪽 맞춤",
+            "sel": ".e_view_scale"
+          },
+          {
+            "text": "폭 맞춤",
+            "sel": ".e_view_scale"
+          }
+        ],
+        "쪽 모양": [
+          {
+            "text": "쪽",
+            "sel": ".property_title"
+          },
+          {
+            "text": "표",
+            "sel": ".property_title"
+          },
+          {
+            "text": "검토",
+            "sel": ".property_title"
+          },
+          {
+            "text": "그림",
+            "sel": "."
+          },
+          {
+            "text": "한 쪽",
+            "sel": ".e_view_zoom_page_one"
+          },
+          {
+            "text": "도형",
+            "sel": ".btn_combo_arrow"
+          },
+          {
+            "text": "차트",
+            "sel": ".btn_combo_arrow"
+          },
+          {
+            "text": "두 쪽",
+            "sel": ".e_view_zoom_page_two"
+          },
+          {
+            "text": "세 쪽",
+            "sel": ".e_view_zoom_page_three"
+          }
+        ],
+        "표시/숨기기": [
+          {
+            "text": "쪽",
+            "sel": ".property_title"
+          },
+          {
+            "text": "표",
+            "sel": ".property_title"
+          },
+          {
+            "text": "검토",
+            "sel": ".property_title"
+          },
+          {
+            "text": "그림",
+            "sel": "."
+          },
+          {
+            "text": "도형",
+            "sel": ".btn_combo_arrow"
+          },
+          {
+            "text": "차트",
+            "sel": ".btn_combo_arrow"
+          },
+          {
+            "text": "조판 부호Ctrl+G+C",
+            "sel": ".e_ctrl_mark"
+          },
+          {
+            "text": "문단 부호Ctrl+G+T",
+            "sel": ".e_para_mark"
+          },
+          {
+            "text": "투명 선",
+            "sel": ".t_border_transparent"
+          }
+        ],
+        "도구 상자": [
+          {
+            "text": "쪽",
+            "sel": ".property_title"
+          },
+          {
+            "text": "표",
+            "sel": ".property_title"
+          },
+          {
+            "text": "검토",
+            "sel": ".property_title"
+          },
+          {
+            "text": "그림",
+            "sel": "."
+          },
+          {
+            "text": "도형",
+            "sel": ".btn_combo_arrow"
+          },
+          {
+            "text": "차트",
+            "sel": ".btn_combo_arrow"
+          },
+          {
+            "text": "기본",
+            "sel": ".view_basic"
+          },
+          {
+            "text": "서식",
+            "sel": ".view_format"
+          }
+        ],
+        "문서 창": [
+          {
+            "text": "쪽",
+            "sel": ".property_title"
+          },
+          {
+            "text": "표",
+            "sel": ".property_title"
+          },
+          {
+            "text": "검토",
+            "sel": ".property_title"
+          },
+          {
+            "text": "그림",
+            "sel": "."
+          },
+          {
+            "text": "도형",
+            "sel": ".btn_combo_arrow"
+          },
+          {
+            "text": "차트",
+            "sel": ".btn_combo_arrow"
+          },
+          {
+            "text": "눈금자",
+            "sel": ".document_window"
+          }
+        ],
+        "메모": [
+          {
+            "text": "쪽",
+            "sel": ".property_title"
+          },
+          {
+            "text": "표",
+            "sel": ".property_title"
+          },
+          {
+            "text": "검토",
+            "sel": ".property_title"
+          },
+          {
+            "text": "그림",
+            "sel": "."
+          },
+          {
+            "text": "도형",
+            "sel": ".btn_combo_arrow"
+          },
+          {
+            "text": "차트",
+            "sel": ".btn_combo_arrow"
+          },
+          {
+            "text": "모든 메모 표시",
+            "sel": ".e_menu_view_memo"
+          },
+          {
+            "text": "메모 안내선 표시",
+            "sel": ".e_menu_view_memo_guide"
+          }
+        ]
+      }
+    },
+    {
+      "name": "입력",
+      "items": [
+        {
+          "text": "도형그리기 개체",
+          "sel": ".insert_shape",
+          "group": true,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "도형",
+          "sel": ".sub_group_title",
+          "group": true,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "그림...",
+          "sel": ".insert_image",
+          "group": false,
+          "shortcut": "Ctrl+N+I",
+          "gray": false
+        },
+        {
+          "text": "표...",
+          "sel": ".insert_table",
+          "group": false,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "차트...",
+          "sel": ".chart",
+          "group": false,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "글상자",
+          "sel": ".s_insert_textbox",
+          "group": false,
+          "shortcut": "Ctrl+N+B",
+          "gray": false
+        },
+        {
+          "text": "웹 동영상...",
+          "sel": ".insert_web_video",
+          "group": false,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "수식...",
+          "sel": ".show_eqeditor",
+          "group": false,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "문자표...",
+          "sel": ".symbols",
+          "group": false,
+          "shortcut": "Cmd+F10",
+          "gray": false
+        },
+        {
+          "text": "필드 입력...",
+          "sel": ".field",
+          "group": false,
+          "shortcut": "Ctrl+K+E",
+          "gray": false
+        },
+        {
+          "text": "문단 띠",
+          "sel": ".s_insert_line",
+          "group": false,
+          "shortcut": "Ctrl+N+L",
+          "gray": false
+        },
+        {
+          "text": "주석각주미주",
+          "sel": ".insert_notes",
+          "group": true,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "주석",
+          "sel": ".sub_group_title",
+          "group": true,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "캡션 넣기",
+          "sel": ".sub_group_title",
+          "group": true,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "메모",
+          "sel": ".e_menu_insert_memo",
+          "group": false,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "하이퍼링크...",
+          "sel": ".hyperlink",
+          "group": false,
+          "shortcut": "Ctrl+K+H",
+          "gray": false
+        },
+        {
+          "text": "책갈피...",
+          "sel": ".bookmark",
+          "group": false,
+          "shortcut": "Ctrl+K+B",
+          "gray": false
+        }
+      ],
+      "submenus": {
+        "도형": [
+          {
+            "text": "표",
+            "sel": ".property_title"
+          },
+          {
+            "text": "검토",
+            "sel": ".property_title"
+          },
+          {
+            "text": "도구",
+            "sel": ".property_title"
+          },
+          {
+            "text": "그리기 개체",
+            "sel": ".text_wrap"
+          },
+          {
+            "text": "웹동영상",
+            "sel": "."
+          },
+          {
+            "text": "차트",
+            "sel": ".btn_combo_arrow"
+          }
+        ],
+        "주석": [
+          {
+            "text": "표",
+            "sel": ".property_title"
+          },
+          {
+            "text": "검토",
+            "sel": ".property_title"
+          },
+          {
+            "text": "도구",
+            "sel": ".property_title"
+          },
+          {
+            "text": "웹동영상",
+            "sel": "."
+          },
+          {
+            "text": "차트",
+            "sel": ".btn_combo_arrow"
+          },
+          {
+            "text": "각주",
+            "sel": ".e_insert_notes"
+          },
+          {
+            "text": "미주",
+            "sel": ".e_insert_notes"
+          }
+        ]
+      }
+    },
+    {
+      "name": "서식",
+      "items": [
+        {
+          "text": "글자 모양...",
+          "sel": ".char_shape",
+          "group": false,
+          "shortcut": "Cmd+L",
+          "gray": false
+        },
+        {
+          "text": "문단 모양...",
+          "sel": ".para_shape",
+          "group": false,
+          "shortcut": "Cmd+T",
+          "gray": false
+        },
+        {
+          "text": "글머리표 모양...",
+          "sel": ".p_bullet_list",
+          "group": false,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "문단 번호 모양...",
+          "sel": ".p_number_list",
+          "group": false,
+          "shortcut": "Ctrl+K+N",
+          "gray": false
+        },
+        {
+          "text": "한 수준 증가",
+          "sel": ".p_level_increase",
+          "group": false,
+          "shortcut": "Ctrl+Num -",
+          "gray": false
+        },
+        {
+          "text": "한 수준 감소",
+          "sel": ".p_level_decrease",
+          "group": false,
+          "shortcut": "Ctrl+Num +",
+          "gray": false
+        },
+        {
+          "text": "스타일...",
+          "sel": ".paragraph_style",
+          "group": false,
+          "shortcut": "F6",
+          "gray": false
+        },
+        {
+          "text": "개체 속성...P",
+          "sel": ".modify_object_properties",
+          "group": false,
+          "shortcut": "",
+          "gray": true
+        }
+      ],
+      "submenus": {}
+    },
+    {
+      "name": "쪽",
+      "items": [
+        {
+          "text": "편집 용지...",
+          "sel": ".d_page_setup",
+          "group": false,
+          "shortcut": "F7",
+          "gray": false
+        },
+        {
+          "text": "머리말(모양 없음)왼쪽 쪽 번호가운데 쪽 번호오른쪽 쪽 번호",
+          "sel": ".e_header",
+          "group": true,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "머리말",
+          "sel": ".sub_group_title",
+          "group": true,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "꼬리말(모양 없음)왼쪽 쪽 번호가운데 쪽 번호오른쪽 쪽 번호",
+          "sel": ".e_footer",
+          "group": true,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "꼬리말",
+          "sel": ".sub_group_title",
+          "group": true,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "새 번호로 시작...",
+          "sel": ".p_new_number",
+          "group": false,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "현재 쪽만 감추기...",
+          "sel": ".p_page_hiding",
+          "group": false,
+          "shortcut": "Ctrl+N+S",
+          "gray": false
+        },
+        {
+          "text": "쪽 나누기",
+          "sel": ".p_page_break",
+          "group": false,
+          "shortcut": "Ctrl+Return",
+          "gray": false
+        },
+        {
+          "text": "단 나누기",
+          "sel": ".p_column_break",
+          "group": false,
+          "shortcut": "Ctrl+Shift+Return",
+          "gray": false
+        },
+        {
+          "text": "단하나둘셋왼쪽오른쪽",
+          "sel": ".p_columns",
+          "group": true,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "단",
+          "sel": ".sub_group_title",
+          "group": true,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "다단 설정 나누기",
+          "sel": ".p_break_new_column",
+          "group": false,
+          "shortcut": "Ctrl+Opt+Return",
+          "gray": false
+        }
+      ],
+      "submenus": {
+        "머리말": [
+          {
+            "text": "공유데스크톱에서 편집편집 (${users_count})",
+            "sel": ".title_edge"
+          },
+          {
+            "text": "각주",
+            "sel": "."
+          },
+          {
+            "text": "미주",
+            "sel": "."
+          },
+          {
+            "text": "하이퍼링크",
+            "sel": "."
+          },
+          {
+            "text": "(모양 없음)",
+            "sel": ".e_insert_header"
+          },
+          {
+            "text": "왼쪽 쪽 번호",
+            "sel": ".e_insert_header"
+          },
+          {
+            "text": "가운데 쪽 번호",
+            "sel": ".e_insert_header"
+          },
+          {
+            "text": "오른쪽 쪽 번호",
+            "sel": ".e_insert_header"
+          }
+        ],
+        "꼬리말": [
+          {
+            "text": "공유데스크톱에서 편집편집 (${users_count})",
+            "sel": ".title_edge"
+          },
+          {
+            "text": "각주",
+            "sel": "."
+          },
+          {
+            "text": "미주",
+            "sel": "."
+          },
+          {
+            "text": "하이퍼링크",
+            "sel": "."
+          },
+          {
+            "text": "(모양 없음)",
+            "sel": ".e_insert_footer"
+          },
+          {
+            "text": "왼쪽 쪽 번호",
+            "sel": ".e_insert_footer"
+          },
+          {
+            "text": "가운데 쪽 번호",
+            "sel": ".e_insert_footer"
+          },
+          {
+            "text": "오른쪽 쪽 번호",
+            "sel": ".e_insert_footer"
+          }
+        ],
+        "단": [
+          {
+            "text": "공유데스크톱에서 편집편집 (${users_count})",
+            "sel": ".title_edge"
+          },
+          {
+            "text": "각주",
+            "sel": "."
+          },
+          {
+            "text": "미주",
+            "sel": "."
+          },
+          {
+            "text": "하이퍼링크",
+            "sel": "."
+          }
+        ]
+      }
+    },
+    {
+      "name": "표",
+      "items": [
+        {
+          "text": "표 만들기...",
+          "sel": ".insert_table",
+          "group": false,
+          "shortcut": "Ctrl+N+T",
+          "gray": false
+        },
+        {
+          "text": "표/셀 속성...",
+          "sel": ".table_cell_properties",
+          "group": false,
+          "shortcut": "",
+          "gray": true
+        },
+        {
+          "text": "셀 테두리/배경각 셀마다 적용...하나의 셀처럼 적용...",
+          "sel": ".cell_border_background",
+          "group": true,
+          "shortcut": "",
+          "gray": true
+        },
+        {
+          "text": "셀 테두리/배경",
+          "sel": ".sub_group_title",
+          "group": true,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "줄/칸 추가하기",
+          "sel": ".sub_group_title",
+          "group": true,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "줄/칸 지우기줄 지우기elete칸 지우기Ctrl+D",
+          "sel": ".c_remove_row_col",
+          "group": true,
+          "shortcut": "Ctrl+D",
+          "gray": true
+        },
+        {
+          "text": "줄/칸 지우기",
+          "sel": ".sub_group_title",
+          "group": true,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "셀 나누기...S",
+          "sel": ".c_unmerge",
+          "group": false,
+          "shortcut": "",
+          "gray": true
+        },
+        {
+          "text": "셀 합치기M",
+          "sel": ".c_merge",
+          "group": false,
+          "shortcut": "",
+          "gray": true
+        },
+        {
+          "text": "셀 높이를 같게H",
+          "sel": ".c_height_distribute",
+          "group": false,
+          "shortcut": "",
+          "gray": true
+        },
+        {
+          "text": "셀 너비를 같게W",
+          "sel": ".c_width_distribute",
+          "group": false,
+          "shortcut": "",
+          "gray": true
+        },
+        {
+          "text": "블록 계산식",
+          "sel": ".sub_group_title",
+          "group": true,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "1,000 단위 구분 쉼표자릿점 넣기자릿점 빼기",
+          "sel": ".c_cell_thousands_sep",
+          "group": true,
+          "shortcut": "",
+          "gray": true
+        },
+        {
+          "text": "1,000 단위 구분 쉼표",
+          "sel": ".sub_group_title",
+          "group": true,
+          "shortcut": "",
+          "gray": false
+        }
+      ],
+      "submenus": {}
+    },
+    {
+      "name": "검토",
+      "items": [
+        {
+          "text": "변경 내용 추적",
+          "sel": ".sub_group_title",
+          "group": true,
+          "shortcut": "",
+          "gray": false
+        }
+      ],
+      "submenus": {
+        "변경 내용 추적": [
+          {
+            "text": "변경 내용 추적",
+            "sel": ".trackchange_on"
+          },
+          {
+            "text": "하이퍼링크",
+            "sel": "."
+          },
+          {
+            "text": "문자표",
+            "sel": "."
+          },
+          {
+            "text": "글자모양",
+            "sel": "."
+          },
+          {
+            "text": "적용 후 다음으로 이동",
+            "sel": ".trackchange_apply_next"
+          },
+          {
+            "text": "취소 후 다음으로 이동",
+            "sel": ".trackchange_cancel_next"
+          },
+          {
+            "text": "다음",
+            "sel": ".trackchange_next"
+          },
+          {
+            "text": "이전",
+            "sel": ".trackchange_prev"
+          },
+          {
+            "text": "변경 내용 보기삽입 및 삭제서식",
+            "sel": ".trackchange_view"
+          },
+          {
+            "text": "변경 내용 보기",
+            "sel": ".sub_group_title"
+          },
+          {
+            "text": "최종본 및 변경 내용",
+            "sel": ".trackchange_final_info"
+          },
+          {
+            "text": "최종본",
+            "sel": ".trackchange_final"
+          }
+        ]
+      }
+    },
+    {
+      "name": "도구",
+      "items": [
+        {
+          "text": "빠른 교정'곧은 따옴표'를 '둥근 따옴표'로 자동 바꾸기",
+          "sel": ".sub_group",
+          "group": true,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "빠른 교정",
+          "sel": ".sub_group_title",
+          "group": true,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "접근성 설정스크린 리더 지원 사용",
+          "sel": ".sub_group",
+          "group": true,
+          "shortcut": "Ctrl+Opt+F1",
+          "gray": false
+        },
+        {
+          "text": "접근성 설정",
+          "sel": ".sub_group_title",
+          "group": true,
+          "shortcut": "",
+          "gray": false
+        },
+        {
+          "text": "채팅",
+          "sel": ".g_chat",
+          "group": false,
+          "shortcut": "",
+          "gray": false
+        }
+      ],
+      "submenus": {
+        "빠른 교정": [
+          {
+            "text": "'곧은 따옴표'를 '둥근 따옴표'로 자동 바꾸기",
+            "sel": ".shortcut_area_none"
+          },
+          {
+            "text": "문자표",
+            "sel": "."
+          },
+          {
+            "text": "글자모양",
+            "sel": "."
+          },
+          {
+            "text": "문단모양",
+            "sel": "."
+          }
+        ],
+        "접근성 설정": [
+          {
+            "text": "문자표",
+            "sel": "."
+          },
+          {
+            "text": "글자모양",
+            "sel": "."
+          },
+          {
+            "text": "문단모양",
+            "sel": "."
+          },
+          {
+            "text": "스크린 리더 지원 사용Ctrl+Opt+F1",
+            "sel": ".sub_group_box"
+          }
+        ]
+      }
+    }
+  ]
+}
