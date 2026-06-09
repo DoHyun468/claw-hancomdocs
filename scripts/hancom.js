@@ -948,6 +948,73 @@ async function cmdList(args) {
   await caretParagraphOp(args, 'list', SEL[type], { type });
 }
 
+// 구절을 마우스 드래그로 정확히 선택. 드래그는 본문 캔버스에서 일어나 포커스를 보장하므로, 이후
+// 툴바(글자크기·색) 적용이 안정적이다(찾기 선택은 닫은 뒤 포커스가 풀려 적용이 간헐 실패).
+// 찾기로 캐럿(매치 끝쪽)·줄 y 를 얻고, 그 줄을 가로로 드래그하며 selChars==글자수가 되게 폭(W) 보정.
+async function dragSelectPhrase(ed, phrase) {
+  const r = await findText(ed, phrase);
+  if (!r.found || !r.caret) return { found: !!r.found, selChars: 0, page: r.page };
+  const target = [...phrase].length;
+  const y = r.caret.y + Math.round((r.caret.h || 14) / 2);
+  const xEnd = r.caret.x; // 캐럿 ≈ 매치 끝(다음 찾기 후 커서는 매치 뒤)
+  let W = Math.max(8, target * 13), best = { d: Infinity, sel: 0 };
+  for (let i = 0; i < 5; i++) {
+    await ed.mouse.move(xEnd, y); await ed.mouse.down();
+    await ed.mouse.move(xEnd - Math.round(W / 2), y, { steps: 4 });
+    await ed.mouse.move(xEnd - W, y, { steps: 6 }); await ed.mouse.up();
+    await ed.waitForTimeout(300);
+    const selChars = await readSelectedCount(ed);
+    const d = Math.abs(selChars - target);
+    if (d < best.d) best = { d, sel: selChars };
+    if (selChars === target) return { found: true, selChars, page: r.page };
+    const perChar = W / Math.max(1, selChars); // 글자당 픽셀 추정으로 보정
+    W = Math.max(8, Math.round(W + (target - selChars) * (perChar || 13)));
+  }
+  return { found: true, selChars: best.sel, page: r.page }; // 정확히 못 맞춰도 최선치
+}
+
+// font-size: 구절을 드래그 선택 후 툴바 글자크기 입력칸에 pt 값 입력.
+async function cmdFontSize(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (args.text == null || args.text === true) throw new Error('--text 필요 (크기 바꿀 구절)');
+  const size = Number(args.size);
+  if (!size || size < 1 || size > 300) throw new Error('--size 필요 (pt, 예: 14)');
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
+  const phrase = String(args.text).normalize('NFC');
+  const scale = Number(args.scale) || 1.5;
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(scale, async (ctx, page) => {
+    const name = String(args.name).normalize('NFC');
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    if (!apply) {
+      const r = await findText(editor, phrase);
+      if (!r.found) { out({ cmd: 'font-size', status: 'text_not_found', text: phrase, docId: editor.__docId || null }); return; }
+      out({ cmd: 'font-size', dryRun: true, text: phrase, size, foundPage: r.page, docId: editor.__docId || null, note: '--apply 없으면 read-only. 적용 시: 드래그 선택 후 크기 ' + size + 'pt.' });
+      return;
+    }
+    const sel = await dragSelectPhrase(editor, phrase);
+    if (!sel.found) { out({ cmd: 'font-size', status: 'text_not_found', text: phrase, docId: editor.__docId || null }); return; }
+    if (!sel.selChars) { out({ cmd: 'font-size', status: 'selection_failed', text: phrase, docId: editor.__docId || null, note: '드래그 선택 실패.' }); return; }
+    const n = sel.page || 1;
+    // 툴바 글자크기 입력칸에 값 입력(선택에 적용)
+    const box = await editor.evaluate(() => { const el = document.querySelector('.font_size input'); if (!el) return null; const r = el.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; });
+    if (!box) throw new Error('글자크기 입력칸(.font_size input) 탐색 실패');
+    await editor.mouse.click(box.x, box.y);
+    await editor.keyboard.press('ControlOrMeta+A');
+    await editor.keyboard.type(String(size), { delay: 30 });
+    await editor.keyboard.press('Enter');
+    await editor.waitForTimeout(1000);
+    await gotoPage(editor, n);
+    const rect2 = await detectPageRect(editor);
+    await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_fontsize_p${n}_${stamp()}.png`);
+    await editor.screenshot(rect2 ? { path: shot, clip: rect2 } : { path: shot });
+    out({ cmd: 'font-size', applied: true, text: phrase, size, selChars: sel.selChars, page: n, docId: editor.__docId || null, shot });
+  });
+}
+
 
 (async () => {
   const args = parseArgs(process.argv.slice(2));
@@ -964,6 +1031,7 @@ async function cmdList(args) {
     else if (args._ === 'format-text') await cmdFormatText(args);
     else if (args._ === 'align') await cmdAlign(args);
     else if (args._ === 'list') await cmdList(args);
+    else if (args._ === 'font-size') await cmdFontSize(args);
     else { log('사용법: capture --file <경로> [--page N] [--grid] | zoom --name <이름> --clip "x,y,w,h" [--page N] | around --name <이름> --text "<검색어>" [--grid] | locate --name <이름> --clues "a,b,c" [--grid] | insert-text --name <이름> --anchor "<기준 텍스트>" --text "<추가할 줄>" [--apply] | replace-text --name <이름> --find "<대상>" --to "<교체>" [--apply] | set-cell-text --name <이름> --cell "<기준 셀 텍스트>" --text "<값>" [--tab N] [--apply] | format-text --name <이름> --text "<구절>" --bold|--italic|--underline [--apply]'); process.exit(2); }
     process.exit(0);
   } catch (e) {
