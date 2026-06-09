@@ -256,7 +256,7 @@
 7. **툴바 3행 = 다이얼로그 없는 직접 서식 컨트롤**(`.bold`·`.italic`·`.font_color`·`.font_highlight_color`·`.align_center`·`.font_name`·`.font_size`·`.p_line_spacing`·`.bullet_list`/`.number_list`). 스타일 op의 최단 경로. ⚠️ **툴바 ▼ 드롭다운은 메뉴 `>`와 달리 호버 아니라 클릭으로 펼쳐짐.** (위 "툴바" 섹션.)
 8. **협업 감지 = "편집 (N)" 카운트** (실측 `--collab` 2026-06-09). 사용자가 같은 문서를 열어두면(협업 모드) **"편집 (N)" 인디케이터가 뜨고 N≥2** (우리만=없음/null → 사용자 열자 "편집 (2)"). `.user_cursor_container`(cursors:1)·user_list는 **우리 세션 자체 노이즈라 신뢰 불가 — 카운트만 신뢰.** → **편집 전 안전 게이트**: N≥2면 사용자가 작업 중 → 자동 편집 금지/경고/확인(과거 블라인드 입력 사고 §2 재발 방지).
 9. **협업 중 편집 충돌** (실측 `--collab-edit`, 2세션). 협업 중에도 우리 편집 작동+동기화 O. 단 **같은 줄/위치 동시 편집 = 한쪽 입력이 조용히 유실**(빨간 🚫, 글자수 미반영). 다른 영역은 머지 OK(구글독스식). **협업 모드는 차트/수식 비활성**. 원격 커서 위치 보임. → 안전 게이트(G16) 정당화.
-10. **편집 = headless, 보여주기 = 별도** (실측 `--edit-demo`). 위치 클릭·캡처는 *현재 스크롤 기준* → **사용자가 만지면(스크롤/클릭) 어긋남.** 그래서 **편집은 통제된 headless가 기본.** "보고 싶다"면 headed 관전(보기 전용) 또는 결과 capture. **"사용자 만지는 세션 ≠ 편집 세션."** 캡처는 그 위치로 scroll(gotoPage) 후 찍음(headed면 사용자 눈에 보임). 단일 headed 세션 = 협업 아님(count 1).
+10. **편집은 headless 전용 — headed = 편집 불가(보기 전용)** (실측 `--edit-demo`). 위치 클릭·캡처는 *현재 스크롤 기준*이라 **사용자가 만지면(스크롤/클릭) 어긋남.** → **하드 룰: 편집 op은 headless 세션에서만. headed로 띄우면 보기/캡처 전용이고 편집 명령은 거부(가드).** "보고 싶다"면 headed 관전 또는 **headless 편집 후 결과 capture**. **"사용자 만지는 세션 ≠ 편집 세션."** 캡처는 그 위치로 scroll(gotoPage) 후 찍음(headed면 사용자 눈에 보임). 단일 headed 세션 = 협업 아님(count 1).
 11. **파일 식별 = docId** (실측 `--whoami`). 에디터 URL `webhwp.hancomdocs.com/webhwp/?mode=HWP_EDITOR&docId=<id>&lang=ko_KR` 에 **고유 docId**(+ `document.title`/헤더에 파일명). → **위치 편집 전 docId/제목 == 의도 확인 필수**(아니면 abort). **docId URL로 직접 열면 드라이브 목록 안 거쳐 업로드 race·오행 차단**(다른 세션이 행 밀어도 무관).
 12. **OT sync 에러**: 편집 중 *"동기화가 필요합니다 / `OT_ERROR_CODE_SERVER_ACTION_SAVE_ERROR`"* 다이얼로그 가능(문서 OT 상태 꼬임 — 충돌 누적 시). 에러코드 = docId. → 스킬은 이 다이얼로그 **감지 + '확인' 눌러 복원** 처리 필요.
 
@@ -277,7 +277,7 @@
 - **G16. 협업 안전 게이트** (★ 편집 전 필수): 편집 직전 **"편집 (N)" 카운트 확인 → N≥2면 협업 모드** → **영역 회피 같은 영리한 짓 X. 그냥 편집 중단 + "문서가 열려있으니 닫아주세요" 안내**(실측: 같은 위치 동시 편집 = 한쪽 유실, F.2 #9). 카운트만 신뢰. 협업자 id도 보임.
 - **G17. docId 기반 open/verify** (★ 위치 편집 안전): `openDoc`을 **docId URL 직접 열기**로(드라이브 목록 race·오행 차단) + **편집 직전 URL docId/제목 == 의도 확인 게이트**(아니면 abort). 첫 열기(이름→행 클릭) 후 docId 추출·저장. (F.2 #11)
 - **G18. OT sync 에러 처리**: 편집 중 "동기화 필요/`OT_ERROR_...SAVE_ERROR`" 다이얼로그 **감지 + '확인' 클릭 복원** + 재시도/needs-human. (F.2 #12)
-- **G19. 편집=headless 기본 / 관전=별도**: 위치 클릭·캡처 통제 위해 편집은 headless. "보고 싶다"면 headed 관전(보기 전용) 또는 결과 capture. 사용자 만지는 세션과 편집 세션 분리. (F.2 #10)
+- **G19. 편집 = headless 전용 (headed = 편집 불가 가드)**: 위치 클릭·캡처 통제 위해 **편집 op은 headless 세션에서만 실행. headed로 띄우면 보기/캡처 전용 — 편집 명령은 거부(가드).** "보고 싶다"면 headed 관전 또는 headless 편집 후 결과 capture. 사용자 만지는 세션과 편집 세션 분리. (F.2 #10)
 
 **[op PoC — 쉬운 것부터]**
 - **G2. 다이얼로그 열기 PoC**: `.char_shape`/`.insert_image`/`.insert_table` 클릭 → 다이얼로그 뜸 캡처 → 취소로 닫기. **dry-run/`--apply` 가드**(HANDOFF_PHASE2 §2).
@@ -312,6 +312,8 @@
 - 편집 루프 = **locate → (select) → apply → verify(capture)**. apply sel = 위 인벤토리(§A·툴바·우클릭).
 - 안전: **dry-run 기본 / `--apply`로만 실제 변경**, 블라인드 input 금지, 매 op 후 capture regression (`HANDOFF_PHASE2_EDIT.md` §2).
 - fixture = `hancom.js capture`로 **한컴독스 열림 검증된 것만**.
+- **편집은 headless 전용** (하드 룰): 위치 클릭이 사용자 스크롤/클릭에 깨지므로 **편집 op은 headless 세션에서만**. **headed는 보기/캡처 전용 — 편집 명령 거부 가드.** 관전 원하면 headed 관전 또는 headless 편집 후 결과 capture. (F.2 #10 / G19)
+- 편집 직전 **docId/제목 == 의도 확인**(엉뚱한 문서 방지, G17) + **협업(편집 N≥2) 감지 시 중단**(G16).
 
 ### ★ 전 기능 커버리지 — 모든 메뉴·툴바 3행·우클릭 = 지원 대상
 > **목표 = 인벤토리(§A 9메뉴 + 툴바 2·3행 + 우클릭) 전부 지원**(P3 제외만). 100개를 따로 만드는 게 아니라 **~5개 상호작용 메커니즘 × sel/값**. 메커니즘 만들면 각 기능 = (메커니즘, sel, 값) 꽂기 → **자동으로 전부 커버**.
