@@ -73,6 +73,19 @@ async function gotoPage(ed, n, pageH = PAGE_H) {
   return { estTotal: Math.max(1, Math.round(maxTop / pageH)), pageH, scrollTop: target, scrollHeight: maxTop };
 }
 
+// webhwp 상태바의 '현재 / 총' 쪽수 표시를 읽는다 → 추정(scrollHeight/PAGE_H) 대신 정확값.
+// 페이지1에서도 읽히고 off-by-one이 없다. 표시가 없으면(UI 변경 등) null → 호출부가 추정으로 폴백.
+async function readPageCount(ed) {
+  try {
+    return await ed.evaluate(() => {
+      const el = document.querySelector('.status_page .section.text_wrap.fit_size')
+              || document.querySelector('#status_bar .section.text_wrap.fit_size');
+      const m = el && (el.textContent || '').match(/(\d{1,5})\s*\/\s*(\d{1,5})/);
+      return m ? { current: Number(m[1]), total: Number(m[2]) } : null;
+    });
+  } catch { return null; }
+}
+
 // 캔버스 픽셀 스캔으로 흰 A4 페이지 사각형(뷰포트 CSS px) 검출
 async function detectPageRect(ed) {
   return await ed.evaluate(() => {
@@ -185,6 +198,9 @@ async function hideOverlayCanvases(ed) {
 }
 
 async function openDoc(ctx, page, name) {
+  // 파일명을 NFC로 정규화 — NFD(분해형 자모) 파일명(Mac 생성/다운로드 흔함)은 한컴독스가
+  // NFC로 표시해 getByText 매칭이 깨진다. NFC면 양쪽이 일치(OS 분기 아님, 유니코드 정규화).
+  name = String(name).normalize('NFC');
   await ensureLoggedIn(page, MYDRIVE);
   const row = page.getByText(name, { exact: false }).first();
   // 고정 대기 대신 행이 뜰 때까지만 (없으면 null → 업로드 경로)
@@ -232,7 +248,9 @@ async function uploadFile(page, filePath) {
     page.getByText('문서 업로드').first().click(),
   ]);
   await chooser.setFiles(filePath);
-  try { await page.getByText('완료', { exact: false }).first().waitFor({ timeout: 25000 }); } catch {}
+  // '완료'가 뜨면 즉시 다음으로(조기 종료) — 대기는 대용량/느린 업로드를 위한 상한일 뿐이라
+  // 작은 파일은 안 느려진다. 25s는 큰 파일에서 짧아 업로드 미완→열기 실패가 났어서 상한을 늘림.
+  try { await page.getByText('완료', { exact: false }).first().waitFor({ timeout: 90000 }); } catch {}
   await page.waitForTimeout(2500);
 }
 
@@ -246,7 +264,7 @@ async function withEditor(scale, fn) {
 async function cmdCapture(args) {
   if (!args.file) throw new Error('--file 필요');
   const scale = Number(args.scale) || 1.5;
-  const name = path.basename(args.file);
+  const name = path.basename(args.file).normalize('NFC'); // 출력 docName도 NFC로(후속 --name 일치)
   fs.mkdirSync(CAPDIR, { recursive: true });
   await withEditor(scale, async (ctx, page) => {
     let editor = await openDoc(ctx, page, name);
@@ -270,7 +288,14 @@ async function cmdCapture(args) {
     const suffix = args.grid ? 'grid' : 'full';
     const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_${pTag}${suffix}_${stamp()}.png`);
     await editor.screenshot({ path: shot, clip: rect });
-    out({ cmd: 'capture', shot, docName: name, page: n, estTotalPages: pageInfo.estTotal, pageWidth: rect.width, pageHeight: rect.height, scale, grid: !!args.grid });
+    // 총 쪽수는 상태바 표시(정확) 우선, 없으면 스크롤 추정 폴백.
+    // (상태바의 '현재 쪽'은 캐럿 기준이라 — 스크롤만 하면 page1 고정 — 캡처한 쪽과 무관해서 노출하지 않음.
+    //  페이지 점프는 페이지 높이 균일(A4 100%) 가정. 비표준 문서는 --page-height로 보정.)
+    const pc = await readPageCount(editor);
+    out({ cmd: 'capture', shot, docName: name, page: n,
+          totalPages: pc ? pc.total : null,
+          estTotalPages: pc ? pc.total : pageInfo.estTotal,
+          pageWidth: rect.width, pageHeight: rect.height, scale, grid: !!args.grid });
   });
 }
 
