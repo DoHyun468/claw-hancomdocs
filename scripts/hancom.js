@@ -1015,6 +1015,78 @@ async function cmdFontSize(args) {
   });
 }
 
+// 색 이름/hex → [r,g,b]. 흔한 이름(영/한) + #RRGGBB 지원.
+function parseColor(c) {
+  c = String(c).trim().toLowerCase();
+  const named = {
+    red: [255, 0, 0], blue: [0, 0, 255], green: [0, 128, 0], black: [0, 0, 0], white: [255, 255, 255],
+    yellow: [255, 255, 0], orange: [255, 165, 0], purple: [128, 0, 128], gray: [128, 128, 128], grey: [128, 128, 128],
+    navy: [0, 0, 128], pink: [255, 192, 203], brown: [150, 75, 0],
+    '빨강': [255, 0, 0], '빨간색': [255, 0, 0], '파랑': [0, 0, 255], '파란색': [0, 0, 255], '초록': [0, 128, 0],
+    '녹색': [0, 128, 0], '검정': [0, 0, 0], '검은색': [0, 0, 0], '노랑': [255, 255, 0], '주황': [255, 165, 0],
+    '보라': [128, 0, 128], '회색': [128, 128, 128], '남색': [0, 0, 128], '분홍': [255, 192, 203],
+  };
+  if (named[c]) return named[c];
+  const m = c.match(/^#?([0-9a-f]{6})$/);
+  if (m) { const h = m[1]; return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)]; }
+  return null;
+}
+
+// font-color: 구절을 드래그 선택 후 글자색 팔레트에서 요청 색에 '가장 가까운' 스와치 클릭.
+async function cmdFontColor(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (args.text == null || args.text === true) throw new Error('--text 필요 (색 바꿀 구절)');
+  const target = parseColor(args.color);
+  if (!target) throw new Error('--color 필요 (red|blue|green|black|yellow|... 또는 #RRGGBB)');
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
+  const phrase = String(args.text).normalize('NFC');
+  const scale = Number(args.scale) || 1.5;
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(scale, async (ctx, page) => {
+    const name = String(args.name).normalize('NFC');
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    if (!apply) {
+      const r = await findText(editor, phrase);
+      if (!r.found) { out({ cmd: 'font-color', status: 'text_not_found', text: phrase, docId: editor.__docId || null }); return; }
+      out({ cmd: 'font-color', dryRun: true, text: phrase, color: args.color, foundPage: r.page, docId: editor.__docId || null, note: '--apply 없으면 read-only.' });
+      return;
+    }
+    const sel = await dragSelectPhrase(editor, phrase);
+    if (!sel.found) { out({ cmd: 'font-color', status: 'text_not_found', text: phrase, docId: editor.__docId || null }); return; }
+    if (!sel.selChars) { out({ cmd: 'font-color', status: 'selection_failed', text: phrase, docId: editor.__docId || null, note: '드래그 선택 실패.' }); return; }
+    const n = sel.page || 1;
+    // 글자색 드롭다운 화살표 → 팔레트
+    const arrow = await editor.evaluate(() => { const el = document.querySelector('.font_color .btn_combo_arrow'); if (!el) return null; const r = el.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; });
+    if (!arrow) throw new Error('글자색 드롭다운(.font_color .btn_combo_arrow) 탐색 실패');
+    await editor.mouse.click(arrow.x, arrow.y); await editor.waitForTimeout(900);
+    // 팔레트의 솔리드 rgb 스와치 수집(rgba 알파/큰 박스는 UI 노이즈라 제외)
+    const cells = await editor.evaluate(() => {
+      const out = [];
+      const pal = document.querySelector('.ui_color_pick');
+      const scope = pal && pal.offsetParent !== null ? pal : document;
+      for (const el of scope.querySelectorAll('a, li, div, span, td')) {
+        const r = el.getBoundingClientRect();
+        if (r.width < 8 || r.height < 8 || r.width > 22 || el.offsetParent === null) continue;
+        const m = getComputedStyle(el).backgroundColor.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
+        if (m) out.push({ r: +m[1], g: +m[2], b: +m[3], x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) });
+      }
+      return out;
+    });
+    if (!cells.length) throw new Error('글자색 팔레트 스와치 탐색 실패');
+    let best = cells[0], bd = Infinity;
+    for (const c of cells) { const d = (c.r - target[0]) ** 2 + (c.g - target[1]) ** 2 + (c.b - target[2]) ** 2; if (d < bd) { bd = d; best = c; } }
+    await editor.mouse.click(best.x, best.y); await editor.waitForTimeout(1000);
+    await gotoPage(editor, n);
+    const rect2 = await detectPageRect(editor);
+    await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_fontcolor_p${n}_${stamp()}.png`);
+    await editor.screenshot(rect2 ? { path: shot, clip: rect2 } : { path: shot });
+    out({ cmd: 'font-color', applied: true, text: phrase, color: args.color, picked: { r: best.r, g: best.g, b: best.b }, selChars: sel.selChars, page: n, docId: editor.__docId || null, shot });
+  });
+}
+
 
 (async () => {
   const args = parseArgs(process.argv.slice(2));
@@ -1032,6 +1104,7 @@ async function cmdFontSize(args) {
     else if (args._ === 'align') await cmdAlign(args);
     else if (args._ === 'list') await cmdList(args);
     else if (args._ === 'font-size') await cmdFontSize(args);
+    else if (args._ === 'font-color') await cmdFontColor(args);
     else { log('사용법: capture --file <경로> [--page N] [--grid] | zoom --name <이름> --clip "x,y,w,h" [--page N] | around --name <이름> --text "<검색어>" [--grid] | locate --name <이름> --clues "a,b,c" [--grid] | insert-text --name <이름> --anchor "<기준 텍스트>" --text "<추가할 줄>" [--apply] | replace-text --name <이름> --find "<대상>" --to "<교체>" [--apply] | set-cell-text --name <이름> --cell "<기준 셀 텍스트>" --text "<값>" [--tab N] [--apply] | format-text --name <이름> --text "<구절>" --bold|--italic|--underline [--apply]'); process.exit(2); }
     process.exit(0);
   } catch (e) {
