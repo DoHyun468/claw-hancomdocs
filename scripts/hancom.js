@@ -513,6 +513,64 @@ async function cmdLocate(args) {
   } finally { await browser.close(); }
 }
 
+// ───────────────────────── 문서 편집 (insert-text) ─────────────────────────
+// insert-text: 앵커 텍스트를 찾아 그 줄 끝에 새 한 줄을 추가.
+// 안전: ① 블라인드 input 금지 — 캐럿은 findText(검색칸만 입력, 본문 미편집)로
+//   본문에 위치시키고, ② 캐럿이 본문 페이지 영역 안인지 가드한 뒤에만 타이핑, ③ dry-run 기본
+//   (--apply 없으면 read-only), ④ 편집은 headless 전용(--headed 금지), ⑤ 끝나면 캡처 1장.
+async function cmdInsertText(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (!args.anchor) throw new Error('--anchor 필요 (본문에서 찾을 기준 텍스트 — 이 줄 끝에 새 줄 추가)');
+  if (!args.text) throw new Error('--text 필요 (추가할 한 줄)');
+  const apply = !!args.apply;
+  // 편집은 headless 전용 — headed면 사용자 상호작용/스크롤로 캐럿 위치가 어긋나 오편집 위험.
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기(캡처) 전용 — 편집 금지.');
+  const scale = Number(args.scale) || 1.5;
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(scale, async (ctx, page) => {
+    const name = String(args.name).normalize('NFC');
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    // 1) 앵커로 캐럿을 본문에 안전 위치 (findText = 검색칸만 입력 → 본문 미편집, 캐럿만 매치로 이동)
+    const r = await findText(editor, String(args.anchor).normalize('NFC'));
+    if (!r.found) { out({ cmd: 'insert-text', status: 'anchor_not_found', anchor: args.anchor, docId: editor.__docId || null }); return; }
+    const n = r.page || 1;
+    const rect = await detectPageRect(editor);
+    const caret = r.caret; // findText가 닫기 전 읽어둔 매치(캐럿) 뷰포트 픽셀
+    if (!caret) { out({ cmd: 'insert-text', status: 'caret_not_found', anchor: args.anchor, docId: editor.__docId || null }); return; }
+    // 안전 가드: 캐럿이 본문 페이지 영역 안인가(제목칸/툴바 등 본문 밖이면 중단 — 블라인드 입력 방지)
+    const inBody = !!rect && caret.x >= rect.x - 5 && caret.x <= rect.x + rect.width + 5
+                   && caret.y >= rect.y - 5 && caret.y <= rect.y + rect.height + 300;
+    if (!inBody) { out({ cmd: 'insert-text', status: 'caret_out_of_body', anchor: args.anchor, caret, pageRect: rect, note: '본문 밖 캐럿 → 중단(오편집 방지)' }); return; }
+
+    if (!apply) {
+      // dry-run: 타이핑 없이 "어디에 무엇을 넣을지"만 리포트 (read-only)
+      out({ cmd: 'insert-text', dryRun: true, anchor: args.anchor, foundPage: n, caret, plannedText: args.text,
+            docId: editor.__docId || null, note: '--apply 없으면 read-only. 적용 시: 캐럿 줄 끝 → Enter → 타이핑.' });
+      return;
+    }
+
+    // 2) 적용: 캐럿 줄 클릭(본문 포커스) → 줄 끝(End) → 새 줄(Enter) → 타이핑
+    await editor.mouse.click(caret.x, caret.y + Math.round((caret.h || 12) / 2));
+    await editor.waitForTimeout(350);
+    await editor.keyboard.press('End');   // 줄 끝으로 (webhwp 실측 동작 — 캡처로 검증)
+    await editor.waitForTimeout(180);
+    await editor.keyboard.press('Enter'); // 새 줄
+    await editor.waitForTimeout(180);
+    await editor.keyboard.type(String(args.text).normalize('NFC'), { delay: 35 });
+    await editor.waitForTimeout(1400);    // 자동저장/OT 동기화 여유
+
+    // 3) regression 캡처 — 의도한 영역만 바뀌었는지 한 장
+    await gotoPage(editor, n);
+    const rect2 = await detectPageRect(editor);
+    await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_insert_p${n}_${stamp()}.png`);
+    await editor.screenshot(rect2 ? { path: shot, clip: rect2 } : { path: shot });
+    out({ cmd: 'insert-text', applied: true, anchor: args.anchor, text: args.text, page: n,
+          docId: editor.__docId || null, shot });
+  });
+}
+
 (async () => {
   const args = parseArgs(process.argv.slice(2));
   HEADED = !!args.headed;                                    // --headed: 창 띄워 보기(디버그)
@@ -522,7 +580,8 @@ async function cmdLocate(args) {
     else if (args._ === 'zoom') await cmdZoom(args);
     else if (args._ === 'around') await cmdAround(args);
     else if (args._ === 'locate') await cmdLocate(args);
-    else { log('사용법: capture --file <경로> [--page N] [--grid] | zoom --name <이름> --clip "x,y,w,h" [--page N] | around --name <이름> --text "<검색어>" [--grid] | locate --name <이름> --clues "a,b,c" [--grid]'); process.exit(2); }
+    else if (args._ === 'insert-text') await cmdInsertText(args);
+    else { log('사용법: capture --file <경로> [--page N] [--grid] | zoom --name <이름> --clip "x,y,w,h" [--page N] | around --name <이름> --text "<검색어>" [--grid] | locate --name <이름> --clues "a,b,c" [--grid] | insert-text --name <이름> --anchor "<기준 텍스트>" --text "<추가할 줄>" [--apply]'); process.exit(2); }
     process.exit(0);
   } catch (e) {
     if (e instanceof CannotOpenError || e.message === 'CANNOT_OPEN') {
