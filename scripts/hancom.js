@@ -156,6 +156,8 @@ async function detectOpenError(editor) {
 }
 
 class CannotOpenError extends Error { constructor(name) { super('CANNOT_OPEN'); this.docName = name; } }
+// 요청한 파일이 아닌 다른 문서가 열렸을 때(동시 업로드 race·동명 파일 등). 엉뚱한 문서를 캡처/검증하는 사고 차단.
+class WrongDocError extends Error { constructor(name, title, docId) { super('WRONG_DOC'); this.docName = name; this.openedTitle = title; this.docId = docId; } }
 
 // 협업/오버레이 흔적 숨기기 (캡처 혼동 방지).
 //   DOM 흔적: 협업 커서 이름표·협업자 패널·채팅 위젯 → CSS로 가림.
@@ -215,6 +217,18 @@ async function openDoc(ctx, page, name) {
   // 고정 대기 대신 "준비되면 진행"(내용 렌더 or 에러 다이얼로그 즉시 감지) — 매 호출 ~5초 절약
   const st = await waitForReady(editor);
   if (st === 'error') throw new CannotOpenError(name);
+  // 엉뚱한 문서 차단: 편집기는 docId 로 신원이 정해진다.
+  //   URL  = https://webhwp.hancomdocs.com/webhwp/?mode=HWP_EDITOR&docId=<id>&lang=ko_KR
+  //   제목 = "<파일명> - 한컴오피스 Web v2 한글"
+  // 이름으로 행을 클릭해 열기 때문에, 다중 세션 파이프라인에서 동시 업로드가 끝나며 다른 행이
+  // 열리는 race / 동명 파일 등으로 "요청한 그 파일이 아닌" 문서가 열릴 수 있다. docId 를 1차 신원으로
+  // 붙여두고(__docId), 제목으로 교차 확인해 불일치면 즉시 중단한다(잘못된 문서를 캡처/검증하는 사고 차단).
+  const ident = await editor.evaluate(() => ({ url: location.href, title: document.title || '' }));
+  const docId = (String(ident.url).match(/[?&]docId=([^&#]+)/) || [])[1] || null;
+  const title = String(ident.title).normalize('NFC');
+  const stem = name.replace(/\.[^.]+$/, '');
+  if (title && stem && !title.includes(stem)) throw new WrongDocError(name, title, docId);
+  editor.__docId = docId; // 호출부가 결과(out)에 실어 보내 검증·로깅에 쓴다
   // 진입 presence(파란 물방울)는 대기로 빼지 않고, 스크린샷 직전 hideOverlays 에서
   // '오버레이 캔버스 숨김'으로 즉시 제거한다(대기 0초).
   return editor; // 'timeout'이어도 진행(렌더 매우 느린 예외 케이스)
@@ -292,7 +306,7 @@ async function cmdCapture(args) {
     // (상태바의 '현재 쪽'은 캐럿 기준이라 — 스크롤만 하면 page1 고정 — 캡처한 쪽과 무관해서 노출하지 않음.
     //  페이지 점프는 페이지 높이 균일(A4 100%) 가정. 비표준 문서는 --page-height로 보정.)
     const pc = await readPageCount(editor);
-    out({ cmd: 'capture', shot, docName: name, page: n,
+    out({ cmd: 'capture', shot, docName: name, docId: editor.__docId || null, page: n,
           totalPages: pc ? pc.total : null,
           estTotalPages: pc ? pc.total : pageInfo.estTotal,
           pageWidth: rect.width, pageHeight: rect.height, scale, grid: !!args.grid });
@@ -322,7 +336,7 @@ async function cmdZoom(args) {
     };
     const shot = args.out || path.join(CAPDIR, `${String(args.name).replace(/\.[^.]+$/, '')}_p${n}_zoom_${stamp()}.png`);
     await editor.screenshot({ path: shot, clip });
-    out({ cmd: 'zoom', shot, docName: args.name, page: n, clipLocal: { x: lx, y: ly, width: w, height: h }, scale });
+    out({ cmd: 'zoom', shot, docName: args.name, docId: editor.__docId || null, page: n, clipLocal: { x: lx, y: ly, width: w, height: h }, scale });
   });
 }
 
@@ -437,7 +451,7 @@ async function cmdAround(args) {
       };
       const shot = args.out || path.join(CAPDIR, `${String(args.name).replace(/\.[^.]+$/, '')}_findzoom_${stamp()}.png`);
       await editor.screenshot({ path: shot, clip });
-      out({ cmd: 'around', found: true, zoom: true, text: args.text, page: r.page, shot, pageWidth: rect.width, band, scale });
+      out({ cmd: 'around', found: true, zoom: true, text: args.text, docId: editor.__docId || null, page: r.page, shot, pageWidth: rect.width, band, scale });
       return;
     }
 
@@ -449,7 +463,7 @@ async function cmdAround(args) {
     if (args.grid) await injectGrid(editor, rect);
     const shot = args.out || path.join(CAPDIR, `${String(args.name).replace(/\.[^.]+$/, '')}_find_${stamp()}.png`);
     await editor.screenshot({ path: shot, clip: rect });
-    out({ cmd: 'around', found: true, text: args.text, page: r.page, shot, pageWidth: rect.width, pageHeight: rect.height, scale, grid: !!args.grid });
+    out({ cmd: 'around', found: true, text: args.text, docId: editor.__docId || null, page: r.page, shot, pageWidth: rect.width, pageHeight: rect.height, scale, grid: !!args.grid });
   });
 }
 
@@ -479,12 +493,13 @@ async function cmdLocate(args) {
     results.forEach((r) => { if (r.page) votes[r.page] = (votes[r.page] || 0) + 1; });
     const ranked = Object.entries(votes).sort((a, b) => b[1] - a[1] || Number(a[0]) - Number(b[0]));
     const converged = ranked.length ? Number(ranked[0][0]) : null;
-    let shot = null;
+    let shot = null, docId = null;
     if (converged) {
       const ctx = await browser.newContext({ storageState: AUTH, viewport: VIEW, deviceScaleFactor: scale });
       const page = await ctx.newPage();
       try {
         const ed = await openDoc(ctx, page, args.name);
+        docId = ed.__docId || null;
         await gotoPage(ed, converged);
         const rect = await detectPageRect(ed);
         if (!rect || rect.width < 100) throw new Error('A4 페이지 영역 검출 실패');
@@ -494,7 +509,7 @@ async function cmdLocate(args) {
         await ed.screenshot({ path: shot, clip: rect });
       } finally { await ctx.close(); }
     }
-    out({ cmd: 'locate', clues: results, votes, converged, shot });
+    out({ cmd: 'locate', clues: results, votes, converged, docId, shot });
   } finally { await browser.close(); }
 }
 
@@ -513,6 +528,11 @@ async function cmdLocate(args) {
     if (e instanceof CannotOpenError || e.message === 'CANNOT_OPEN') {
       out({ status: 'cannot_open', docName: e.docName, reason: 'webhwp가 파일을 열 수 없습니다(손상/형식 오류). hwp·hwpx 무관 동일 에러.' });
       process.exit(5);
+    }
+    if (e instanceof WrongDocError || e.message === 'WRONG_DOC') {
+      out({ status: 'wrong_doc', docName: e.docName, openedTitle: e.openedTitle, docId: e.docId,
+            reason: '요청한 파일과 다른 문서가 열렸습니다(동시 업로드 race·동명 파일 등). 재시도 전 드라이브 상태 확인 필요.' });
+      process.exit(6);
     }
     console.error('ERR', e.message);
     out({ error: e.message });
