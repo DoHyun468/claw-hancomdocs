@@ -133,6 +133,21 @@ node hancom.js replace-text --name <문서이름> --find "<바꿀 대상>" --to 
 
 > ⚠️ `insert-text`와 동일: **편집은 headless 전용**(`--headed`는 보기 전용), 다이얼로그 입력칸에만 입력하고 본문에 블라인드 입력하지 않는다.
 
+## ▦ 편집 — 표 셀 채우기 (`set-cell-text`)
+
+표의 셀 값을 채우거나 바꾼다. 본문이 `<canvas>`라 셀을 좌표로 직접 못 짚으므로, **기준 셀의 기존 텍스트(`--cell`)를 찾아** 거기서 **Tab으로 대상 셀까지 이동**해 입력한다.
+
+```bash
+node hancom.js set-cell-text --name <문서이름> --cell "<기준 셀 텍스트>" --text "<채울 값>" [--tab N] [--apply]
+```
+
+- **동작**: `--cell` 텍스트가 있는 셀을 찾아 캐럿을 두고, **Tab을 N번**(기본 1 = 바로 다음 셀) 눌러 대상 셀로 이동 → 그 셀의 기존 내용을 선택해 `--text`로 교체(빈 셀이면 그냥 채움). `--tab 0`이면 기준 셀 자체를 바꾼다.
+- **`--apply` 없으면 dry-run(read-only)**: 기준 셀을 찾았는지(`foundPage`)만 확인.
+- **반환**: 적용 시 `{applied:true, cell, tab, text, page, docId, shot}`. 기준 셀이 없으면 `{status:"cell_not_found"}`.
+- **셀 지정 팁**: 같은 행에서 **고유한 라벨 셀**을 `--cell`로(예: `"매출"`), 그 오른쪽 칸이면 `--tab 1`, 두 칸 뒤면 `--tab 2`. 어디로 가는지 헷갈리면 먼저 `capture`로 표를 보고 칸 수를 센다. (셀이 한 줄일 때 정확 — 여러 줄 셀은 첫 줄만 교체.)
+
+> ⚠️ 편집은 headless 전용(`--headed`는 보기 전용), 캐럿은 찾기로만 이동하고 본문에 블라인드 입력하지 않는다.
+
 ## 🚫 열 수 없는 파일
 
 손상/형식오류로 webhwp가 못 여는 파일은 캡처 대신 `{"status":"cannot_open","docName":"...","reason":"..."}` 반환(exit 5, hwp·hwpx 동일).

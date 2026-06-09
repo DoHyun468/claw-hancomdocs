@@ -701,6 +701,58 @@ async function cmdReplaceText(args) {
   });
 }
 
+// set-cell-text: 표 셀 채우기. 본문 canvas라 셀 위치를 셀렉터로 못 짚으므로, 기준 셀의 기존
+// 텍스트(--cell)를 찾기로 찾아 캐럿을 그 셀에 두고 → Tab 으로 대상 셀 이동 → 입력.
+// 안전: 찾기(읽기전용)로만 캐럿 이동, 캐럿이 본문 영역 밖이면 중단, dry-run 기본, headless 전용.
+async function cmdSetCellText(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (args.cell == null || args.cell === true) throw new Error('--cell 필요 (기준 셀의 기존 텍스트)');
+  if (args.text == null || args.text === true) throw new Error('--text 필요 (채울 값)');
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
+  const tabN = args.tab !== undefined ? Math.max(0, Number(args.tab)) : 1; // 기준 셀에서 Tab 횟수(1=다음 셀)
+  const cellText = String(args.cell).normalize('NFC');
+  const value = String(args.text).normalize('NFC');
+  const scale = Number(args.scale) || 1.5;
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(scale, async (ctx, page) => {
+    const name = String(args.name).normalize('NFC');
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    const r = await findText(editor, cellText);
+    if (!r.found) { out({ cmd: 'set-cell-text', status: 'cell_not_found', cell: cellText, docId: editor.__docId || null }); return; }
+    const n = r.page || 1;
+    const rect = await detectPageRect(editor);
+    const caret = r.caret;
+    if (!caret) { out({ cmd: 'set-cell-text', status: 'caret_not_found', cell: cellText, docId: editor.__docId || null }); return; }
+    const inBody = !!rect && caret.x >= rect.x - 5 && caret.x <= rect.x + rect.width + 5 && caret.y >= rect.y - 5 && caret.y <= rect.y + rect.height + 300;
+    if (!inBody) { out({ cmd: 'set-cell-text', status: 'caret_out_of_body', cell: cellText, caret, pageRect: rect }); return; }
+    if (!apply) {
+      out({ cmd: 'set-cell-text', dryRun: true, cell: cellText, tab: tabN, text: value, foundPage: n, caret,
+            docId: editor.__docId || null, note: '--apply 없으면 read-only. 적용 시: 기준 셀에서 Tab×' + tabN + ' 이동 후 입력.' });
+      return;
+    }
+    // 기준 셀에 캐럿 → Tab×N 으로 대상 셀 이동
+    await editor.mouse.click(caret.x, caret.y + Math.round((caret.h || 12) / 2));
+    await editor.waitForTimeout(350);
+    for (let i = 0; i < tabN; i++) { await editor.keyboard.press('Tab'); await editor.waitForTimeout(180); }
+    // 대상 셀의 기존 내용을 선택해 교체 — webhwp Tab 은 셀 내용을 자동 선택하지 않으므로(캐럿만 셀 시작
+    // 으로 이동) 명시 선택한다: 줄 시작(Home) → 줄 끝까지(Shift+End) → 타이핑이 선택을 교체. 빈 셀이면
+    // 선택 0 → 그냥 입력. (단일 줄 셀 기준; 여러 줄 셀은 첫 줄만 선택되는 한계.)
+    await editor.keyboard.press('Home');
+    await editor.keyboard.down('Shift'); await editor.keyboard.press('End'); await editor.keyboard.up('Shift');
+    await editor.waitForTimeout(120);
+    await editor.keyboard.type(value, { delay: 35 });
+    await editor.waitForTimeout(1300);
+    await gotoPage(editor, n);
+    const rect2 = await detectPageRect(editor);
+    await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_cell_p${n}_${stamp()}.png`);
+    await editor.screenshot(rect2 ? { path: shot, clip: rect2 } : { path: shot });
+    out({ cmd: 'set-cell-text', applied: true, cell: cellText, tab: tabN, text: value, page: n, docId: editor.__docId || null, shot });
+  });
+}
+
 (async () => {
   const args = parseArgs(process.argv.slice(2));
   HEADED = !!args.headed;                                    // --headed: 창 띄워 보기(디버그)
@@ -712,7 +764,8 @@ async function cmdReplaceText(args) {
     else if (args._ === 'locate') await cmdLocate(args);
     else if (args._ === 'insert-text') await cmdInsertText(args);
     else if (args._ === 'replace-text') await cmdReplaceText(args);
-    else { log('사용법: capture --file <경로> [--page N] [--grid] | zoom --name <이름> --clip "x,y,w,h" [--page N] | around --name <이름> --text "<검색어>" [--grid] | locate --name <이름> --clues "a,b,c" [--grid] | insert-text --name <이름> --anchor "<기준 텍스트>" --text "<추가할 줄>" [--apply] | replace-text --name <이름> --find "<대상>" --to "<교체>" [--apply]'); process.exit(2); }
+    else if (args._ === 'set-cell-text') await cmdSetCellText(args);
+    else { log('사용법: capture --file <경로> [--page N] [--grid] | zoom --name <이름> --clip "x,y,w,h" [--page N] | around --name <이름> --text "<검색어>" [--grid] | locate --name <이름> --clues "a,b,c" [--grid] | insert-text --name <이름> --anchor "<기준 텍스트>" --text "<추가할 줄>" [--apply] | replace-text --name <이름> --find "<대상>" --to "<교체>" [--apply] | set-cell-text --name <이름> --cell "<기준 셀 텍스트>" --text "<값>" [--tab N] [--apply]'); process.exit(2); }
     process.exit(0);
   } catch (e) {
     if (e instanceof CannotOpenError || e.message === 'CANNOT_OPEN') {
