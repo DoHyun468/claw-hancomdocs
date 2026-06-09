@@ -1,18 +1,15 @@
 ---
 name: claw-hancomdocs
-description: Drive 한컴독스(Hancom Docs) web viewer/editor (webhwp) via Playwright to upload .hwp/.hwpx files, capture rendered pages (A4 screenshots / zoomed regions / find-by-text), and (Phase 2 — in progress) directly edit documents through Hancom's own web UI. Use when the user wants to SEE how a Korean document renders in 한컴독스, screenshot a hwp/hwpx page, "한컴독스에 올려서 보여줘", check styling/tables/layout as the web viewer shows them, detect that a file won't open, or create/edit a document through Hancom's native web editor. Headless, reuses saved login. **Local-machine only** — does not run in Cowork sandbox (proxy blocks webhwp.hancomdocs.com).
+description: Drive 한컴독스(Hancom Docs) web viewer/editor (webhwp) via Playwright to upload .hwp/.hwpx files, capture rendered pages (A4 screenshots / zoomed regions / find-by-text), and directly edit documents through Hancom's own web UI. Use when the user wants to SEE how a Korean document renders in 한컴독스, screenshot a hwp/hwpx page, "한컴독스에 올려서 보여줘", check styling/tables/layout as the web viewer shows them, detect that a file won't open, or create/edit a document through Hancom's native web editor. Headless, reuses saved login. **Local-machine only** — does not run in Cowork sandbox (proxy blocks webhwp.hancomdocs.com).
 license: MIT
 ---
 
 # claw-hancomdocs
 
-한컴독스 web (webhwp) 을 Playwright 로 드라이브 — 업로드 / 페이지 캡처 / 영역 확대 / 텍스트 검색 / **(Phase 2)** 직접 편집.
-
-- Phase 1 (capture) — 작동 검증됨. 아래 명령 참고
-- Phase 2 (edit) — 구현 중. `HANDOFF_PHASE2_EDIT.md` 참고
+한컴독스 web (webhwp) 을 Playwright 로 드라이브 — 업로드 / 페이지 캡처 / 영역 확대 / 텍스트 검색 / 문서에 한 줄 추가.
 
 Playwright headless로 동작 — **보이는 창 없음**, 물리 마우스/키보드 안 건드림, 백그라운드 가능.
-스크립트는 `scripts/`에 있고 capture/zoom/around/locate 4개 명령 작동 검증됨.
+스크립트는 `scripts/`에 있고 `capture` / `zoom` / `around` / `locate` / `insert-text` 명령을 제공한다.
 
 > **Local-machine 전용.** Cowork sandbox 에서는 `www.hancomdocs.com` proxy 차단 + `auth.json` 머신 종속으로 실행 불가. 사용자 Mac / Windows / Linux 머신에서 직접 실행.
 
@@ -75,6 +72,7 @@ node hancom.js capture --file <절대경로> [--page N] [--grid] [--scale N] [--
 node hancom.js zoom    --name <문서이름>  --clip "x,y,w,h" [--page N] [--scale N] [--out <png>]
 node hancom.js around  --name <문서이름>  --text "<검색어>" [--zoom [--band N]] [--grid] [--out <png>]
 node hancom.js locate  --name <문서이름>  --clues "a,b,c" [--grid] [--out <png>]
+node hancom.js insert-text --name <문서이름> --anchor "<기준 텍스트>" --text "<추가할 한 줄>" [--apply]
 ```
 
 - **capture**: 파일을 (필요시) 업로드하고 N쪽(기본 1)을 **A4 한 장 깔끔히** 캡처(툴바·여백 없음, 잘림 없음). 반환 `{shot, docName, page, totalPages, estTotalPages, pageWidth, pageHeight}`.
@@ -102,6 +100,23 @@ node hancom.js locate  --name <문서이름>  --clues "a,b,c" [--grid] [--out <p
    - 좌표계는 **페이지 왼쪽위=(0,0)** 으로 격자 라벨과 동일. 어긋나면 격자 이미지를 다시 띄워 라벨 숫자를 그대로 읽을 것.
 
 자세한 명세: `ORDER_SPEC.txt`.
+
+## ✏️ 편집 — 한 줄 추가 (`insert-text`)
+
+문서 본문에 **한 줄을 추가**한다. 본문은 `<canvas>`라 좌표로 글자를 직접 못 짚으므로, **기준이 되는 기존 텍스트(앵커)를 찾아 그 줄 끝에 새 줄을 삽입**한다.
+
+```bash
+node hancom.js insert-text --name <문서이름> --anchor "<기준 텍스트>" --text "<추가할 한 줄>" [--apply]
+```
+
+- **동작**: `--anchor` 텍스트를 한컴독스 찾기로 찾아 그 줄 끝으로 이동 → 새 줄 → `--text` 입력. 결과적으로 **앵커가 있는 단락 바로 다음 줄**에 한 줄이 추가된다.
+- **`--apply` 없으면 dry-run(read-only)**: 문서를 바꾸지 않고 "어디에(앵커 위치·페이지) 무엇을 넣을지"만 `RESULT_JSON`으로 보여준다. **먼저 dry-run으로 앵커가 잘 잡히는지 확인**하고, 맞으면 `--apply`로 적용을 권장.
+- **반환**: 적용 시 `{applied:true, anchor, text, page, docId, shot}` — `shot`은 적용 후 그 페이지 캡처(바뀐 결과 눈으로 확인용). dry-run은 `{dryRun:true, foundPage, caret, plannedText}`. 앵커를 못 찾으면 `{status:"anchor_not_found"}`.
+- **앵커 고르기**: 문서에 **한 번만 나오는 구체적 구절**로(흔한 단어는 엉뚱한 곳에 잡힐 수 있음). 어디 들어가는지 헷갈리면 dry-run의 `foundPage`/`caret`로 확인.
+- **문서 맨 끝에 추가하려면**: 먼저 `capture`로 **마지막 줄 텍스트**를 확인하고, 그 줄을 `--anchor`로 준다.
+
+> ⚠️ **편집은 headless 전용.** `--headed`로는 편집할 수 없다(보기/캡처 전용) — 편집 중 창을 보면 스크롤·상호작용으로 캐럿 위치가 어긋난다. 결과를 보고 싶으면 적용 뒤 `shot`(또는 `capture --page`)으로 확인.
+> ⚠️ **안전**: 본문/제목 input에 **블라인드로 직접 입력하지 않는다**. 캐럿은 항상 찾기(앵커)로 본문에 위치시킨 뒤에만 타이핑하며, 캐럿이 본문 영역을 벗어나면 `{status:"caret_out_of_body"}`로 중단한다(오편집 방지).
 
 ## 🚫 열 수 없는 파일
 
