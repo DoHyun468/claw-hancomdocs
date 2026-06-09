@@ -198,13 +198,19 @@ async function detectPageRect(ed) {
   const TBOPEN = process.argv[2] === '--toolbar-open';
   const TBSEL = TBOPEN ? (process.argv[3] || '').replace(/^\./, '') : null; // 예: font_color
   const TABLE = process.argv[2] === '--table';
+  const COLLAB = process.argv[2] === '--collab'; // 협업(사용자가 같이 열어둠) 감지 실측
+  const COLLABEDIT = process.argv[2] === '--collab-edit'; // 2세션 열어 협업 유발 후 편집 실측
+  const EDITDEMO = process.argv[2] === '--edit-demo';     // 단일 세션 headed 편집 데모(사용자가 봄)
+  const HEADED = process.argv.includes('--headed');       // 강제 headed(사용자가 보고 싶을 때)
+  const WHOAMI = process.argv[2] === '--whoami';          // 연 에디터의 URL/제목 = 어떤 파일인지 식별 검증
   const TABLEDOC = (TABLE && process.argv[3]) || 'tabletest.hwpx';
   const TPX = TABLE ? Number(process.argv[4] || 250) : 0;
   const TPY = TABLE ? Number(process.argv[5] || 285) : 0;
   const MENU = RAW ? process.argv[3] : ((SWEEP || TABLE) ? null : (process.argv[2] || '입력'));
   const HOVER = (RAW || SWEEP || TABLE) ? null : (process.argv[3] || null);
 
-  const browser = await chromium.launch({ headless: true });
+  const headed = HEADED || EDITDEMO; // 사용자가 볼 때만 보이는 창 + 천천히
+  const browser = await chromium.launch({ headless: !headed, slowMo: headed ? 300 : 0 });
   const ctx = await browser.newContext({ storageState: AUTH, viewport: VIEW, deviceScaleFactor: 1.5 });
   try {
     const page = await ctx.newPage();
@@ -259,6 +265,76 @@ async function detectPageRect(ed) {
       const shot = path.join(OUTDIR, `raw_${MENU}.png`);
       await editor.screenshot({ path: shot });
       out({ raw: MENU, count: raw.length, items: raw, shot });
+    } else if (COLLAB) {
+      // 편집 전 안전게이트용 단발 체크 — 신뢰 신호 = "편집 (N)" 카운트. N>=2 = 사용자가 같은 문서 열어둔 협업 모드.
+      const s = await editor.evaluate(() => {
+        let count = null;
+        for (const el of document.querySelectorAll('*')) {
+          const t = (el.textContent || '').trim();
+          const m = t.match(/편집\s*\((\d+)\)/);
+          if (m && t.length < 40) { count = Number(m[1]); break; }
+        }
+        const collaborators = [...document.querySelectorAll('.user_list, .collaborationusers')].map((e) => (e.textContent || '').trim().slice(0, 40)).filter(Boolean);
+        return { count, collaborators };
+      });
+      out({ collab: true, doc: DOC, collabActive: s.count >= 2, editorCount: s.count, collaborators: s.collaborators });
+    } else if (COLLABEDIT) {
+      // 내가 직접 2번째 세션(같은 auth=같은 계정) 띄워 협업 유발 → 두 세션이 같은 본문 자리를 동시 타이핑(방해).
+      const ctx2 = await browser.newContext({ storageState: AUTH, viewport: VIEW, deviceScaleFactor: 1.5, acceptDownloads: true });
+      const editor2 = await openEditor(ctx2, await ctx2.newPage());
+      await editor.waitForTimeout(3000); // 협업 등록 여유
+      const countOf = (ed) => ed.evaluate(() => { let c = null; for (const el of document.querySelectorAll('*')) { const t = (el.textContent || '').trim(); const m = t.match(/편집\s*\((\d+)\)/); if (m && t.length < 40) { c = Number(m[1]); break; } } return c; });
+      const caretOf = (ed) => ed.evaluate(() => { const el = document.querySelector('#HWP_CURSOR_VIEW, .BLINK_CURSOR'); if (!el) return null; const r = el.getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y) }; });
+      const rect = await detectPageRect(editor);
+      const rectB = await detectPageRect(editor2);
+      const countA = await countOf(editor);
+      // 두 세션이 같은 본문 영역 클릭 후 교대로 타이핑 (A=A들, B=B들)
+      await editor.mouse.click(rect.x + 160, rect.y + 190);
+      await editor2.mouse.click(rectB.x + 160, rectB.y + 190);
+      await editor.waitForTimeout(500);
+      for (let i = 0; i < 6; i++) {
+        await editor.keyboard.type('A', { delay: 0 });
+        await editor2.keyboard.type('B', { delay: 0 });
+        await editor.waitForTimeout(180);
+      }
+      await editor.waitForTimeout(2500);
+      const caretA = await caretOf(editor);
+      const cursorCountA = await editor.evaluate(() => document.querySelectorAll('#HWP_CURSOR_VIEW, .BLINK_CURSOR, .user_cursor_container').length);
+      const shotA = path.join(OUTDIR, 'collab_edit_A.png');
+      const shotB = path.join(OUTDIR, 'collab_edit_B.png');
+      await editor.screenshot({ path: shotA });
+      await editor2.screenshot({ path: shotB });
+      await ctx2.close();
+      out({ collabEdit: true, collabActive: countA >= 2, countA, cursorCountA, caretA, note: 'A=AAAAAA / B=BBBBBB 같은 자리 동시 타이핑', shotA, shotB });
+    } else if (EDITDEMO) {
+      // 단일 세션(headed) 편집 데모 — 사용자가 봄. 1세션이라 협업 아님(count 1).
+      await editor.bringToFront().catch(() => {});
+      // 기존 동기화/오류 다이얼로그 있으면 '확인' 눌러 복원
+      await editor.getByText('확인', { exact: true }).first().click({ timeout: 2500 }).catch(() => {});
+      await editor.waitForTimeout(1000);
+      const count = await editor.evaluate(() => { let c = null; for (const el of document.querySelectorAll('*')) { const t = (el.textContent || '').trim(); const m = t.match(/편집\s*\((\d+)\)/); if (m && t.length < 40) { c = Number(m[1]); break; } } return c; });
+      const rect = await detectPageRect(editor);
+      log('단일 세션 편집 데모(headed) — 협업 카운트: ' + (count === null ? '없음(1세션 = 협업 아님)' : count) + ' / 18초간 보세요.');
+      await editor.mouse.click(rect.x + 160, rect.y + 190); // 본문 텍스트 클릭
+      await editor.waitForTimeout(1000);
+      await editor.keyboard.type(' [편집데모] ', { delay: 260 }); // 천천히(사용자가 봄)
+      await editor.waitForTimeout(18000); // 충분히 보게
+      const shot = path.join(OUTDIR, 'edit_demo.png');
+      await editor.screenshot({ path: shot });
+      out({ editDemo: true, collabActive: count >= 2, editorCount: count, note: '1세션이면 count null/1 = 협업 아님 = 충돌 없음', shot });
+    } else if (WHOAMI) {
+      // 연 에디터가 어떤 파일인지 식별 — URL(doc id 있나) + 제목
+      const url = editor.url();
+      const info = await editor.evaluate(() => {
+        let header = null, headerCls = null;
+        for (const el of document.querySelectorAll('a, span, div, input')) {
+          const t = (el.value || el.textContent || '').trim();
+          const r = el.getBoundingClientRect();
+          if (t && t.length < 60 && r.top < 30 && r.left < 420 && r.width > 20 && el.childElementCount === 0) { header = t; headerCls = (el.className || '').toString().slice(0, 44); break; }
+        }
+        return { documentTitle: document.title, headerTitle: header, headerCls };
+      });
+      out({ whoami: true, expected: DOC, url, ...info });
     } else if (TOOLBAR) {
       const tb = await dumpToolbar(editor);
       out({ toolbar: true, count: tb.length, row2: tb.filter((t) => t.row === 2), row3: tb.filter((t) => t.row === 3) });
