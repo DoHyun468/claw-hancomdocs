@@ -9,7 +9,7 @@ license: MIT
 한컴독스 web (webhwp) 을 Playwright 로 드라이브 — 업로드 / 페이지 캡처 / 영역 확대 / 텍스트 검색 / 문서에 한 줄 추가.
 
 Playwright headless로 동작 — **보이는 창 없음**, 물리 마우스/키보드 안 건드림, 백그라운드 가능.
-스크립트는 `scripts/`에 있고 `capture` / `zoom` / `around` / `locate` / `insert-text` / `replace-text` / `set-cell-text` 명령을 제공한다.
+스크립트는 `scripts/`에 있고 `capture` / `zoom` / `around` / `locate` / `insert-text` / `replace-text` / `set-cell-text` / `format-text` 명령을 제공한다.
 
 > **Local-machine 전용.** Cowork sandbox 에서는 `www.hancomdocs.com` proxy 차단 + `auth.json` 머신 종속으로 실행 불가. 사용자 Mac / Windows / Linux 머신에서 직접 실행.
 
@@ -75,6 +75,7 @@ node hancom.js locate  --name <문서이름>  --clues "a,b,c" [--grid] [--out <p
 node hancom.js insert-text  --name <문서이름> --anchor "<기준 텍스트>" --text "<추가할 한 줄>" [--apply]
 node hancom.js replace-text --name <문서이름> --find "<바꿀 대상>" --to "<바꿀 결과>" [--apply]
 node hancom.js set-cell-text --name <문서이름> --cell "<기준 셀 텍스트>" --text "<채울 값>" [--tab N] [--apply]
+node hancom.js format-text  --name <문서이름> --text "<구절>" --bold|--italic|--underline [--apply]
 ```
 
 - **capture**: 파일을 (필요시) 업로드하고 N쪽(기본 1)을 **A4 한 장 깔끔히** 캡처(툴바·여백 없음, 잘림 없음). 반환 `{shot, docName, page, totalPages, estTotalPages, pageWidth, pageHeight}`.
@@ -149,6 +150,22 @@ node hancom.js set-cell-text --name <문서이름> --cell "<기준 셀 텍스트
 - **셀 지정 팁**: 같은 행에서 **고유한 라벨 셀**을 `--cell`로(예: `"매출"`), 그 오른쪽 칸이면 `--tab 1`, 두 칸 뒤면 `--tab 2`. 어디로 가는지 헷갈리면 먼저 `capture`로 표를 보고 칸 수를 센다. (셀이 한 줄일 때 정확 — 여러 줄 셀은 첫 줄만 교체.)
 
 > ⚠️ 편집은 headless 전용(`--headed`는 보기 전용), 캐럿은 찾기로만 이동하고 본문에 블라인드 입력하지 않는다.
+
+## 𝐁 편집 — 글자 서식 (`format-text`)
+
+문서에서 **특정 구절을 찾아 글자 서식**(굵게/기울임/밑줄)을 적용한다.
+
+```bash
+node hancom.js format-text --name <문서이름> --text "<구절>" --bold [--italic] [--underline] [--apply]
+```
+
+- **동작**: `--text` 구절을 찾아 그 구절만 선택한 뒤 준 서식을 토글(이미 적용돼 있으면 해제). 여러 서식 동시 지정 가능.
+- **서식 플래그**: `--bold`(굵게) · `--italic`(기울임) · `--underline`(밑줄). **하나 이상** 필요.
+- **`--apply` 없으면 dry-run(read-only)**: 구절이 문서에 있는지(`foundPage`)만 확인.
+- **반환**: 적용 시 `{applied:true, text, styles, selChars, page, docId, shot}`. 구절이 없으면 `{status:"text_not_found"}`, 선택에 실패하면 `{status:"selection_failed"}`(더 고유한 구절로 재시도).
+- **구절 고르기**: 문서에 **한 번만 나오는 구체적 구절**로(여러 번 나오면 첫 매치에만 적용).
+
+> ⚠️ 편집은 headless 전용(`--headed`는 보기 전용). **토글**이라 이미 그 서식이 걸린 구절에 다시 적용하면 해제된다 — 결과를 `shot`(또는 `capture`)으로 확인.
 
 ## 🚫 열 수 없는 파일
 

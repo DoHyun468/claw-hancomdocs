@@ -753,6 +753,107 @@ async function cmdSetCellText(args) {
   });
 }
 
+// 상태바의 '선택 글자수' — 선택이 있으면 'N / M 글자'(N=선택), 없으면 'M 글자' → 0.
+async function readSelectedCount(ed) {
+  return await ed.evaluate(() => {
+    for (const e of document.querySelectorAll('*')) {
+      const t = (e.textContent || '').replace(/\s+/g, ' ').trim();
+      const m = t.match(/(\d+)\s*\/\s*\d+\s*글자/);
+      if (m) return Number(m[1]);
+    }
+    return 0;
+  });
+}
+
+// 다이얼로그 버튼을 텍스트(DOM)로 찾아 좌표 반환 — 하드코딩 오프셋 brittleness 회피(§3).
+async function dialogBtnXY(ed, label) {
+  return await ed.evaluate((lab) => {
+    for (const el of document.querySelectorAll('a, button, div, span')) {
+      const t = (el.textContent || '').trim();
+      if (t === lab && el.offsetParent !== null && el.childElementCount === 0) {
+        const r = el.getBoundingClientRect();
+        if (r.width > 15 && r.height > 10) return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+      }
+    }
+    return null;
+  }, label);
+}
+
+// 찾기로 매치를 '선택된 채로' 남긴다(서식 적용용). 버튼은 DOM 텍스트로 클릭(오프셋 금지).
+// 닫은 뒤 상태바로 선택 글자수(selChars) 확인 → 0이면 호출부가 재시도.
+async function findSelect(ed, text) {
+  await openFindDialog(ed);
+  const box = await ed.evaluate(() => {
+    const ins = Array.from(document.querySelectorAll('input')).map((el) => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, vis: r.width > 60 && r.height > 10 && getComputedStyle(el).visibility !== 'hidden' && el.getAttribute('aria-label') !== '문서 편집 영역' }; });
+    const cand = ins.filter((i) => i.vis && i.y > 300).sort((a, b) => b.w - a.w)[0];
+    return cand ? { x: Math.round(cand.x), y: Math.round(cand.y), w: Math.round(cand.w), h: Math.round(cand.h) } : null;
+  });
+  if (!box) throw new Error('검색칸 탐색 실패');
+  await ed.mouse.click(box.x + Math.min(box.w / 2, 40), box.y + box.h / 2);
+  await ed.keyboard.press('ControlOrMeta+A');
+  await ed.keyboard.type(text, { delay: 25 });
+  const next = await dialogBtnXY(ed, '다음 찾기');
+  if (!next) throw new Error('다음 찾기 버튼 탐색 실패');
+  await ed.mouse.click(next.x, next.y); await ed.waitForTimeout(1600); // 매치 선택
+  const page = await readCurrentPage(ed);
+  const close = await dialogBtnXY(ed, '닫기');
+  if (close) { await ed.mouse.click(close.x, close.y); await ed.waitForTimeout(700); }
+  const selChars = await readSelectedCount(ed);
+  return { found: page && page > 0, page, selChars };
+}
+
+// format-text: 구절을 찾아 선택한 뒤 글자 서식을 키보드 단축키로 적용(굵게 Cmd+B/기울임 Cmd+I/밑줄 Cmd+U).
+// ⚠️ 툴바 .bold 클릭은 선택에 신뢰성 있게 적용 안 됨(focus/toggle) → 키보드 단축키가 견고(실측 확인).
+async function cmdFormatText(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (args.text == null || args.text === true) throw new Error('--text 필요 (서식 적용할 구절)');
+  const styles = [];
+  if (args.bold) styles.push(['b', '굵게']);
+  if (args.italic) styles.push(['i', '기울임']);
+  if (args.underline) styles.push(['u', '밑줄']);
+  if (!styles.length) throw new Error('서식 플래그 필요 (--bold / --italic / --underline 중 하나 이상)');
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
+  const phrase = String(args.text).normalize('NFC');
+  const scale = Number(args.scale) || 1.5;
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(scale, async (ctx, page) => {
+    const name = String(args.name).normalize('NFC');
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    if (!apply) {
+      const r = await findText(editor, phrase);
+      if (!r.found) { out({ cmd: 'format-text', status: 'text_not_found', text: phrase, docId: editor.__docId || null }); return; }
+      out({ cmd: 'format-text', dryRun: true, text: phrase, styles: styles.map((s) => s[1]), foundPage: r.page,
+            docId: editor.__docId || null, note: '--apply 없으면 read-only. 적용 시: 구절 선택 후 키보드 서식.' });
+      return;
+    }
+    // 선택(찾기). 선택이 비면(selChars 0) 서식이 안 먹으므로 확인 후 재시도(최대 3회).
+    let r = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      r = await findSelect(editor, phrase);
+      if (!r.found) { out({ cmd: 'format-text', status: 'text_not_found', text: phrase, docId: editor.__docId || null }); return; }
+      if (r.selChars > 0) break;
+    }
+    if (!r.selChars) { out({ cmd: 'format-text', status: 'selection_failed', text: phrase, docId: editor.__docId || null, note: '구절 선택 실패(3회). 더 고유한 구절로.' }); return; }
+    const n = r.page || 1;
+    // 닫힌 다이얼로그 후 본문(편집 영역 input)에 포커스 보장 — 안 그러면 키보드 서식이 선택이 아닌
+    // 캐럿 모드로만 먹는 간헐 실패가 난다(문서 선택은 input 포커스와 별개라 유지됨).
+    await editor.evaluate(() => { const el = document.querySelector('input[aria-label="문서 편집 영역"]'); if (el) el.focus(); }).catch(() => {});
+    await editor.waitForTimeout(150);
+    for (const [key] of styles) { await editor.keyboard.press('ControlOrMeta+' + key); await editor.waitForTimeout(450); } // 키보드 서식 토글
+    await editor.waitForTimeout(900);
+    await editor.keyboard.press('Escape').catch(() => {}); // 선택 해제(깨끗한 캡처)
+    await editor.waitForTimeout(300);
+    await gotoPage(editor, n);
+    const rect2 = await detectPageRect(editor);
+    await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_format_p${n}_${stamp()}.png`);
+    await editor.screenshot(rect2 ? { path: shot, clip: rect2 } : { path: shot });
+    out({ cmd: 'format-text', applied: true, text: phrase, styles: styles.map((s) => s[1]), selChars: r.selChars, page: n, docId: editor.__docId || null, shot });
+  });
+}
+
 (async () => {
   const args = parseArgs(process.argv.slice(2));
   HEADED = !!args.headed;                                    // --headed: 창 띄워 보기(디버그)
@@ -765,7 +866,8 @@ async function cmdSetCellText(args) {
     else if (args._ === 'insert-text') await cmdInsertText(args);
     else if (args._ === 'replace-text') await cmdReplaceText(args);
     else if (args._ === 'set-cell-text') await cmdSetCellText(args);
-    else { log('사용법: capture --file <경로> [--page N] [--grid] | zoom --name <이름> --clip "x,y,w,h" [--page N] | around --name <이름> --text "<검색어>" [--grid] | locate --name <이름> --clues "a,b,c" [--grid] | insert-text --name <이름> --anchor "<기준 텍스트>" --text "<추가할 줄>" [--apply] | replace-text --name <이름> --find "<대상>" --to "<교체>" [--apply] | set-cell-text --name <이름> --cell "<기준 셀 텍스트>" --text "<값>" [--tab N] [--apply]'); process.exit(2); }
+    else if (args._ === 'format-text') await cmdFormatText(args);
+    else { log('사용법: capture --file <경로> [--page N] [--grid] | zoom --name <이름> --clip "x,y,w,h" [--page N] | around --name <이름> --text "<검색어>" [--grid] | locate --name <이름> --clues "a,b,c" [--grid] | insert-text --name <이름> --anchor "<기준 텍스트>" --text "<추가할 줄>" [--apply] | replace-text --name <이름> --find "<대상>" --to "<교체>" [--apply] | set-cell-text --name <이름> --cell "<기준 셀 텍스트>" --text "<값>" [--tab N] [--apply] | format-text --name <이름> --text "<구절>" --bold|--italic|--underline [--apply]'); process.exit(2); }
     process.exit(0);
   } catch (e) {
     if (e instanceof CannotOpenError || e.message === 'CANNOT_OPEN') {
