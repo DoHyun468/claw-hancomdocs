@@ -72,6 +72,9 @@ node hancom.js capture --file <절대경로> [--page N] [--grid] [--scale N] [--
 node hancom.js zoom    --name <문서이름>  --clip "x,y,w,h" [--page N] [--scale N] [--out <png>]
 node hancom.js around  --name <문서이름>  --text "<검색어>" [--zoom [--band N]] [--grid] [--out <png>]
 node hancom.js locate  --name <문서이름>  --clues "a,b,c" [--grid] [--out <png>]
+node hancom.js find    --name <문서이름>  --text "<구절>"
+node hancom.js pinpoint --file <로컬 .hwp/.hwpx> --text "<구절>" [--nth N] [--name <문서이름>] [--band N] [--scale N] [--out <png>]
+node read.mjs <로컬 .hwp/.hwpx> [--text "<구절>"] [--locate --nth N] [--inspect]
 node hancom.js insert-text  --name <문서이름> --anchor "<기준 텍스트>" --text "<추가할 한 줄>" [--apply]
 node hancom.js replace-text --name <문서이름> --find "<바꿀 대상>" --to "<바꿀 결과>" [--apply]
 node hancom.js set-cell-text --name <문서이름> --cell "<기준 셀 텍스트>" --text "<채울 값>" [--tab N] [--apply]
@@ -107,6 +110,23 @@ node hancom.js font-color   --name <문서이름> --text "<구절>" --color red|
    - 좌표계는 **페이지 왼쪽위=(0,0)** 으로 격자 라벨과 동일. 어긋나면 격자 이미지를 다시 띄워 라벨 숫자를 그대로 읽을 것.
 
 자세한 명세: `ORDER_SPEC.txt`.
+
+### 긴/복잡 문서에서 "그 위치"를 정확히 — `read.mjs` · `find` · `pinpoint`
+본문은 캔버스라 캡처(비전)만으론 "같은 구절이 여러 곳인데 그중 어디"를 정밀히 못 짚는다. **원본 파일을 직접 읽어** 보완한다.
+
+- **`read.mjs`** (로컬 파일 읽기): `.hwp/.hwpx` 원본을 파싱해 정확한 텍스트와 구절의 **occurrence-맵**을 만든다.
+  - `node read.mjs <파일>` → 전체 텍스트 / `--inspect` → 단위 수·표 수
+  - `node read.mjs <파일> --text "<구절>"` → 모든 occurrence를 **문서순 nth + 논리주소(표 `tableIdx`·`row`·`col` 또는 `section`·`para`) + 앞뒤 맥락**으로
+  - `node read.mjs <파일> --text "<구절>" --locate --nth N` → 그 N번째를 **UI에서 한 번에 집을 최단 유니크 문자열(anchor)** + 유일성 여부
+  - ⚠️ **로컬 파일 필요**(클라우드 문서만이면 먼저 내려받아야). 주는 위치는 화면 픽셀이 아니라 **논리주소**다. 머리말/꼬리말 텍스트는 못 읽을 수 있다.
+
+- **`find`** (드라이브 문서): 같은 구절이 **몇 곳**인지 열거(`{matchCount, occurrences:[{nth, page, docY}]}`). "문서 전체"로 한 바퀴 훑어 끝 메시지로 정확히 멈춘다. `page`는 복잡(비표준 크기) 문서에선 부정확할 수 있다.
+
+- **`pinpoint`** (둘을 잇기): 로컬 파일을 맵으로 읽어 **문서순 N번째** 그 칸에 정확히 착지·캡처.
+  - `node hancom.js pinpoint --file <로컬> --text "<구절>" --nth <N>` (`--name` 생략 시 파일명에서 유추)
+  - 같은 텍스트가 여러 곳(예: 여러 표의 동일 컬럼헤더)이거나 옆에 맥락이 없어도 **문서순으로 그 N번째**를 집는다(유니크 문자열이 되면 검색 1회로 빠르게, 안 되면 전체를 훑어 문서 위치순으로 그 자리에 착지).
+  - 반환: `{found, nth, address(표·행·열), context, page, shot, method}`. 못 집으면 `status`로 정직하게 알린다(예: 구절 자체가 파일에 없음, UI 매치 수가 파일과 달라 순서 정합이 안 됨).
+  - 글자가 없는 대상(그림·도형 등)은 read.mjs가 못 보므로, **옆의 유니크한 텍스트**를 `around --zoom --band`(넓게)로 잡는 게 길이다.
 
 ## ✏️ 편집 — 한 줄 추가 (`insert-text`)
 

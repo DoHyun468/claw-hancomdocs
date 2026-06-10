@@ -223,11 +223,20 @@ async function openDoc(ctx, page, name) {
   // 이름으로 행을 클릭해 열기 때문에, 다중 세션 파이프라인에서 동시 업로드가 끝나며 다른 행이
   // 열리는 race / 동명 파일 등으로 "요청한 그 파일이 아닌" 문서가 열릴 수 있다. docId 를 1차 신원으로
   // 붙여두고(__docId), 제목으로 교차 확인해 불일치면 즉시 중단한다(잘못된 문서를 캡처/검증하는 사고 차단).
-  const ident = await editor.evaluate(() => ({ url: location.href, title: document.title || '' }));
-  const docId = (String(ident.url).match(/[?&]docId=([^&#]+)/) || [])[1] || null;
-  const title = String(ident.title).normalize('NFC');
+  // 제목은 캔버스 렌더 직후에도 잠깐 "불러오는 중..." placeholder 라 너무 일찍 읽으면 오탐(WRONG_DOC).
+  // 제목이 안정될 때까지(placeholder 탈출 or stem 포함) 잠깐 폴링한 뒤 교차 확인. 끝까지 placeholder 면
+  // docId 를 1차 신원으로 신뢰하고 진행(제목만 보고 오중단 금지).
   const stem = name.replace(/\.[^.]+$/, '');
-  if (title && stem && !title.includes(stem)) throw new WrongDocError(name, title, docId);
+  const isPlaceholder = (t) => !t || /^불러오는\s*중/.test(t) || /^불러오는/.test(t);
+  let url = '', title = '';
+  for (let i = 0; i < 16; i++) {
+    const ident = await editor.evaluate(() => ({ url: location.href, title: document.title || '' })).catch(() => ({ url: '', title: '' }));
+    url = ident.url; title = String(ident.title).normalize('NFC');
+    if (!isPlaceholder(title) || (stem && title.includes(stem))) break;
+    await editor.waitForTimeout(300);
+  }
+  const docId = (String(url).match(/[?&]docId=([^&#]+)/) || [])[1] || null;
+  if (title && !isPlaceholder(title) && stem && !title.includes(stem)) throw new WrongDocError(name, title, docId);
   editor.__docId = docId; // 호출부가 결과(out)에 실어 보내 검증·로깅에 쓴다
   // 진입 presence(파란 물방울)는 대기로 빼지 않고, 스크린샷 직전 hideOverlays 에서
   // '오버레이 캔버스 숨김'으로 즉시 제거한다(대기 0초).
@@ -364,32 +373,150 @@ async function openFindDialog(ed) {
   await ed.waitForTimeout(1200);
 }
 
-// 찾기 다이얼로그를 열고 text를 검색해 매치로 점프. 검색칸에만 입력(편집 사고 방지).
-// 반환: {found, scrollTop, page} | null
-async function findText(ed, text) {
+// 캐럿을 문서 맨 앞으로. webhwp 의 '다음 찾기'는 캐럿 뒤부터 찾고 끝에서 한 바퀴 돈다 → 시작 위치에
+// 따라 nth 순서가 '회전'한다(문서 중간에서 시작하면 첫 매치가 문서 첫 매치가 아님). 항상 문서 맨 앞에서
+// 시작해 nth 를 '문서순'으로 결정론적이게 만든다(파일 리더의 occurrence nth 와 정합). 스크롤도 0 으로.
+async function goDocStart(ed) {
+  await focusBody(ed);
+  await ed.keyboard.press('ControlOrMeta+Home').catch(() => {});
+  await ed.keyboard.press('Control+Home').catch(() => {}); // webhwp 가 OS 무관 Ctrl+Home 바인딩일 수 있어 양쪽
+  await ed.waitForTimeout(250);
+  await setScroll(ed, 0).catch(() => {});
+  await ed.waitForTimeout(200);
+}
+
+// 찾기 다이얼로그를 열고 text 를 검색해 매치로 점프. 검색칸에만 입력(편집 사고 방지).
+// nth: '다음 찾기'를 nth 번 눌러 N번째 매치로 이동(기본 1 = 첫 매치, 캡처와 동일). 같은 구절이
+// 여러 번 나올 때 특정 occurrence 를 정확히 겨냥. 첫 매치 위치로 되돌아오면(한 바퀴) wrapped=true
+// (= 매치 수 < nth). 반환: {found, page, caret, landedNth, matchCount, wrapped} | {found:false}
+async function findText(ed, text, nth = 1) {
+  await goDocStart(ed); // 문서순 nth 보장(캐럿 회전 제거)
+  const p0 = await readCaretRect(ed); // 검색 전 캐럿(문서 시작) — 매칭 실패 시 캐럿이 여기서 안 움직임
   await openFindDialog(ed);
-  // 새로 뜬 보이는 input = 검색칸
   const box = await ed.evaluate(() => {
     const ins = Array.from(document.querySelectorAll('input')).map(el => { const r = el.getBoundingClientRect(); return { el, x: r.x, y: r.y, w: r.width, h: r.height, vis: r.width > 60 && r.height > 10 && getComputedStyle(el).visibility !== 'hidden' && el.getAttribute('aria-label') !== '문서 편집 영역' }; });
-    // 다이얼로그 중앙쯤(세로 1/3~2/3)에 있는 가장 넓은 입력
     const cand = ins.filter(i => i.vis && i.y > 300).sort((a, b) => b.w - a.w)[0];
     return cand ? { x: Math.round(cand.x), y: Math.round(cand.y), w: Math.round(cand.w), h: Math.round(cand.h) } : null;
   });
   if (!box) throw new Error('검색칸 탐색 실패');
   await ed.mouse.click(box.x + Math.min(box.w / 2, 40), box.y + box.h / 2);
-  await ed.keyboard.press('ControlOrMeta+A'); // 전체선택: Win/Linux→Ctrl+A, Mac→Cmd+A 자동 매핑(OS 무관)
+  await ed.keyboard.press('ControlOrMeta+A');
   await ed.keyboard.type(text, { delay: 25 });
-  // "다음 찾기" 버튼 ≈ 검색칸 오른쪽(+70, 같은 행)
-  const nextBtn = { x: box.x + box.w + 70, y: box.y - 1 };
-  await ed.mouse.click(nextBtn.x, nextBtn.y); await ed.waitForTimeout(1600);
-  // 찾기 직후 캐럿이 매치로 이동 → 상태바 '현재 쪽'이 매치의 실제 페이지(정확)
-  const page = await readCurrentPage(ed);
-  // 캐럿(매치) 뷰포트 픽셀 위치 = '텍스트 위치로 바로 확대'의 앵커. 닫기 전에 읽어둔다.
-  const caret = await readCaretRect(ed);
+  const nextBtn = { x: box.x + box.w + 70, y: box.y - 1 }; // '다음 찾기' ≈ 검색칸 오른쪽
+  const N = Math.max(1, Number(nth) || 1);
+  let page = null, caret = null, firstKey = null, wrapped = false, matchCount = 0;
+  for (let i = 0; i < N; i++) {
+    await ed.mouse.click(nextBtn.x, nextBtn.y); await ed.waitForTimeout(i === 0 ? 1600 : 850);
+    page = await readCurrentPage(ed);
+    caret = await readCaretRect(ed);
+    const key = `${page}:${caret ? caret.x : '?'}:${caret ? caret.y : '?'}`;
+    if (i === 0) { firstKey = key; matchCount = 1; }
+    else if (key === firstKey) { wrapped = true; break; } // 첫 매치로 복귀 = 더 새 매치 없음
+    else matchCount = i + 1;
+  }
   await ed.mouse.click(nextBtn.x, nextBtn.y + 53); await ed.waitForTimeout(700); // 닫기
-  await ed.keyboard.press('Escape'); await ed.waitForTimeout(400); // 검색 하이라이트 제거(혼동 방지)
-  // 새 세션이라 캐럿이 1쪽에서 시작 → 매치가 2쪽 이상이면 page>1. (1쪽 매치/미발견 구분은 한계)
-  return page && page > 0 ? { found: true, page, caret } : { found: false };
+  await ed.keyboard.press('Escape'); await ed.waitForTimeout(400); // 검색 하이라이트 제거
+  if (!page || page <= 0) return { found: false };
+  // no-match 가드: 매칭 실패 시 webhwp 는 캐럿을 안 옮긴다(검색 전 p0 그대로). 캐럿이 p0 에서 안
+  // 움직였으면 '찾음'이 아님(상태바 페이지만 보고 오탐하던 버그 차단 — 없는 문자열도 found 나던 것).
+  if (p0 && caret && Math.abs(caret.x - p0.x) <= 4 && Math.abs(caret.y - p0.y) <= 4) return { found: false };
+  return { found: true, page, caret, landedNth: wrapped ? matchCount : N, matchCount: wrapped ? matchCount : null, wrapped };
+}
+
+// 같은 구절의 모든 occurrence 를 '다음 찾기' 순회로 열거(각 매치의 페이지+캐럿). 첫 매치 위치로
+// 되돌아오면(한 바퀴) 멈춤. 긴 문서에서 "어느 occurrence 인지"를 정하려면, 이 목록의 page 로
+// around --nth/capture --page 해서 맥락을 '읽고'(캡처=비전) 결정한다. body 는 canvas 라 텍스트
+// DOM 이 없으므로 읽기 = 캡처.
+async function findOccurrences(ed, text, max = 40) {
+  await goDocStart(ed); // 문서 맨 앞부터 열거 → nth 가 문서순(파일 리더 occurrence 순서와 정합)
+  const p0 = await readDocPos(ed); // 검색 전 위치(원자적) — 매칭 실패 시 캐럿이 여기서 안 움직임
+  await openFindDialog(ed);
+  const box = await ed.evaluate(() => {
+    const ins = Array.from(document.querySelectorAll('input')).map(el => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, vis: r.width > 60 && r.height > 10 && getComputedStyle(el).visibility !== 'hidden' && el.getAttribute('aria-label') !== '문서 편집 영역' }; });
+    const cand = ins.filter(i => i.vis && i.y > 300).sort((a, b) => b.w - a.w)[0];
+    return cand ? { x: Math.round(cand.x), y: Math.round(cand.y), w: Math.round(cand.w), h: Math.round(cand.h) } : null;
+  });
+  if (!box) throw new Error('검색칸 탐색 실패');
+  await ed.mouse.click(box.x + Math.min(box.w / 2, 40), box.y + box.h / 2);
+  await ed.keyboard.press('ControlOrMeta+A');
+  await ed.keyboard.type(text, { delay: 25 });
+  // 검색 방향을 '문서 전체'로 — 캐럿이 문서 끝쪽이면 '아래로'는 그 뒤만 찾아 앞 페이지 매치를 놓친다.
+  const wholeDoc = await dialogBtnXY(ed, '문서 전체');
+  if (wholeDoc) { await ed.mouse.click(wholeDoc.x, wholeDoc.y); await ed.waitForTimeout(300); }
+  const nextBtn = { x: box.x + box.w + 70, y: box.y - 1 };
+  // 종료 판정 = webhwp 의 '끝 메시지'(findEndMessage, DOM 텍스트). 더 찾을 게 없으면 메시지를 띄우고
+  // 캐럿을 안 옮긴다 → 그 클릭은 매치가 아님 → 멈춤(팬텀 +1 없이 정확한 개수). 이미지 확인 불필요.
+  // 각 매치 위치는 readDocPos 로 scrollTop+caret 을 '한 번에(원자적)' 읽어 식별 — 따로 읽으면 스크롤 도중
+  // 값이 어긋나 docY 가 깨지던 버그 차단. 백업으로 docY 재방문(한 바퀴)도 종료로 본다(메시지 못 잡을 때).
+  const occ = [];
+  for (let i = 0; i < max; i++) {
+    await ed.mouse.click(nextBtn.x, nextBtn.y); await ed.waitForTimeout(i === 0 ? 1500 : 800);
+    if (await findEndMessage(ed)) break; // 끝 메시지(빨간 "모두 찾았습니다" 등) = 더 없음 → 종료(이 클릭 안 셈)
+    const m = await readDocPos(ed); // 원자적 docY,cx (scrollTop+caret 같이 읽어 스크롤 도중에도 일관)
+    if (!m) break; // 캐럿 못 읽음 → 종료
+    if (p0 && Math.abs(m.docY - p0.docY) <= 4 && Math.abs(m.cx - p0.cx) <= 4) break; // no-match 가드(검색 전 자리서 안 움직임)
+    const dup = occ.find((o) => Math.abs(o.docY - m.docY) <= 10 && Math.abs(o.cx - m.cx) <= 15);
+    if (dup) break; // 같은 위치 재방문(한 바퀴) → 종료(메시지 못 잡는 변형 대비 백업)
+    const page = Math.floor(m.docY / PAGE_H) + 1; // 문서 스크롤 좌표로 페이지 추정(복잡 문서선 부정확할 수 있음)
+    occ.push({ nth: occ.length + 1, page, cx: m.cx, docY: m.docY });
+  }
+  await ed.keyboard.press('Escape').catch(() => {}); await ed.waitForTimeout(300); // 메시지/다이얼로그 닫기
+  await ed.keyboard.press('Escape').catch(() => {}); await ed.waitForTimeout(200);
+  return occ;
+}
+
+// UI find 매치를 '문서순(위→아래)'으로 정렬해 반환. webhwp '다음 찾기' 클릭순서는 캐럿 시작위치(특히
+// 떠다니는 표지 표처럼 본문 흐름 밖 객체) 때문에 '회전'할 수 있다 — 하지만 각 매치의 실제 위치
+// docY=scrollTop+caret.y 로 정렬하면 문서순이 복원된다(파일 리더의 문서순 occurrence 와 정합).
+// 끝에서 첫 매치로 되돌아온 '한 바퀴' 꼬리(팬텀)는 인접 중복으로 흡수. 각 항목에 uiNth(그 매치로 가려면
+// '다음 찾기'를 몇 번 눌러야 하는지)를 달아 → 호출부가 findText(phrase, uiNth) 로 정확히 착지한다.
+// 즉 '문서순 N번째'(read.mjs 와 동일 순서)를 UI 네비로 잇는 다리. 빈 칸·윗첨자 등 앵커 불가 케이스 커버.
+async function enumerateDocOrder(ed, phrase) {
+  const occ = await findOccurrences(ed, phrase); // [{nth(=uiNth 클릭수), docY, cx, page}] (UI 클릭 순서)
+  const list = occ.slice();
+  // 꼬리 팬텀 제거: 마지막 항목이 '첫 매치(occ[0]) 복귀'(한 바퀴)면 같은 매치를 한 번 더 센 것 → 버림.
+  // 복귀는 occ[0] 의 거의 같은 위치(docY≤30·cx≤90)로 온다(실제 마지막 매치는 문서 끝쪽이라 멀다).
+  if (list.length > 1) {
+    const a = list[0], z = list[list.length - 1];
+    if (Math.abs(a.docY - z.docY) <= 30 && Math.abs(a.cx - z.cx) <= 90) list.pop();
+  }
+  const sorted = list.sort((a, b) => a.docY - b.docY || a.cx - b.cx);
+  const order = [];
+  for (const o of sorted) {
+    // 잔여 중복만 흡수(타이트): 같은 매치 재방문은 docY 거의 0 차이. 인접 '줄'(docY 차 ~20+)은 별개 매치라
+    // 합치면 안 됨 → docY≤8·cx≤60 으로만 중복 판단(과합치 방지).
+    const dup = order.find((p) => Math.abs(p.docY - o.docY) <= 8 && Math.abs(p.cx - o.cx) <= 60);
+    if (dup) { if (o.nth < dup.uiNth) dup.uiNth = o.nth; continue; }
+    order.push({ docRank: order.length + 1, uiNth: o.nth, docY: o.docY, cx: o.cx, page: o.page });
+  }
+  order.forEach((p, i) => { p.docRank = i + 1; });
+  return order; // [{docRank(문서순 1..), uiNth(다음찾기 클릭수), docY, cx, page}]
+}
+
+// 매치의 '절대 문서 위치' docY=scrollTop+caret.y 와 cx 를 **한 번의 evaluate(원자적)**로 읽는다.
+// scrollTop 과 caret 을 따로 읽으면 부드러운 스크롤 도중 값이 어긋나 docY 가 깨지던 버그를 차단.
+// docY 는 스크롤 무관(캐럿은 문서상 고정) → 스크롤 애니메이션이 끝나길 기다릴 필요 없이 캐럿만 자리잡으면 안정.
+async function readDocPos(ed) {
+  return await ed.evaluate(() => {
+    const el = document.getElementById('hcwoViewScroll');
+    const c = document.querySelector('#HWP_CURSOR_VIEW, .BLINK_CURSOR');
+    const r = c ? c.getBoundingClientRect() : null;
+    if (!r || (r.width === 0 && r.height === 0)) return null;
+    return { docY: (el ? el.scrollTop : 0) + Math.round(r.y), cx: Math.round(r.x) };
+  }).catch(() => null);
+}
+
+// 찾기 다이얼로그의 '끝' 메시지(빨간 글자)를 DOM 텍스트로 감지 — 비전/캡처 불필요. 더 찾을 게 없으면
+// webhwp 가 "…모두 찾았습니다" / "찾을 수 없습니다" 를 띄우고 캐럿을 안 옮긴다 → 깔끔한 종료·개수 신호.
+async function findEndMessage(ed) {
+  return await ed.evaluate(() => {
+    for (const el of document.querySelectorAll('div, span, p, label')) {
+      const t = (el.textContent || '').trim();
+      if (t && t.length < 60 && el.offsetParent !== null && el.childElementCount === 0 &&
+          /모두 찾았|찾을 수 없|찾지 못|없습니다|끝까지 찾/.test(t)) return t;
+    }
+    return null;
+  }).catch(() => null);
 }
 
 // 찾기 직후 캐럿(매치 위치) 요소의 뷰포트 사각형. webhwp 는 캐럿을 DOM 요소로 그린다.
@@ -415,6 +542,28 @@ async function readCurrentPage(ed) {
   });
 }
 
+// 매치 캐럿 줄을 가로 밴드로 잘라 고배율 캡처(찾기가 이미 매치로 스크롤한 상태에서 호출). { rect, clip }.
+// 세로 경계는 '문서 캔버스'(캐럿을 항상 포함)로 클램프하고, detectPageRect 는 가로(x/width)에만 쓴다.
+// 찾기가 매치를 뷰포트 하단으로 스크롤하면 뷰포트가 두 페이지에 걸쳐, detectPageRect 가 캐럿이 없는
+// 옆 페이지의 흰 영역(더 큰 쪽)을 잡는다 → 그 rect 바닥이 캐럿보다 위라 height 가 음수로 붕괴(40px)하고
+// 밴드가 매치 위(이전 줄/제목)로 어긋나던 버그. 캐럿은 항상 보이므로 캔버스 세로범위로 클램프하면 안전. (OS 무관)
+async function zoomBandShot(ed, caret, band, outPath) {
+  const rect = await detectPageRect(ed);
+  if (!rect || rect.width < 100) throw new Error('A4 페이지 영역 검출 실패');
+  await hideOverlays(ed);
+  const view = await ed.evaluate(() => {
+    const cvs = [...document.querySelectorAll('canvas')]; if (!cvs.length) return null;
+    let c = cvs[0]; for (const x of cvs) if (x.width * x.height > c.width * c.height) c = x;
+    const b = c.getBoundingClientRect(); return { top: Math.round(b.top), bottom: Math.round(b.top + b.height) };
+  });
+  const vTop = view ? view.top : rect.y;
+  const vBot = view ? view.bottom : rect.y + rect.height;
+  const top = Math.max(vTop, caret.y - Math.round(band / 2));
+  const clip = { x: rect.x, y: top, width: rect.width, height: Math.max(40, Math.min(band, vBot - top)) };
+  await ed.screenshot({ path: outPath, clip });
+  return { rect, clip };
+}
+
 async function cmdAround(args) {
   if (!args.name || !args.text) throw new Error('--name 과 --text 필요');
   // --zoom: 매치 줄을 확대(고배율 기본). 일반 around 는 페이지 전체(1.5).
@@ -423,34 +572,17 @@ async function cmdAround(args) {
   await withEditor(scale, async (ctx, page) => {
     const editor = await openDoc(ctx, page, args.name);
     if (!editor) throw new Error('문서를 못 찾음: ' + args.name);
-    const r = await findText(editor, String(args.text));
+    const nth = Math.max(1, Number(args.nth) || 1); // 같은 구절이 여러 번이면 N번째 매치를 본다
+    const r = await findText(editor, String(args.text), nth);
     if (!r.found) { out({ cmd: 'around', found: false, text: args.text }); return; }
+    if (r.wrapped) { out({ cmd: 'around', found: false, text: args.text, status: 'nth_out_of_range', nth, matchCount: r.matchCount }); return; }
 
     // --zoom: 격자 읽기 없이 '텍스트 위치로 바로 확대'. 찾기가 이미 매치로 스크롤했으므로
     //   gotoPage 생략하고, 그 스크롤 상태에서 캐럿 줄을 가로 밴드로 잘라낸다.
     if (args.zoom && r.caret) {
-      const rect = await detectPageRect(editor);
-      if (!rect || rect.width < 100) throw new Error('A4 페이지 영역 검출 실패');
-      await hideOverlays(editor);
       const band = Number(args.band) || 180;               // 매치 줄 위아래 포함 높이(페이지 px)
-      // 세로 경계는 '문서 캔버스'(캐럿을 항상 포함)로 클램프하고, detectPageRect 는 가로(x/width)에만 쓴다.
-      // 찾기가 매치를 뷰포트 하단으로 스크롤하면 뷰포트가 두 페이지에 걸쳐, detectPageRect 가 캐럿이 없는
-      // 옆 페이지의 흰 영역(더 큰 쪽)을 잡는다 → 그 rect 바닥이 캐럿보다 위라 height 가 음수로 붕괴(40px)하고
-      // 밴드가 매치 위(이전 줄/제목)로 어긋나던 버그. 캐럿은 항상 보이므로 캔버스 세로범위로 클램프하면 안전. (OS 무관)
-      const view = await editor.evaluate(() => {
-        const cvs = [...document.querySelectorAll('canvas')]; if (!cvs.length) return null;
-        let c = cvs[0]; for (const x of cvs) if (x.width * x.height > c.width * c.height) c = x;
-        const b = c.getBoundingClientRect(); return { top: Math.round(b.top), bottom: Math.round(b.top + b.height) };
-      });
-      const vTop = view ? view.top : rect.y;
-      const vBot = view ? view.bottom : rect.y + rect.height;
-      const top = Math.max(vTop, r.caret.y - Math.round(band / 2));
-      const clip = {
-        x: rect.x, y: top, width: rect.width,
-        height: Math.max(40, Math.min(band, vBot - top)),
-      };
       const shot = args.out || path.join(CAPDIR, `${String(args.name).replace(/\.[^.]+$/, '')}_findzoom_${stamp()}.png`);
-      await editor.screenshot({ path: shot, clip });
+      const { rect } = await zoomBandShot(editor, r.caret, band, shot);
       out({ cmd: 'around', found: true, zoom: true, text: args.text, docId: editor.__docId || null, page: r.page, shot, pageWidth: rect.width, band, scale });
       return;
     }
@@ -464,6 +596,64 @@ async function cmdAround(args) {
     const shot = args.out || path.join(CAPDIR, `${String(args.name).replace(/\.[^.]+$/, '')}_find_${stamp()}.png`);
     await editor.screenshot({ path: shot, clip: rect });
     out({ cmd: 'around', found: true, text: args.text, docId: editor.__docId || null, page: r.page, shot, pageWidth: rect.width, pageHeight: rect.height, scale, grid: !!args.grid });
+  });
+}
+
+// ───────────────────────── 정밀 위치(pinpoint) ─────────────────────────
+// pinpoint: 로컬 원본 파일을 'occurrence-맵'으로 읽어, 같은 구절이 여러 곳이어도 '문서순 N번째'를 정확히
+// 집어 캡처. 본문이 canvas(텍스트 DOM 없음)라 캡처-비전만으론 긴/복잡 문서에서 어디가 어디인지 특정이
+// 어렵던 문제를, 파일을 직접 파싱해 보완한다. 두 갈래(자동 선택):
+//   ① 앵커: read.mjs 로 그 칸 맥락에서 '유니크 앵커' 문자열을 만들어 UI find 한 번에 착지(빠름, 대부분).
+//   ② 문서순 nth(폴백): 앵커가 불가/안 찾힘이면, UI find 매치 전체를 열거→docY 정렬해 문서순을 복원한 뒤
+//      '문서순 N번째'(read.mjs 와 동일 순서) 매치로 이동. 빈 칸·동일 칸 반복·윗첨자 등 앵커 안 되는 것까지 커버.
+//   --file 로컬 .hwp/.hwpx(읽기 원본) · --text 구절 · --nth 문서순 N번째(기본1)
+//   --name 드라이브 문서명(생략 시 파일명에서 유추) · --band/--scale 캡처 옵션 · --out 저장경로
+// 착지에 쓴 텍스트/위치는 편집 op(insert/replace/format)에도 그대로 이어 쓸 수 있다(정밀 편집의 토대).
+async function cmdPinpoint(args) {
+  if (!args.file) throw new Error('--file 필요 (로컬 .hwp/.hwpx — 읽기 원본)');
+  if (args.text == null || args.text === true) throw new Error('--text 필요 (찾을 구절)');
+  const phrase = String(args.text).normalize('NFC');
+  const nth = Math.max(1, Number(args.nth) || 1);
+  const name = String(args.name || path.basename(args.file).replace(/\.[^.]+$/, '')).normalize('NFC');
+  // read.mjs(ESM)를 동적 import — 파일에서 occurrence-맵 → 대상 nth 의 최단 유니크 앵커.
+  const reader = await import('./read.mjs');
+  const units = await reader.getUnits(args.file);
+  const loc = reader.deriveAnchor(units, phrase, nth);
+  if (!loc.found) { out({ cmd: 'pinpoint', status: 'not_found_in_file', text: phrase, nth, matchCount: 0 }); return; }
+  const scale = Number(args.scale) || 3;
+  const band = Number(args.band) || 160;
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(scale, async (ctx, page) => {
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('드라이브에서 문서 못 찾음: ' + name + ' (먼저 업로드 필요할 수 있음)');
+    const base = {
+      cmd: 'pinpoint', text: phrase, nth: loc.nth, matchCount: loc.matchCount,
+      kind: loc.kind, address: loc.address,
+      context: loc.before + '【' + loc.match + '】' + loc.after,
+      docId: editor.__docId || null,
+    };
+    const shoot = async (r, extra) => {
+      const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_pin_nth${loc.nth}_${stamp()}.png`);
+      const { rect } = await zoomBandShot(editor, r.caret, band, shot);
+      out({ ...base, found: true, page: r.page, shot, pageWidth: rect.width, band, scale, ...extra });
+    };
+
+    // ① 앵커 경로(유니크할 때만): UI find 첫 매치로 한 번에.
+    if (loc.unique) {
+      const r = await findText(editor, loc.anchor, 1);
+      if (r.found) { await shoot(r, { method: 'anchor', anchor: loc.anchor, note: '유니크 앵커 → 정확 착지' }); return; }
+      // 파일엔 유니크지만 UI 에서 못 찾음(윗첨자/특수문자 경계 등) → 문서순 nth 폴백
+    }
+
+    // ② 문서순 nth 폴백: UI 매치 전체를 docY 로 정렬해 문서순 복원 → read.mjs 의 nth 와 같은 자리로.
+    const order = await enumerateDocOrder(editor, phrase);
+    if (!order.length) { out({ ...base, status: 'not_found_in_ui', note: 'UI find 가 구절을 못 찾음.' }); return; }
+    if (loc.nth > order.length) { out({ ...base, status: 'nth_out_of_range', uiMatchCount: order.length, note: `UI 는 ${order.length}곳만 찾음(파일 ${loc.matchCount}곳). 순서 정합 확인 필요.` }); return; }
+    const target = order[loc.nth - 1];
+    const r = await findText(editor, phrase, target.uiNth); // 그 문서순 자리 = 다음찾기 uiNth 번
+    if (!r.found) { out({ ...base, status: 'nav_failed', uiNth: target.uiNth, note: '문서순 nth 착지 실패.' }); return; }
+    await shoot(r, { method: 'position-nth', uiNth: target.uiNth, uiMatchCount: order.length,
+      note: loc.unique ? '앵커는 UI서 안 찾혀(윗첨자 등) → 문서순 nth 로 착지' : '동일/빈 텍스트 — 문서순 nth(docY 정렬)로 착지. address(표·행·열)로 교차확인.' });
   });
 }
 
@@ -951,9 +1141,11 @@ async function cmdList(args) {
 // 구절을 마우스 드래그로 정확히 선택. 드래그는 본문 캔버스에서 일어나 포커스를 보장하므로, 이후
 // 툴바(글자크기·색) 적용이 안정적이다(찾기 선택은 닫은 뒤 포커스가 풀려 적용이 간헐 실패).
 // 찾기로 캐럿(매치 끝쪽)·줄 y 를 얻고, 그 줄을 가로로 드래그하며 selChars==글자수가 되게 폭(W) 보정.
-async function dragSelectPhrase(ed, phrase) {
-  const r = await findText(ed, phrase);
-  if (!r.found || !r.caret) return { found: !!r.found, selChars: 0, page: r.page };
+async function dragSelectPhrase(ed, phrase, nth = 1) {
+  const r = await findText(ed, phrase, nth);
+  if (!r.found) return { found: false, selChars: 0 };
+  if (r.wrapped) return { found: true, wrapped: true, matchCount: r.matchCount, selChars: 0 };
+  if (!r.caret) return { found: true, selChars: 0, page: r.page };
   const target = [...phrase].length;
   const y = r.caret.y + Math.round((r.caret.h || 14) / 2);
   const xEnd = r.caret.x; // 캐럿 ≈ 매치 끝(다음 찾기 후 커서는 매치 뒤)
@@ -979,6 +1171,7 @@ async function cmdFontSize(args) {
   if (args.text == null || args.text === true) throw new Error('--text 필요 (크기 바꿀 구절)');
   const size = Number(args.size);
   if (!size || size < 1 || size > 300) throw new Error('--size 필요 (pt, 예: 14)');
+  const nth = Math.max(1, Number(args.nth) || 1); // 같은 구절이 여러 번이면 N번째 매치
   const apply = !!args.apply;
   if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
   const phrase = String(args.text).normalize('NFC');
@@ -989,13 +1182,15 @@ async function cmdFontSize(args) {
     const editor = await openDoc(ctx, page, name);
     if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
     if (!apply) {
-      const r = await findText(editor, phrase);
+      const r = await findText(editor, phrase, nth);
       if (!r.found) { out({ cmd: 'font-size', status: 'text_not_found', text: phrase, docId: editor.__docId || null }); return; }
-      out({ cmd: 'font-size', dryRun: true, text: phrase, size, foundPage: r.page, docId: editor.__docId || null, note: '--apply 없으면 read-only. 적용 시: 드래그 선택 후 크기 ' + size + 'pt.' });
+      if (r.wrapped) { out({ cmd: 'font-size', status: 'nth_out_of_range', text: phrase, nth, matchCount: r.matchCount, docId: editor.__docId || null }); return; }
+      out({ cmd: 'font-size', dryRun: true, text: phrase, size, nth, foundPage: r.page, docId: editor.__docId || null, note: '--apply 없으면 read-only. 적용 시: 드래그 선택 후 크기 ' + size + 'pt.' });
       return;
     }
-    const sel = await dragSelectPhrase(editor, phrase);
+    const sel = await dragSelectPhrase(editor, phrase, nth);
     if (!sel.found) { out({ cmd: 'font-size', status: 'text_not_found', text: phrase, docId: editor.__docId || null }); return; }
+    if (sel.wrapped) { out({ cmd: 'font-size', status: 'nth_out_of_range', text: phrase, nth, matchCount: sel.matchCount, docId: editor.__docId || null }); return; }
     if (!sel.selChars) { out({ cmd: 'font-size', status: 'selection_failed', text: phrase, docId: editor.__docId || null, note: '드래그 선택 실패.' }); return; }
     const n = sel.page || 1;
     // 툴바 글자크기 입력칸에 값 입력(선택에 적용)
@@ -1038,6 +1233,7 @@ async function cmdFontColor(args) {
   if (args.text == null || args.text === true) throw new Error('--text 필요 (색 바꿀 구절)');
   const target = parseColor(args.color);
   if (!target) throw new Error('--color 필요 (red|blue|green|black|yellow|... 또는 #RRGGBB)');
+  const nth = Math.max(1, Number(args.nth) || 1); // 같은 구절이 여러 번이면 N번째 매치
   const apply = !!args.apply;
   if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
   const phrase = String(args.text).normalize('NFC');
@@ -1048,13 +1244,15 @@ async function cmdFontColor(args) {
     const editor = await openDoc(ctx, page, name);
     if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
     if (!apply) {
-      const r = await findText(editor, phrase);
+      const r = await findText(editor, phrase, nth);
       if (!r.found) { out({ cmd: 'font-color', status: 'text_not_found', text: phrase, docId: editor.__docId || null }); return; }
-      out({ cmd: 'font-color', dryRun: true, text: phrase, color: args.color, foundPage: r.page, docId: editor.__docId || null, note: '--apply 없으면 read-only.' });
+      if (r.wrapped) { out({ cmd: 'font-color', status: 'nth_out_of_range', text: phrase, nth, matchCount: r.matchCount, docId: editor.__docId || null }); return; }
+      out({ cmd: 'font-color', dryRun: true, text: phrase, color: args.color, nth, foundPage: r.page, docId: editor.__docId || null, note: '--apply 없으면 read-only.' });
       return;
     }
-    const sel = await dragSelectPhrase(editor, phrase);
+    const sel = await dragSelectPhrase(editor, phrase, nth);
     if (!sel.found) { out({ cmd: 'font-color', status: 'text_not_found', text: phrase, docId: editor.__docId || null }); return; }
+    if (sel.wrapped) { out({ cmd: 'font-color', status: 'nth_out_of_range', text: phrase, nth, matchCount: sel.matchCount, docId: editor.__docId || null }); return; }
     if (!sel.selChars) { out({ cmd: 'font-color', status: 'selection_failed', text: phrase, docId: editor.__docId || null, note: '드래그 선택 실패.' }); return; }
     const n = sel.page || 1;
     // 글자색 드롭다운 화살표 → 팔레트
@@ -1088,6 +1286,26 @@ async function cmdFontColor(args) {
 }
 
 
+// find: 같은 구절의 모든 occurrence 를 열거(개수 + 각 페이지). 긴 문서에서 "어느 것"을 보거나
+// 편집할지 정하는 출발점 — 목록을 보고 around --nth N(맥락 읽기) / 편집 op --nth N(타겟)으로 잇는다.
+async function cmdFind(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (args.text == null || args.text === true) throw new Error('--text 필요 (찾을 구절)');
+  const phrase = String(args.text).normalize('NFC');
+  await withEditor(1.5, async (ctx, page) => {
+    const name = String(args.name).normalize('NFC');
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    const occ = await findOccurrences(editor, phrase);
+    out({
+      cmd: 'find', text: phrase, matchCount: occ.length,
+      occurrences: occ.slice(0, 40).map((o) => ({ nth: o.nth, page: o.page, docY: o.docY, cx: o.cx })),
+      docId: editor.__docId || null,
+      note: occ.length > 1 ? '여러 곳 — around --text "..." --nth N 으로 각 맥락 확인 후, 편집 op에 --nth N.' : (occ.length === 1 ? '1곳(--nth 불필요).' : '없음.'),
+    });
+  });
+}
+
 (async () => {
   const args = parseArgs(process.argv.slice(2));
   HEADED = !!args.headed;                                    // --headed: 창 띄워 보기(디버그)
@@ -1096,7 +1314,9 @@ async function cmdFontColor(args) {
     if (args._ === 'capture') await cmdCapture(args);
     else if (args._ === 'zoom') await cmdZoom(args);
     else if (args._ === 'around') await cmdAround(args);
+    else if (args._ === 'pinpoint') await cmdPinpoint(args);
     else if (args._ === 'locate') await cmdLocate(args);
+    else if (args._ === 'find') await cmdFind(args);
     else if (args._ === 'insert-text') await cmdInsertText(args);
     else if (args._ === 'replace-text') await cmdReplaceText(args);
     else if (args._ === 'set-cell-text') await cmdSetCellText(args);
