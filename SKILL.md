@@ -80,6 +80,7 @@ node hancom.js resize-object --name <문서이름> --at "x,y" [--width <mm>] [--
 node hancom.js chart-data    --name <문서이름> --at "x,y" --set "B2=9.9,C3=4" [--apply]
 node hancom.js insert-table  --name <문서이름> --rows R --cols C [--anchor "<텍스트>"] [--apply]
 node hancom.js insert-image  --name <문서이름> --file <이미지경로> [--anchor "<텍스트>"] [--apply]
+node hancom.js table-op      --name <문서이름> --cell "<셀 텍스트>" [--tab N] --op <op> [--apply]
 node read.mjs <로컬 .hwp/.hwpx> [--text "<구절>"] [--locate --nth N] [--inspect]
 node hancom.js insert-text  --name <문서이름> --anchor "<기준 텍스트>" --text "<추가할 한 줄>" [--apply]
 node hancom.js replace-text --name <문서이름> --find "<바꿀 대상>" --to "<바꿀 결과>" [--apply]
@@ -152,6 +153,12 @@ node hancom.js font-color   --name <문서이름> --text "<구절>" --color red|
 - **`insert-table --rows R --cols C`**: 입력›표 다이얼로그(줄/칸 개수)로 R×C 표 생성.
 - **`insert-image --file <이미지>`**: 입력›그림(장치) 다이얼로그에 로컬 이미지 파일을 넣어 삽입.
 - ⚠️ 편집 **headless 전용**. 떠다니는 객체가 많은 문서는 삽입 위치가 본문 흐름 기준이라 시각적 최상단과 다를 수 있음(`--anchor`로 위치 지정 권장).
+
+### ▦ 표 줄/칸 추가·삭제 — `table-op`
+대상 셀에 캐럿(`--cell` 텍스트로 찾기, 필요시 `--tab N`으로 인접 셀)을 두면 **표 메뉴**가 활성 → 줄/칸 추가·삭제. `--op`:
+`insert-row-above` · `insert-row-below` · `insert-col-left` · `insert-col-right` · `delete-row` · `delete-col`.
+- 캐럿이 있는 셀의 행/열 기준으로 동작. dry-run 기본, `--apply`로 실행, **headless 전용**.
+- (셀 합치기 = 블록 선택 필요 / 셀 나누기 = 다이얼로그 — 미구현. 셀 값 채우기는 `set-cell-text`.)
 
 ## ✏️ 편집 — 한 줄 추가 (`insert-text`)
 

@@ -1132,6 +1132,20 @@ async function setDialogField(ed, label, value) {
   await ed.keyboard.type(String(value), { delay: 30 });
 }
 
+// 열린 메뉴/서브메뉴에서 정확히 일치하는 텍스트 항목의 중심좌표(보이는 것만, 상단 메뉴영역).
+async function menuItemXY(ed, text) {
+  return ed.evaluate((t) => {
+    let best = null;
+    for (const el of document.querySelectorAll('div, a, span, li')) {
+      if (el.childElementCount !== 0) continue;
+      if ((el.textContent || '').trim() !== t) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width > 18 && r.height > 8 && el.offsetParent !== null && r.y > 60) best = { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+    }
+    return best;
+  }, text);
+}
+
 // 다이얼로그 버튼(확인/만들기/취소 등) 텍스트로 클릭.
 async function clickDialogBtn(ed, text) {
   const xy = await ed.evaluate((t) => { for (const el of document.querySelectorAll('button, a, div, span')) { if ((el.textContent || '').trim() === t && el.offsetParent !== null && el.childElementCount === 0) { const r = el.getBoundingClientRect(); if (r.width > 15 && r.height > 10) return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; } } return null; }, text);
@@ -1435,6 +1449,53 @@ async function cmdInsertImage(args) {
   });
 }
 
+// table-op: 표 줄/칸 추가·삭제. 대상 셀에 캐럿(--cell 텍스트로 찾기 [+--tab N])을 두면 표 메뉴가 활성 →
+// 줄/칸 추가하기/지우기 서브메뉴 항목 클릭. op = insert-row-above|insert-row-below|insert-col-left|
+// insert-col-right|delete-row|delete-col. (셀 합치기=블록 선택 필요라 별도, 셀 나누기=다이얼로그 별도.)
+async function cmdTableOp(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (!args.cell || args.cell === true) throw new Error('--cell 필요 (대상 셀 텍스트)');
+  const op = String(args.op || '');
+  const OPS = {
+    'insert-row-above': { menu: '줄/칸 추가하기', item: '위쪽에 줄 추가하기' },
+    'insert-row-below': { menu: '줄/칸 추가하기', item: '아래쪽에 줄 추가하기' },
+    'insert-col-left': { menu: '줄/칸 추가하기', item: '왼쪽에 칸 추가하기' },
+    'insert-col-right': { menu: '줄/칸 추가하기', item: '오른쪽에 칸 추가하기' },
+    'delete-row': { menu: '줄/칸 지우기', item: '줄 지우기' },
+    'delete-col': { menu: '줄/칸 지우기', item: '칸 지우기' },
+  };
+  if (!OPS[op]) throw new Error('--op 는 ' + Object.keys(OPS).join(' | '));
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용.');
+  const cellText = String(args.cell).normalize('NFC');
+  const tabN = args.tab !== undefined ? Math.max(0, Number(args.tab)) : 0;
+  const name = String(args.name).normalize('NFC');
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    const r = await findText(editor, cellText);
+    if (!r.found || !r.caret) { out({ cmd: 'table-op', status: 'cell_not_found', cell: cellText, docId: editor.__docId || null }); return; }
+    if (!apply) { out({ cmd: 'table-op', dryRun: true, cell: cellText, tab: tabN, op, foundPage: r.page, docId: editor.__docId || null, note: '--apply 시 표 op 실행.' }); return; }
+    await focusBody(editor);
+    await editor.mouse.click(r.caret.x, r.caret.y + 6); await editor.waitForTimeout(250); // 셀에 캐럿
+    for (let i = 0; i < tabN; i++) { await editor.keyboard.press('Tab'); await editor.waitForTimeout(160); }
+    const spec = OPS[op];
+    await openMenu(editor, '표');
+    const parent = await menuItemXY(editor, spec.menu);
+    if (!parent) throw new Error('표 메뉴 항목 탐색 실패: ' + spec.menu + ' (셀에 캐럿 없음?)');
+    await editor.mouse.move(parent.x, parent.y); await editor.waitForTimeout(700); // 서브메뉴 펼침(호버)
+    const item = await menuItemXY(editor, spec.item);
+    if (!item) throw new Error('서브 항목 탐색 실패: ' + spec.item);
+    await editor.mouse.click(item.x, item.y); await editor.waitForTimeout(1300);
+    const n = (await readCurrentPage(editor)) || 1; await gotoPage(editor, n);
+    const rect = await detectPageRect(editor); await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_tableop_${stamp()}.png`);
+    await editor.screenshot(rect ? { path: shot, clip: rect } : { path: shot });
+    out({ cmd: 'table-op', applied: true, cell: cellText, tab: tabN, op, page: n, shot, docId: editor.__docId || null });
+  });
+}
+
 // ───────────────────────── 객체(그림·차트) ─────────────────────────
 // 객체는 본문 canvas 에 픽셀로 그려져 DOM 셀렉터로 못 짚는다 → 페이지 좌표(--at "x,y", 그리드 캡처 참고)에
 // 클릭. 우클릭 컨텍스트 메뉴(개체 속성/데이터 편집)로 진입. --at 의 한 점이 객체 안이면 충분(중앙 권장).
@@ -1653,6 +1714,7 @@ async function cmdFind(args) {
     else if (args._ === 'chart-data') await cmdChartData(args);
     else if (args._ === 'insert-table') await cmdInsertTable(args);
     else if (args._ === 'insert-image') await cmdInsertImage(args);
+    else if (args._ === 'table-op') await cmdTableOp(args);
     else if (args._ === 'insert-text') await cmdInsertText(args);
     else if (args._ === 'replace-text') await cmdReplaceText(args);
     else if (args._ === 'set-cell-text') await cmdSetCellText(args);
