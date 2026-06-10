@@ -1317,6 +1317,135 @@ async function cmdFontColor(args) {
 
 // find: 같은 구절의 모든 occurrence 를 열거(개수 + 각 페이지). 긴 문서에서 "어느 것"을 보거나
 // 편집할지 정하는 출발점 — 목록을 보고 around --nth N(맥락 읽기) / 편집 op --nth N(타겟)으로 잇는다.
+// ───────────────────────── 객체(그림·차트) ─────────────────────────
+// 객체는 본문 canvas 에 픽셀로 그려져 DOM 셀렉터로 못 짚는다 → 페이지 좌표(--at "x,y", 그리드 캡처 참고)에
+// 클릭. 우클릭 컨텍스트 메뉴(개체 속성/데이터 편집)로 진입. --at 의 한 점이 객체 안이면 충분(중앙 권장).
+// 페이지좌표(at) → 우클릭 → 메뉴 항목(itemText) 클릭. 반환 true(항목 클릭)|false(그 좌표에 객체 없음).
+async function objMenuClick(ed, vx, vy, itemText) {
+  await ed.mouse.click(vx, vy, { button: 'right' }); await ed.waitForTimeout(900);
+  const xy = await ed.evaluate((t) => {
+    for (const el of document.querySelectorAll('a, div, span, li, button')) {
+      if ((el.textContent || '').trim() === t && el.offsetParent !== null && el.childElementCount === 0) {
+        const r = el.getBoundingClientRect(); if (r.width > 10 && r.height > 8) return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+      }
+    }
+    return null;
+  }, itemText);
+  if (!xy) { await ed.keyboard.press('Escape').catch(() => {}); return false; }
+  await ed.mouse.click(xy.x, xy.y); await ed.waitForTimeout(1300);
+  return true;
+}
+
+// resize-object: 그림/차트 크기를 '개체 속성' 다이얼로그의 너비/높이(mm 숫자)로 설정(드래그보다 정밀).
+// --at "x,y"(객체 안 한 점, 페이지좌표) · --width/--height mm(둘 중 하나만도 가능) · --apply(없으면 현재크기만 읽음).
+async function cmdResizeObject(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (!args.at) throw new Error('--at "x,y" 필요 (객체 안의 한 점, 페이지 좌표 — capture --grid 로 확인)');
+  const [ax, ay] = String(args.at).split(',').map(Number);
+  if ([ax, ay].some(Number.isNaN)) throw new Error('--at 형식: "x,y"');
+  const W = args.width !== undefined ? Number(args.width) : null;
+  const H = args.height !== undefined ? Number(args.height) : null;
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용.');
+  const name = String(args.name).normalize('NFC');
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    const rect = await detectPageRect(editor);
+    if (!rect || rect.width < 100) throw new Error('A4 페이지 영역 검출 실패');
+    const vx = rect.x + ax, vy = rect.y + ay;
+    if (!await objMenuClick(editor, vx, vy, '개체 속성...')) {
+      out({ cmd: 'resize-object', status: 'object_not_found', at: [ax, ay], docId: editor.__docId || null, note: '그 좌표에 객체 없음(우클릭 메뉴에 "개체 속성" 없음). capture --grid 로 좌표 재확인.' }); return;
+    }
+    // 개체 속성 다이얼로그의 너비/높이 입력칸(aria-label) 읽기
+    const fields = await editor.evaluate(() => {
+      const f = {};
+      for (const el of document.querySelectorAll('input')) {
+        const al = el.getAttribute('aria-label') || '';
+        if (al === '너비' || al === '높이') { const r = el.getBoundingClientRect(); f[al] = { val: el.value, x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; }
+      }
+      return f;
+    });
+    const cur = { width: fields['너비'] && fields['너비'].val, height: fields['높이'] && fields['높이'].val };
+    if (!apply || (W === null && H === null)) {
+      await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(400);
+      out({ cmd: 'resize-object', dryRun: !apply, at: [ax, ay], currentSize: cur, requested: { width: W, height: H }, docId: editor.__docId || null,
+        note: (W === null && H === null) ? '--width/--height 없음 → 현재 크기만 읽음(mm).' : '--apply 시 적용. 단위 mm.' }); return;
+    }
+    const setField = async (label, value) => {
+      const fld = fields[label]; if (!fld) return false;
+      await editor.mouse.click(fld.x, fld.y); await editor.keyboard.press('ControlOrMeta+A'); await editor.keyboard.press('Delete');
+      await editor.keyboard.type(String(value), { delay: 30 }); await editor.keyboard.press('Tab'); return true;
+    };
+    if (W !== null) await setField('너비', W);
+    if (H !== null) await setField('높이', H);
+    await editor.waitForTimeout(300);
+    const okXY = await editor.evaluate(() => { for (const el of document.querySelectorAll('a, button, div, span')) { const t = (el.textContent || '').trim(); if (t === '확인' && el.offsetParent !== null && el.childElementCount === 0) { const r = el.getBoundingClientRect(); if (r.width > 15 && r.height > 10) return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; } } return null; });
+    if (okXY) await editor.mouse.click(okXY.x, okXY.y); else await editor.keyboard.press('Enter').catch(() => {});
+    await editor.waitForTimeout(1300);
+    const n = (await readCurrentPage(editor)) || 1; await gotoPage(editor, n);
+    const rect2 = await detectPageRect(editor); await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_resizeobj_${stamp()}.png`);
+    await editor.screenshot(rect2 ? { path: shot, clip: rect2 } : { path: shot });
+    out({ cmd: 'resize-object', applied: true, at: [ax, ay], before: cur, after: { width: W !== null ? W : cur.width, height: H !== null ? H : cur.height }, page: n, shot, docId: editor.__docId || null });
+  });
+}
+
+// chart-data: 차트의 '데이터 편집' 스프레드시트(DOM 그리드)에서 셀 값을 바꾼다 → 차트가 갱신됨.
+// --at "x,y"(차트 안 한 점) · --set "B2=9.9,C3=4"(엑셀식 열문자+행번호=값, 콤마구분) · --apply.
+// 셀 위치 = 열 헤더(A~D)의 x ∩ 행 헤더(1~N)의 y. 더블클릭 → 전체선택 → 타이핑 → Enter.
+async function cmdChartData(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (!args.at) throw new Error('--at "x,y" 필요 (차트 안의 한 점, 페이지 좌표)');
+  if (!args.set) throw new Error('--set "B2=9.9,C3=4" 필요 (엑셀식 셀=값)');
+  const [ax, ay] = String(args.at).split(',').map(Number);
+  if ([ax, ay].some(Number.isNaN)) throw new Error('--at 형식: "x,y"');
+  const sets = String(args.set).split(',').map((s) => { const m = s.trim().match(/^([A-Za-z]+)(\d+)\s*=\s*(.+)$/); return m ? { col: m[1].toUpperCase(), row: Number(m[2]), value: m[3].trim() } : null; }).filter(Boolean);
+  if (!sets.length) throw new Error('--set 파싱 실패. 예: "B2=9.9,C3=4"');
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다.');
+  const name = String(args.name).normalize('NFC');
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    const rect = await detectPageRect(editor);
+    if (!rect || rect.width < 100) throw new Error('A4 페이지 영역 검출 실패');
+    if (!await objMenuClick(editor, rect.x + ax, rect.y + ay, '데이터 편집')) {
+      out({ cmd: 'chart-data', status: 'chart_not_found', at: [ax, ay], docId: editor.__docId || null, note: '그 좌표에 차트 없음(우클릭 메뉴에 "데이터 편집" 없음). capture --grid 로 좌표 재확인.' }); return;
+    }
+    // 데이터 그리드 셀 좌표 = 열 헤더(A~D) x ∩ 행 헤더(숫자) y
+    const cellXY = (col, rownum) => editor.evaluate(({ col, rownum }) => {
+      const leaves = [...document.querySelectorAll('td, th, div, span')].filter((el) => el.childElementCount === 0 && el.offsetParent !== null);
+      // 그리드 셀 크기(폭~79·높이~28)로 거름 — 툴바/페이지의 동일 글자(작은 요소)를 제외해야 행/열 헤더만 잡힌다.
+      const pick = (txt) => leaves.filter((el) => (el.textContent || '').trim() === txt).map((el) => { const r = el.getBoundingClientRect(); return { cx: Math.round(r.x + r.width / 2), cy: Math.round(r.y + r.height / 2), w: r.width, h: r.height }; }).filter((e) => e.w > 55 && e.w < 140 && e.h > 18 && e.h < 42);
+      const colEls = pick(col).sort((a, b) => a.cy - b.cy);     // 열 헤더 = 가장 위
+      const rowEls = pick(String(rownum)).sort((a, b) => a.cx - b.cx); // 행 헤더 = 가장 왼쪽
+      if (!colEls.length || !rowEls.length) return null;
+      return { x: colEls[0].cx, y: rowEls[0].cy };
+    }, { col, rownum });
+    if (!apply) {
+      await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(500);
+      out({ cmd: 'chart-data', dryRun: true, at: [ax, ay], sets, docId: editor.__docId || null, note: '--apply 시 각 셀에 값 입력. 좌표는 열문자∩행번호.' }); return;
+    }
+    const done = [];
+    for (const s of sets) {
+      const xy = await cellXY(s.col, s.row);
+      if (!xy) { done.push({ ...s, ok: false, why: 'cell_not_located' }); continue; }
+      await editor.mouse.dblclick(xy.x, xy.y); await editor.waitForTimeout(350);
+      await editor.keyboard.press('ControlOrMeta+A'); await editor.keyboard.type(s.value, { delay: 35 }); await editor.keyboard.press('Enter'); await editor.waitForTimeout(500);
+      done.push({ ...s, ok: true });
+    }
+    await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(1500); // 모달 닫기 + 차트 갱신
+    const n = (await readCurrentPage(editor)) || 1; await gotoPage(editor, n);
+    const rect2 = await detectPageRect(editor); await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_chartdata_${stamp()}.png`);
+    await editor.screenshot(rect2 ? { path: shot, clip: rect2 } : { path: shot });
+    out({ cmd: 'chart-data', applied: true, at: [ax, ay], set: done, page: n, shot, docId: editor.__docId || null });
+  });
+}
+
 // download: 드라이브 문서를 로컬 .hwp/.hwpx 로 내려받기. 편집기를 열어(openDoc — docId 신원확인으로
 // 동명 오행 차단) 파일›다운로드(.d_download)를 누르고 download 이벤트를 저장. 원본 형식 그대로(변환 없음).
 // read.mjs 가 읽으려면 로컬 파일 필요 — 드라이브 '현재 상태'를 받아와야 stale 안 됨(편집 후 재읽기 시 재다운로드).
@@ -1402,6 +1531,8 @@ async function cmdFind(args) {
     else if (args._ === 'find') await cmdFind(args);
     else if (args._ === 'download') await cmdDownload(args);
     else if (args._ === 'upload') await cmdUpload(args);
+    else if (args._ === 'resize-object') await cmdResizeObject(args);
+    else if (args._ === 'chart-data') await cmdChartData(args);
     else if (args._ === 'insert-text') await cmdInsertText(args);
     else if (args._ === 'replace-text') await cmdReplaceText(args);
     else if (args._ === 'set-cell-text') await cmdSetCellText(args);
