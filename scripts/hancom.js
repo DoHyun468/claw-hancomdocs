@@ -392,7 +392,6 @@ async function goDocStart(ed) {
 // (= 매치 수 < nth). 반환: {found, page, caret, landedNth, matchCount, wrapped} | {found:false}
 async function findText(ed, text, nth = 1) {
   await goDocStart(ed); // 문서순 nth 보장(캐럿 회전 제거)
-  const p0 = await readCaretRect(ed); // 검색 전 캐럿(문서 시작) — 매칭 실패 시 캐럿이 여기서 안 움직임
   await openFindDialog(ed);
   const box = await ed.evaluate(() => {
     const ins = Array.from(document.querySelectorAll('input')).map(el => { const r = el.getBoundingClientRect(); return { el, x: r.x, y: r.y, w: r.width, h: r.height, vis: r.width > 60 && r.height > 10 && getComputedStyle(el).visibility !== 'hidden' && el.getAttribute('aria-label') !== '문서 편집 영역' }; });
@@ -403,11 +402,17 @@ async function findText(ed, text, nth = 1) {
   await ed.mouse.click(box.x + Math.min(box.w / 2, 40), box.y + box.h / 2);
   await ed.keyboard.press('ControlOrMeta+A');
   await ed.keyboard.type(text, { delay: 25 });
+  // 검색 방향 '문서 전체'(한 바퀴) — '아래로' 기본은 캐럿 뒤만 찾아, 문서 맨앞(표지/상단 표)의 매치를 놓친다.
+  const wholeDoc = await dialogBtnXY(ed, '문서 전체');
+  if (wholeDoc) { await ed.mouse.click(wholeDoc.x, wholeDoc.y); await ed.waitForTimeout(300); }
   const nextBtn = { x: box.x + box.w + 70, y: box.y - 1 }; // '다음 찾기' ≈ 검색칸 오른쪽
   const N = Math.max(1, Number(nth) || 1);
-  let page = null, caret = null, firstKey = null, wrapped = false, matchCount = 0;
+  let page = null, caret = null, firstKey = null, wrapped = false, matchCount = 0, noMatch = false;
   for (let i = 0; i < N; i++) {
     await ed.mouse.click(nextBtn.x, nextBtn.y); await ed.waitForTimeout(i === 0 ? 1600 : 850);
+    // no-match: 첫 클릭에서 '찾을 수 없습니다' 류 메시지가 뜨면 매치 0. DOM 텍스트로 감지(캐럿 위치 추측보다
+    // 안정 — 문서 맨앞에 있는 매치를 '안 움직였다'고 오판하던 버그 제거).
+    if (i === 0 && await findEndMessage(ed)) { noMatch = true; break; }
     page = await readCurrentPage(ed);
     caret = await readCaretRect(ed);
     const key = `${page}:${caret ? caret.x : '?'}:${caret ? caret.y : '?'}`;
@@ -417,10 +422,7 @@ async function findText(ed, text, nth = 1) {
   }
   await ed.mouse.click(nextBtn.x, nextBtn.y + 53); await ed.waitForTimeout(700); // 닫기
   await ed.keyboard.press('Escape'); await ed.waitForTimeout(400); // 검색 하이라이트 제거
-  if (!page || page <= 0) return { found: false };
-  // no-match 가드: 매칭 실패 시 webhwp 는 캐럿을 안 옮긴다(검색 전 p0 그대로). 캐럿이 p0 에서 안
-  // 움직였으면 '찾음'이 아님(상태바 페이지만 보고 오탐하던 버그 차단 — 없는 문자열도 found 나던 것).
-  if (p0 && caret && Math.abs(caret.x - p0.x) <= 4 && Math.abs(caret.y - p0.y) <= 4) return { found: false };
+  if (noMatch || !page || page <= 0) return { found: false };
   return { found: true, page, caret, landedNth: wrapped ? matchCount : N, matchCount: wrapped ? matchCount : null, wrapped };
 }
 
@@ -925,12 +927,22 @@ async function cmdReplaceText(args) {
 // 안전: 찾기(읽기전용)로만 캐럿 이동, 캐럿이 본문 영역 밖이면 중단, dry-run 기본, headless 전용.
 async function cmdSetCellText(args) {
   if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
-  if (args.cell == null || args.cell === true) throw new Error('--cell 필요 (기준 셀의 기존 텍스트)');
   if (args.text == null || args.text === true) throw new Error('--text 필요 (채울 값)');
   const apply = !!args.apply;
   if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
-  const tabN = args.tab !== undefined ? Math.max(0, Number(args.tab)) : 1; // 기준 셀에서 Tab 횟수(1=다음 셀)
-  const cellText = String(args.cell).normalize('NFC');
+  // 셀 지정 두 방식: ① --cell <기존 텍스트> [--tab N] (직접) ② --file --table T --row R --col C
+  // (빈 셀 포함, read.mjs 가 앵커 셀+colCnt 로 Tab 횟수 자동계산 — 텍스트 없는 셀도 도달).
+  let cellText, tabN, nav = null;
+  if (args.file && args.row !== undefined && args.col !== undefined) {
+    const reader = await import('./read.mjs');
+    nav = await reader.cellNav(args.file, Number(args.table) || 0, Number(args.row), Number(args.col));
+    if (!nav.found) { out({ cmd: 'set-cell-text', status: 'cellnav_failed', why: nav.why, note: '표에 텍스트 셀이 없거나 colCnt 미상 → --cell 로 직접 지정. (병합 표는 어긋날 수 있음)' }); return; }
+    cellText = String(nav.anchorText).normalize('NFC'); tabN = nav.tabSteps;
+  } else {
+    if (args.cell == null || args.cell === true) throw new Error('--cell 필요 (기준 셀 텍스트) 또는 --file --table --row --col');
+    cellText = String(args.cell).normalize('NFC');
+    tabN = args.tab !== undefined ? Math.max(0, Number(args.tab)) : 1; // 기준 셀에서 Tab 횟수(1=다음 셀)
+  }
   const value = String(args.text).normalize('NFC');
   const scale = Number(args.scale) || 1.5;
   fs.mkdirSync(CAPDIR, { recursive: true });
@@ -948,13 +960,15 @@ async function cmdSetCellText(args) {
     if (!inBody) { out({ cmd: 'set-cell-text', status: 'caret_out_of_body', cell: cellText, caret, pageRect: rect }); return; }
     if (!apply) {
       out({ cmd: 'set-cell-text', dryRun: true, cell: cellText, tab: tabN, text: value, foundPage: n, caret,
-            docId: editor.__docId || null, note: '--apply 없으면 read-only. 적용 시: 기준 셀에서 Tab×' + tabN + ' 이동 후 입력.' });
+            ...(nav ? { target: { table: nav.tableIdx, row: nav.targetRow, col: nav.targetCol }, colCnt: nav.colCnt } : {}),
+            docId: editor.__docId || null, note: '--apply 없으면 read-only. 적용 시: 앵커 "' + cellText + '" 에서 ' + (tabN < 0 ? 'Shift+Tab×' + Math.abs(tabN) : 'Tab×' + tabN) + ' 이동 후 입력.' });
       return;
     }
-    // 기준 셀에 캐럿 → Tab×N 으로 대상 셀 이동
+    // 기준(앵커) 셀에 캐럿 → Tab×N 으로 대상 셀 이동 (음수면 Shift+Tab 으로 역방향)
     await editor.mouse.click(caret.x, caret.y + Math.round((caret.h || 12) / 2));
     await editor.waitForTimeout(350);
-    for (let i = 0; i < tabN; i++) { await editor.keyboard.press('Tab'); await editor.waitForTimeout(180); }
+    const steps = Math.abs(tabN), tabKey = tabN < 0 ? 'Shift+Tab' : 'Tab';
+    for (let i = 0; i < steps; i++) { await editor.keyboard.press(tabKey); await editor.waitForTimeout(180); }
     // 대상 셀의 기존 내용을 선택해 교체 — webhwp Tab 은 셀 내용을 자동 선택하지 않으므로(캐럿만 셀 시작
     // 으로 이동) 명시 선택한다: 줄 시작(Home) → 줄 끝까지(Shift+End) → 타이핑이 선택을 교체. 빈 셀이면
     // 선택 0 → 그냥 입력. (단일 줄 셀 기준; 여러 줄 셀은 첫 줄만 선택되는 한계.)
@@ -968,7 +982,8 @@ async function cmdSetCellText(args) {
     await hideOverlays(editor);
     const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_cell_p${n}_${stamp()}.png`);
     await editor.screenshot(rect2 ? { path: shot, clip: rect2 } : { path: shot });
-    out({ cmd: 'set-cell-text', applied: true, cell: cellText, tab: tabN, text: value, page: n, docId: editor.__docId || null, shot });
+    out({ cmd: 'set-cell-text', applied: true, cell: cellText, tab: tabN, text: value, page: n,
+      ...(nav ? { target: { table: nav.tableIdx, row: nav.targetRow, col: nav.targetCol } } : {}), docId: editor.__docId || null, shot });
   });
 }
 

@@ -176,6 +176,31 @@ export function deriveAnchor(units, phrase, nth = 1, maxLen = 60) {
   return make(full.slice(lo, hi), false, mStart - lo);  // 유니크화 실패(동일 텍스트 다수) — 구조주소로 구분
 }
 
+// 표별 colCnt(열 수) — 문서순 tableIdx 인덱스. <hp:tbl ... colCnt="N">. Tab 네비(빈 셀 도달) 계산용.
+async function getTableColCounts(file) {
+  const bytes = fs.readFileSync(file);
+  const isHwpx = bytes[0] === 0x50 && bytes[1] === 0x4b;
+  let xmls;
+  if (isHwpx) xmls = sectionXmls(bytes);
+  else { const doc = await loadRhwpDoc(bytes); try { xmls = sectionXmls(doc.exportHwpx()); } finally { if (typeof doc.free === 'function') doc.free(); } }
+  return xmls.flatMap((xml) => [...xml.matchAll(/<hp:tbl\b[^>]*\bcolCnt="(\d+)"/g)].map((m) => Number(m[1])));
+}
+
+// 빈 셀 포함 임의 셀(table, row, col)로 가는 Tab 네비 정보. 텍스트 있는 '첫 셀(앵커)'에서 행우선 Tab 횟수
+// 계산(빈 셀은 텍스트로 못 찾으니 앵커+Tab 으로 도달). 반환 tabSteps 음수면 Shift+Tab. ⚠️ 병합 셀 없는
+// 단순 격자 가정(colCnt 기반 산술) — 병합 표는 어긋날 수 있음.
+export async function cellNav(file, tableIdx, targetRow, targetCol) {
+  const units = await getUnits(file);
+  const cells = units.filter((u) => u.kind === 'cell' && u.address.tableIdx === tableIdx);
+  if (!cells.length) return { found: false, why: 'no_text_cell_in_table' };
+  const colCounts = await getTableColCounts(file);
+  const colCnt = colCounts[tableIdx];
+  if (!colCnt) return { found: false, why: 'colCnt_unknown' };
+  const a = cells[0]; // 문서순 첫 텍스트 셀 = 앵커
+  const tabSteps = (targetRow - a.address.row) * colCnt + (targetCol - a.address.col);
+  return { found: true, anchorText: a.text, anchorRow: a.address.row, anchorCol: a.address.col, colCnt, tabSteps, targetRow, targetCol, tableIdx };
+}
+
 // --- CLI ---
 const argv = process.argv.slice(2);
 let file = null, text = null, inspect = false, locate = false, nth = 1;
