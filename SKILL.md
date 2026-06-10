@@ -74,6 +74,8 @@ node hancom.js around  --name <문서이름>  --text "<검색어>" [--zoom [--ba
 node hancom.js locate  --name <문서이름>  --clues "a,b,c" [--grid] [--out <png>]
 node hancom.js find    --name <문서이름>  --text "<구절>"
 node hancom.js pinpoint --file <로컬 .hwp/.hwpx> --text "<구절>" [--nth N] [--name <문서이름>] [--band N] [--scale N] [--out <png>]
+node hancom.js download --name <문서이름>  [--out <로컬경로>]
+node hancom.js upload   --file <로컬경로>
 node read.mjs <로컬 .hwp/.hwpx> [--text "<구절>"] [--locate --nth N] [--inspect]
 node hancom.js insert-text  --name <문서이름> --anchor "<기준 텍스트>" --text "<추가할 한 줄>" [--apply]
 node hancom.js replace-text --name <문서이름> --find "<바꿀 대상>" --to "<바꿀 결과>" [--apply]
@@ -127,6 +129,11 @@ node hancom.js font-color   --name <문서이름> --text "<구절>" --color red|
   - 같은 텍스트가 여러 곳(예: 여러 표의 동일 컬럼헤더)이거나 옆에 맥락이 없어도 **문서순으로 그 N번째**를 집는다(유니크 문자열이 되면 검색 1회로 빠르게, 안 되면 전체를 훑어 문서 위치순으로 그 자리에 착지).
   - 반환: `{found, nth, address(표·행·열), context, page, shot, method}`. 못 집으면 `status`로 정직하게 알린다(예: 구절 자체가 파일에 없음, UI 매치 수가 파일과 달라 순서 정합이 안 됨).
   - 글자가 없는 대상(그림·도형 등)은 read.mjs가 못 보므로, **옆의 유니크한 텍스트**를 `around --zoom --band`(넓게)로 잡는 게 길이다.
+
+- **`download` / `upload`** (로컬 ↔ 드라이브): read.mjs/pinpoint 의 `--file` 은 **로컬 원본**이 필요하다.
+  - `node hancom.js download --name <문서이름> [--out <경로>]` → 드라이브 문서의 **현재 상태**를 로컬 `.hwp/.hwpx`로(원본 형식 그대로, 변환 없음). 기본 저장 위치 `scripts/downloads/`. 반환 `{saved, suggestedFilename, bytes, docId}`.
+  - `node hancom.js upload --file <로컬경로>` → 로컬 파일을 드라이브에 **새 문서**로 올림(같은 이름이어도 교체 아님 → 중복 생성 주의).
+  - **루프**: `download` 로 현재 상태를 받아 → `read.mjs` 로 occurrence-맵 → `pinpoint`/편집은 한컴독스 UI(자동저장). 편집 뒤 다시 읽어야 하면 **재 `download`**(로컬은 편집하면 stale). 편집 자체는 UI 에서 하므로 보통 재업로드는 불필요.
 
 ## ✏️ 편집 — 한 줄 추가 (`insert-text`)
 

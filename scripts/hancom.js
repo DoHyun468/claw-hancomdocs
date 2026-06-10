@@ -12,6 +12,7 @@ const path = require('path');
 const DIR = __dirname;
 const AUTH = path.join(DIR, 'auth.json');
 const CAPDIR = path.join(DIR, 'captures');
+const DLDIR = path.join(DIR, 'downloads');
 const HOME = 'https://www.hancomdocs.com/ko/home';
 const MYDRIVE = 'https://www.hancomdocs.com/ko/mydrive';
 // 세로로 긴 뷰포트: A4 한 장이 통째로 들어가게
@@ -1288,6 +1289,60 @@ async function cmdFontColor(args) {
 
 // find: 같은 구절의 모든 occurrence 를 열거(개수 + 각 페이지). 긴 문서에서 "어느 것"을 보거나
 // 편집할지 정하는 출발점 — 목록을 보고 around --nth N(맥락 읽기) / 편집 op --nth N(타겟)으로 잇는다.
+// download: 드라이브 문서를 로컬 .hwp/.hwpx 로 내려받기. 편집기를 열어(openDoc — docId 신원확인으로
+// 동명 오행 차단) 파일›다운로드(.d_download)를 누르고 download 이벤트를 저장. 원본 형식 그대로(변환 없음).
+// read.mjs 가 읽으려면 로컬 파일 필요 — 드라이브 '현재 상태'를 받아와야 stale 안 됨(편집 후 재읽기 시 재다운로드).
+async function cmdDownload(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  const name = String(args.name).normalize('NFC');
+  fs.mkdirSync(DLDIR, { recursive: true });
+  const browser = await chromium.launch({ headless: !HEADED, slowMo: SLOWMO });
+  const ctx = await browser.newContext({ storageState: AUTH, viewport: VIEW, deviceScaleFactor: 1, acceptDownloads: true });
+  try {
+    const page = await ctx.newPage();
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('드라이브에서 문서 못 찾음: ' + name);
+    // 메뉴바 '파일' 탭 열기 (텍스트로 탭 위치 탐색 — 좌표 하드코딩 회피)
+    const fileTab = await editor.evaluate(() => {
+      for (const el of document.querySelectorAll('*')) {
+        const t = (el.textContent || '').trim();
+        if (t === '파일' && el.childElementCount === 0) { const r = el.getBoundingClientRect(); if (r.width > 0 && r.height > 0 && r.top < 140) return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; }
+      }
+      return null;
+    });
+    if (!fileTab) throw new Error('파일 메뉴 탐색 실패');
+    await editor.mouse.click(fileTab.x, fileTab.y); await editor.waitForTimeout(800);
+    // 파일›다운로드(.d_download = ui-map MENU_MAP) — 원본 형식 직접 다운로드('준비 중' 토스트만, 형식선택 없음)
+    const dlXY = await editor.evaluate(() => { const el = document.querySelector('.d_download'); if (!el || el.offsetParent === null) return null; const r = el.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; });
+    if (!dlXY) throw new Error('.d_download 탐색 실패(파일 메뉴 안 열림)');
+    const [download] = await Promise.all([
+      editor.waitForEvent('download', { timeout: 60000 }),
+      editor.mouse.click(dlXY.x, dlXY.y),
+    ]);
+    const suggested = download.suggestedFilename();
+    const dest = args.out ? path.resolve(args.out) : path.join(DLDIR, suggested);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    await download.saveAs(dest);
+    out({ cmd: 'download', name, saved: dest, suggestedFilename: suggested, bytes: fs.statSync(dest).size, docId: editor.__docId || null });
+  } finally { await browser.close(); }
+}
+
+// upload: 로컬 파일을 드라이브에 올림(새 문서로). 이후 --name <파일명> 으로 open/capture/edit/download.
+// ⚠️ 같은 이름이어도 '교체'가 아니라 새 항목 생성(중복) — 편집은 UI 에서(자동저장), 로컬을 다시 올릴 필요는 보통 없음.
+async function cmdUpload(args) {
+  if (!args.file) throw new Error('--file 필요 (업로드할 로컬 파일 경로)');
+  const file = path.resolve(args.file);
+  if (!fs.existsSync(file)) throw new Error('파일 없음: ' + file);
+  const browser = await chromium.launch({ headless: !HEADED, slowMo: SLOWMO });
+  const ctx = await browser.newContext({ storageState: AUTH, viewport: VIEW, deviceScaleFactor: 1, acceptDownloads: true });
+  try {
+    const page = await ctx.newPage();
+    await uploadFile(page, file);
+    const name = path.basename(file).normalize('NFC');
+    out({ cmd: 'upload', file, name, note: `드라이브에 올림 — 이후 --name "${name}" 으로 사용.` });
+  } finally { await browser.close(); }
+}
+
 async function cmdFind(args) {
   if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
   if (args.text == null || args.text === true) throw new Error('--text 필요 (찾을 구절)');
@@ -1317,6 +1372,8 @@ async function cmdFind(args) {
     else if (args._ === 'pinpoint') await cmdPinpoint(args);
     else if (args._ === 'locate') await cmdLocate(args);
     else if (args._ === 'find') await cmdFind(args);
+    else if (args._ === 'download') await cmdDownload(args);
+    else if (args._ === 'upload') await cmdUpload(args);
     else if (args._ === 'insert-text') await cmdInsertText(args);
     else if (args._ === 'replace-text') await cmdReplaceText(args);
     else if (args._ === 'set-cell-text') await cmdSetCellText(args);
