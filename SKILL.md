@@ -116,8 +116,6 @@ node hancom.js font-color   --name <문서이름> --text "<구절>" --color red|
 3. `zoom --name X --page N --clip "x,y,width,height" --scale 3` → 선명한 확대본.
    - 좌표계는 **페이지 왼쪽위=(0,0)** 으로 격자 라벨과 동일. 어긋나면 격자 이미지를 다시 띄워 라벨 숫자를 그대로 읽을 것.
 
-자세한 명세: `ORDER_SPEC.txt`.
-
 ### 긴/복잡 문서에서 "그 위치"를 정확히 — `read.mjs` · `find` · `pinpoint`
 본문은 캔버스라 캡처(비전)만으론 "같은 구절이 여러 곳인데 그중 어디"를 정밀히 못 짚는다. **원본 파일을 직접 읽어** 보완한다.
 
@@ -292,4 +290,3 @@ node hancom.js align --name <문서이름> --anchor "<단락 안 텍스트>" --t
 - **찾기 UI는 셀렉터 기반**(좌표 아님): `openFindDialog`가 `a[title="찾기"]` + '찾기...' 메뉴의 DOM 위치를 읽어 연다. `around --zoom`은 찾기 후 캐럿(`#HWP_CURSOR_VIEW`) 픽셀 위치로 매치 줄을 확대.
 - 키보드 단축키(Ctrl+F/End)는 webhwp에서 신뢰 불가 — 좌표/스크롤/셀렉터로만.
 - ⚠️ **본문/툴바 input에 블라인드 입력 금지**(문서가 편집됨). 검색은 찾기 다이얼로그 검색칸만.
-- 전체 개발 노트 + 캔버스 뷰어 디버깅 방법론: `./DEBUG_NOTES.md`.
