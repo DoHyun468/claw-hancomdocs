@@ -1319,6 +1319,35 @@ function parseColor(c) {
 }
 
 // font-color: 구절을 드래그 선택 후 글자색 팔레트에서 요청 색에 '가장 가까운' 스와치 클릭.
+// 구절을 드래그 선택 후 색 팔레트(comboSel 의 ▼)에서 target[r,g,b]에 가장 가까운 스와치를 클릭.
+// 글자색(.font_color)·형광펜(.font_highlight_color)이 같은 팔레트 메커니즘이라 공유. 반환 {sel, picked}|{status}.
+async function selectAndPickColor(editor, phrase, nth, target, comboSel) {
+  const sel = await dragSelectPhrase(editor, phrase, nth);
+  if (!sel.found) return { status: 'text_not_found' };
+  if (sel.wrapped) return { status: 'nth_out_of_range', matchCount: sel.matchCount };
+  if (!sel.selChars) return { status: 'selection_failed' };
+  const arrow = await editor.evaluate((cs) => { const el = document.querySelector(cs + ' .btn_combo_arrow'); if (!el) return null; const r = el.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; }, comboSel);
+  if (!arrow) throw new Error('색 드롭다운(' + comboSel + ' .btn_combo_arrow) 탐색 실패');
+  await editor.mouse.click(arrow.x, arrow.y); await editor.waitForTimeout(900);
+  const cells = await editor.evaluate(() => {
+    const out = [];
+    const pal = document.querySelector('.ui_color_pick');
+    const scope = pal && pal.offsetParent !== null ? pal : document;
+    for (const el of scope.querySelectorAll('a, li, div, span, td')) {
+      const r = el.getBoundingClientRect();
+      if (r.width < 8 || r.height < 8 || r.width > 22 || el.offsetParent === null) continue;
+      const m = getComputedStyle(el).backgroundColor.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
+      if (m) out.push({ r: +m[1], g: +m[2], b: +m[3], x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) });
+    }
+    return out;
+  });
+  if (!cells.length) throw new Error('색 팔레트 스와치 탐색 실패');
+  let best = cells[0], bd = Infinity;
+  for (const c of cells) { const d = (c.r - target[0]) ** 2 + (c.g - target[1]) ** 2 + (c.b - target[2]) ** 2; if (d < bd) { bd = d; best = c; } }
+  await editor.mouse.click(best.x, best.y); await editor.waitForTimeout(1000);
+  return { sel, picked: { r: best.r, g: best.g, b: best.b } };
+}
+
 async function cmdFontColor(args) {
   if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
   if (args.text == null || args.text === true) throw new Error('--text 필요 (색 바꿀 구절)');
@@ -1341,44 +1370,54 @@ async function cmdFontColor(args) {
       out({ cmd: 'font-color', dryRun: true, text: phrase, color: args.color, nth, foundPage: r.page, docId: editor.__docId || null, note: '--apply 없으면 read-only.' });
       return;
     }
-    const sel = await dragSelectPhrase(editor, phrase, nth);
-    if (!sel.found) { out({ cmd: 'font-color', status: 'text_not_found', text: phrase, docId: editor.__docId || null }); return; }
-    if (sel.wrapped) { out({ cmd: 'font-color', status: 'nth_out_of_range', text: phrase, nth, matchCount: sel.matchCount, docId: editor.__docId || null }); return; }
-    if (!sel.selChars) { out({ cmd: 'font-color', status: 'selection_failed', text: phrase, docId: editor.__docId || null, note: '드래그 선택 실패.' }); return; }
-    const n = sel.page || 1;
-    // 글자색 드롭다운 화살표 → 팔레트
-    const arrow = await editor.evaluate(() => { const el = document.querySelector('.font_color .btn_combo_arrow'); if (!el) return null; const r = el.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; });
-    if (!arrow) throw new Error('글자색 드롭다운(.font_color .btn_combo_arrow) 탐색 실패');
-    await editor.mouse.click(arrow.x, arrow.y); await editor.waitForTimeout(900);
-    // 팔레트의 솔리드 rgb 스와치 수집(rgba 알파/큰 박스는 UI 노이즈라 제외)
-    const cells = await editor.evaluate(() => {
-      const out = [];
-      const pal = document.querySelector('.ui_color_pick');
-      const scope = pal && pal.offsetParent !== null ? pal : document;
-      for (const el of scope.querySelectorAll('a, li, div, span, td')) {
-        const r = el.getBoundingClientRect();
-        if (r.width < 8 || r.height < 8 || r.width > 22 || el.offsetParent === null) continue;
-        const m = getComputedStyle(el).backgroundColor.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
-        if (m) out.push({ r: +m[1], g: +m[2], b: +m[3], x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) });
-      }
-      return out;
-    });
-    if (!cells.length) throw new Error('글자색 팔레트 스와치 탐색 실패');
-    let best = cells[0], bd = Infinity;
-    for (const c of cells) { const d = (c.r - target[0]) ** 2 + (c.g - target[1]) ** 2 + (c.b - target[2]) ** 2; if (d < bd) { bd = d; best = c; } }
-    await editor.mouse.click(best.x, best.y); await editor.waitForTimeout(1000);
+    const res = await selectAndPickColor(editor, phrase, nth, target, '.font_color');
+    if (res.status) { out({ cmd: 'font-color', status: res.status, text: phrase, ...(res.matchCount ? { nth, matchCount: res.matchCount } : {}), docId: editor.__docId || null }); return; }
+    const n = res.sel.page || 1;
     await gotoPage(editor, n);
     const rect2 = await detectPageRect(editor);
     await hideOverlays(editor);
     const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_fontcolor_p${n}_${stamp()}.png`);
     await editor.screenshot(rect2 ? { path: shot, clip: rect2 } : { path: shot });
-    out({ cmd: 'font-color', applied: true, text: phrase, color: args.color, picked: { r: best.r, g: best.g, b: best.b }, selChars: sel.selChars, page: n, docId: editor.__docId || null, shot });
+    out({ cmd: 'font-color', applied: true, text: phrase, color: args.color, picked: res.picked, selChars: res.sel.selChars, page: n, docId: editor.__docId || null, shot });
   });
 }
 
 
 // find: 같은 구절의 모든 occurrence 를 열거(개수 + 각 페이지). 긴 문서에서 "어느 것"을 보거나
 // 편집할지 정하는 출발점 — 목록을 보고 around --nth N(맥락 읽기) / 편집 op --nth N(타겟)으로 잇는다.
+// highlight: 구절에 형광펜 색 적용. font-color 와 동일 메커니즘(.font_highlight_color 팔레트, 최근접 스와치).
+async function cmdHighlight(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (args.text == null || args.text === true) throw new Error('--text 필요 (형광펜 칠할 구절)');
+  const target = parseColor(args.color);
+  if (!target) throw new Error('--color 필요 (yellow|green|red|... 또는 #RRGGBB)');
+  const nth = Math.max(1, Number(args.nth) || 1);
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
+  const phrase = String(args.text).normalize('NFC');
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
+    const name = String(args.name).normalize('NFC');
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    if (!apply) {
+      const r = await findText(editor, phrase, nth);
+      if (!r.found) { out({ cmd: 'highlight', status: 'text_not_found', text: phrase, docId: editor.__docId || null }); return; }
+      if (r.wrapped) { out({ cmd: 'highlight', status: 'nth_out_of_range', text: phrase, nth, matchCount: r.matchCount, docId: editor.__docId || null }); return; }
+      out({ cmd: 'highlight', dryRun: true, text: phrase, color: args.color, nth, foundPage: r.page, docId: editor.__docId || null, note: '--apply 없으면 read-only.' });
+      return;
+    }
+    const res = await selectAndPickColor(editor, phrase, nth, target, '.font_highlight_color');
+    if (res.status) { out({ cmd: 'highlight', status: res.status, text: phrase, ...(res.matchCount ? { nth, matchCount: res.matchCount } : {}), docId: editor.__docId || null }); return; }
+    const n = res.sel.page || 1;
+    await gotoPage(editor, n);
+    const rect2 = await detectPageRect(editor); await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_highlight_p${n}_${stamp()}.png`);
+    await editor.screenshot(rect2 ? { path: shot, clip: rect2 } : { path: shot });
+    out({ cmd: 'highlight', applied: true, text: phrase, color: args.color, picked: res.picked, selChars: res.sel.selChars, page: n, docId: editor.__docId || null, shot });
+  });
+}
+
 // font-family: 구절의 글꼴을 바꾼다. 드래그 선택 후 툴바 글꼴 입력칸(.font_name input)에 글꼴명 입력.
 async function cmdFontFamily(args) {
   if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
@@ -1760,6 +1799,7 @@ async function cmdFind(args) {
     else if (args._ === 'insert-image') await cmdInsertImage(args);
     else if (args._ === 'table-op') await cmdTableOp(args);
     else if (args._ === 'font-family') await cmdFontFamily(args);
+    else if (args._ === 'highlight') await cmdHighlight(args);
     else if (args._ === 'insert-text') await cmdInsertText(args);
     else if (args._ === 'replace-text') await cmdReplaceText(args);
     else if (args._ === 'set-cell-text') await cmdSetCellText(args);
