@@ -1045,7 +1045,8 @@ async function cmdFormatText(args) {
   if (args.bold) styles.push(['b', '굵게']);
   if (args.italic) styles.push(['i', '기울임']);
   if (args.underline) styles.push(['u', '밑줄']);
-  if (!styles.length) throw new Error('서식 플래그 필요 (--bold / --italic / --underline 중 하나 이상)');
+  const strike = !!args.strike; // 취소선 — 키보드 단축키 없어 툴바 .strikethrough 클릭
+  if (!styles.length && !strike) throw new Error('서식 플래그 필요 (--bold / --italic / --underline / --strike 중 하나 이상)');
   const apply = !!args.apply;
   if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
   const phrase = String(args.text).normalize('NFC');
@@ -1058,8 +1059,8 @@ async function cmdFormatText(args) {
     if (!apply) {
       const r = await findText(editor, phrase);
       if (!r.found) { out({ cmd: 'format-text', status: 'text_not_found', text: phrase, docId: editor.__docId || null }); return; }
-      out({ cmd: 'format-text', dryRun: true, text: phrase, styles: styles.map((s) => s[1]), foundPage: r.page,
-            docId: editor.__docId || null, note: '--apply 없으면 read-only. 적용 시: 구절 선택 후 키보드 서식.' });
+      out({ cmd: 'format-text', dryRun: true, text: phrase, styles: [...styles.map((s) => s[1]), ...(strike ? ['취소선'] : [])], foundPage: r.page,
+            docId: editor.__docId || null, note: '--apply 없으면 read-only. 적용 시: 구절 선택 후 서식 적용.' });
       return;
     }
     // 선택(찾기). 선택이 비면(selChars 0) 서식이 안 먹으므로 확인 후 재시도(최대 3회).
@@ -1076,6 +1077,7 @@ async function cmdFormatText(args) {
     await editor.evaluate(() => { const el = document.querySelector('input[aria-label="문서 편집 영역"]'); if (el) el.focus(); }).catch(() => {});
     await editor.waitForTimeout(150);
     for (const [key] of styles) { await editor.keyboard.press('ControlOrMeta+' + key); await editor.waitForTimeout(450); } // 키보드 서식 토글
+    if (strike) { try { await clickSel(editor, '.strikethrough'); } catch (e) { /* 셀렉터 없으면 무시 */ } await editor.waitForTimeout(450); } // 취소선 = 툴바 토글
     await editor.waitForTimeout(900);
     await editor.keyboard.press('Escape').catch(() => {}); // 선택 해제(깨끗한 캡처)
     await editor.waitForTimeout(300);
@@ -1084,7 +1086,7 @@ async function cmdFormatText(args) {
     await hideOverlays(editor);
     const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_format_p${n}_${stamp()}.png`);
     await editor.screenshot(rect2 ? { path: shot, clip: rect2 } : { path: shot });
-    out({ cmd: 'format-text', applied: true, text: phrase, styles: styles.map((s) => s[1]), selChars: r.selChars, page: n, docId: editor.__docId || null, shot });
+    out({ cmd: 'format-text', applied: true, text: phrase, styles: [...styles.map((s) => s[1]), ...(strike ? ['취소선'] : [])], selChars: r.selChars, page: n, docId: editor.__docId || null, shot });
   });
 }
 
@@ -1377,6 +1379,48 @@ async function cmdFontColor(args) {
 
 // find: 같은 구절의 모든 occurrence 를 열거(개수 + 각 페이지). 긴 문서에서 "어느 것"을 보거나
 // 편집할지 정하는 출발점 — 목록을 보고 around --nth N(맥락 읽기) / 편집 op --nth N(타겟)으로 잇는다.
+// font-family: 구절의 글꼴을 바꾼다. 드래그 선택 후 툴바 글꼴 입력칸(.font_name input)에 글꼴명 입력.
+async function cmdFontFamily(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (args.text == null || args.text === true) throw new Error('--text 필요 (글꼴 바꿀 구절)');
+  if (!args.font || args.font === true) throw new Error('--font 필요 (글꼴 이름, 예: "맑은 고딕")');
+  const font = String(args.font).normalize('NFC');
+  const nth = Math.max(1, Number(args.nth) || 1);
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
+  const phrase = String(args.text).normalize('NFC');
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
+    const name = String(args.name).normalize('NFC');
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    if (!apply) {
+      const r = await findText(editor, phrase, nth);
+      if (!r.found) { out({ cmd: 'font-family', status: 'text_not_found', text: phrase, docId: editor.__docId || null }); return; }
+      if (r.wrapped) { out({ cmd: 'font-family', status: 'nth_out_of_range', text: phrase, nth, matchCount: r.matchCount, docId: editor.__docId || null }); return; }
+      out({ cmd: 'font-family', dryRun: true, text: phrase, font, nth, foundPage: r.page, docId: editor.__docId || null, note: '--apply 없으면 read-only. 적용 시: 드래그 선택 후 글꼴 ' + font + '.' });
+      return;
+    }
+    const sel = await dragSelectPhrase(editor, phrase, nth);
+    if (!sel.found) { out({ cmd: 'font-family', status: 'text_not_found', text: phrase, docId: editor.__docId || null }); return; }
+    if (sel.wrapped) { out({ cmd: 'font-family', status: 'nth_out_of_range', text: phrase, nth, matchCount: sel.matchCount, docId: editor.__docId || null }); return; }
+    if (!sel.selChars) { out({ cmd: 'font-family', status: 'selection_failed', text: phrase, docId: editor.__docId || null, note: '드래그 선택 실패.' }); return; }
+    const n = sel.page || 1;
+    const box = await editor.evaluate(() => { const el = document.querySelector('.font_name input'); if (!el) return null; const r = el.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; });
+    if (!box) throw new Error('글꼴 입력칸(.font_name input) 탐색 실패');
+    await editor.mouse.click(box.x, box.y);
+    await editor.keyboard.press('ControlOrMeta+A');
+    await editor.keyboard.type(font, { delay: 30 });
+    await editor.keyboard.press('Enter');
+    await editor.waitForTimeout(1000);
+    await gotoPage(editor, n);
+    const rect2 = await detectPageRect(editor); await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_fontfam_p${n}_${stamp()}.png`);
+    await editor.screenshot(rect2 ? { path: shot, clip: rect2 } : { path: shot });
+    out({ cmd: 'font-family', applied: true, text: phrase, font, selChars: sel.selChars, page: n, docId: editor.__docId || null, shot });
+  });
+}
+
 // ───────────────────────── 삽입 (표/그림) ─────────────────────────
 // insert-table: 입력›표 다이얼로그로 R×C 표 생성. --anchor 있으면 그 줄 끝 다음 줄에, 없으면 문서 시작에.
 async function cmdInsertTable(args) {
@@ -1715,6 +1759,7 @@ async function cmdFind(args) {
     else if (args._ === 'insert-table') await cmdInsertTable(args);
     else if (args._ === 'insert-image') await cmdInsertImage(args);
     else if (args._ === 'table-op') await cmdTableOp(args);
+    else if (args._ === 'font-family') await cmdFontFamily(args);
     else if (args._ === 'insert-text') await cmdInsertText(args);
     else if (args._ === 'replace-text') await cmdReplaceText(args);
     else if (args._ === 'set-cell-text') await cmdSetCellText(args);

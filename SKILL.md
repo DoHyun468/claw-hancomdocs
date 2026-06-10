@@ -85,7 +85,8 @@ node read.mjs <로컬 .hwp/.hwpx> [--text "<구절>"] [--locate --nth N] [--insp
 node hancom.js insert-text  --name <문서이름> --anchor "<기준 텍스트>" --text "<추가할 한 줄>" [--apply]
 node hancom.js replace-text --name <문서이름> --find "<바꿀 대상>" --to "<바꿀 결과>" [--apply]
 node hancom.js set-cell-text --name <문서이름> --cell "<기준 셀 텍스트>" --text "<채울 값>" [--tab N] [--apply]
-node hancom.js format-text  --name <문서이름> --text "<구절>" --bold|--italic|--underline [--apply]
+node hancom.js format-text  --name <문서이름> --text "<구절>" --bold|--italic|--underline|--strike [--apply]
+node hancom.js font-family  --name <문서이름> --text "<구절>" --font "<글꼴명>" [--nth N] [--apply]
 node hancom.js align        --name <문서이름> --anchor "<단락 안 텍스트>" --to left|center|right|justify [--apply]
 node hancom.js list         --name <문서이름> --anchor "<단락 안 텍스트>" --type bullet|number [--apply]
 node hancom.js font-size    --name <문서이름> --text "<구절>" --size <pt> [--apply]
@@ -209,14 +210,16 @@ node hancom.js set-cell-text --name <문서이름> --file <로컬 .hwp/.hwpx> --
 
 ## 𝐁 편집 — 글자 서식 (`format-text`)
 
-문서에서 **특정 구절을 찾아 글자 서식**(굵게/기울임/밑줄)을 적용한다.
+문서에서 **특정 구절을 찾아 글자 서식**(굵게/기울임/밑줄/취소선)을 적용한다. **글꼴(font-family)**은 별도 명령.
 
 ```bash
-node hancom.js format-text --name <문서이름> --text "<구절>" --bold [--italic] [--underline] [--apply]
+node hancom.js format-text --name <문서이름> --text "<구절>" --bold [--italic] [--underline] [--strike] [--apply]
+node hancom.js font-family --name <문서이름> --text "<구절>" --font "<글꼴명>" [--nth N] [--apply]
 ```
 
 - **동작**: `--text` 구절을 찾아 그 구절만 선택한 뒤 준 서식을 토글(이미 적용돼 있으면 해제). 여러 서식 동시 지정 가능.
-- **서식 플래그**: `--bold`(굵게) · `--italic`(기울임) · `--underline`(밑줄). **하나 이상** 필요.
+- **서식 플래그**: `--bold`(굵게·Cmd+B) · `--italic`(기울임·Cmd+I) · `--underline`(밑줄·Cmd+U) · `--strike`(취소선·툴바). **하나 이상** 필요.
+- **`font-family`**: 구절 선택 후 툴바 글꼴 입력칸에 `--font` 글꼴명 입력(예: `"맑은 고딕"`·`"함초롬바탕"`). 같은 구절 여럿이면 `--nth N`.
 - **`--apply` 없으면 dry-run(read-only)**: 구절이 문서에 있는지(`foundPage`)만 확인.
 - **반환**: 적용 시 `{applied:true, text, styles, selChars, page, docId, shot}`. 구절이 없으면 `{status:"text_not_found"}`, 선택에 실패하면 `{status:"selection_failed"}`(더 고유한 구절로 재시도).
 - **구절 고르기**: 문서에 **한 번만 나오는 구체적 구절**로(여러 번 나오면 첫 매치에만 적용).
