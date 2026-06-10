@@ -183,9 +183,11 @@ node hancom.js replace-text --name <문서이름> --find "<바꿀 대상>" --to 
 
 ```bash
 node hancom.js set-cell-text --name <문서이름> --cell "<기준 셀 텍스트>" --text "<채울 값>" [--tab N] [--apply]
+node hancom.js set-cell-text --name <문서이름> --file <로컬 .hwp/.hwpx> --table T --row R --col C --text "<값>" [--apply]
 ```
 
 - **동작**: `--cell` 텍스트가 있는 셀을 찾아 캐럿을 두고, **Tab을 N번**(기본 1 = 바로 다음 셀) 눌러 대상 셀로 이동 → 그 셀의 기존 내용을 선택해 `--text`로 교체(빈 셀이면 그냥 채움). `--tab 0`이면 기준 셀 자체를 바꾼다.
+- **빈 셀을 행/열로 지정**(`--file --table --row --col`): 로컬 파일(read.mjs)로 그 표의 **첫 텍스트 셀(앵커)+colCnt** 를 읽어 **(row,col)까지 Tab 횟수를 자동 계산** → 텍스트 없는 셀도 도달. (병합 셀 없는 단순 격자 기준. 표에 텍스트 셀이 하나도 없으면 `cellnav_failed`.)
 - **`--apply` 없으면 dry-run(read-only)**: 기준 셀을 찾았는지(`foundPage`)만 확인.
 - **반환**: 적용 시 `{applied:true, cell, tab, text, page, docId, shot}`. 기준 셀이 없으면 `{status:"cell_not_found"}`.
 - **셀 지정 팁**: 같은 행에서 **고유한 라벨 셀**을 `--cell`로(예: `"매출"`), 그 오른쪽 칸이면 `--tab 1`, 두 칸 뒤면 `--tab 2`. 어디로 가는지 헷갈리면 먼저 `capture`로 표를 보고 칸 수를 센다. (셀이 한 줄일 때 정확 — 여러 줄 셀은 첫 줄만 교체.)
