@@ -9,7 +9,7 @@ license: MIT
 한컴독스 web (webhwp) 을 Playwright 로 드라이브 — 업로드 / 페이지 캡처 / 영역 확대 / 텍스트 검색 / 문서에 한 줄 추가.
 
 Playwright headless로 동작 — **보이는 창 없음**, 물리 마우스/키보드 안 건드림, 백그라운드 가능.
-스크립트는 `scripts/`에 있고 `capture` / `zoom` / `around` / `locate` / `insert-text` / `replace-text` / `set-cell-text` / `format-text` / `align` / `list` / `font-size` / `font-color` 명령을 제공한다.
+스크립트는 `scripts/`에 있고 `capture` / `zoom` / `around` / `locate` / `insert-text` / `replace-text` / `set-cell-text` / `format-text` / `align` / `line-spacing` / `list` / `font-size` / `font-color` 명령을 제공한다.
 
 > **Local-machine 전용.** Cowork sandbox 에서는 `www.hancomdocs.com` proxy 차단 + `auth.json` 머신 종속으로 실행 불가. 사용자 Mac / Windows / Linux 머신에서 직접 실행.
 
@@ -88,6 +88,7 @@ node hancom.js set-cell-text --name <문서이름> --cell "<기준 셀 텍스트
 node hancom.js format-text  --name <문서이름> --text "<구절>" --bold|--italic|--underline|--strike [--apply]
 node hancom.js font-family  --name <문서이름> --text "<구절>" --font "<글꼴명>" [--nth N] [--apply]
 node hancom.js align        --name <문서이름> --anchor "<단락 안 텍스트>" --to left|center|right|justify [--apply]
+node hancom.js line-spacing  --name <문서이름> --anchor "<단락 안 텍스트>" --to 200 [--apply]
 node hancom.js list         --name <문서이름> --anchor "<단락 안 텍스트>" --type bullet|number [--apply]
 node hancom.js font-size    --name <문서이름> --text "<구절>" --size <pt> [--apply]
 node hancom.js font-color   --name <문서이름> --text "<구절>" --color red|blue|#RRGGBB|... [--apply]
@@ -286,6 +287,18 @@ node hancom.js align --name <문서이름> --anchor "<단락 안 텍스트>" --t
 
 - **동작**: `--anchor` 텍스트가 있는 단락에 캐럿을 두고 정렬을 적용. **단락 단위**(선택 불필요).
 - **`--to`**: `left`(왼쪽) · `center`(가운데) · `right`(오른쪽) · `justify`(양쪽).
+- **`--apply` 없으면 dry-run(read-only)**. 반환 `{applied:true, anchor, to, page, docId, shot}`. 단락을 못 찾으면 `{status:"anchor_not_found"}`.
+
+## ↕ 편집 — 줄간격 (`line-spacing`)
+
+기준 텍스트가 있는 **단락의 줄간격(%)** 을 바꾼다.
+
+```bash
+node hancom.js line-spacing --name <문서이름> --anchor "<단락 안 텍스트>" --to 200 [--apply]
+```
+
+- **동작**: `--anchor` 단락에 캐럿을 두고 줄간격을 적용. **단락 단위**(선택 불필요).
+- **`--to`**: 줄간격 %. 프리셋 `100·130·160·180·200·300` 은 드롭다운에서 바로, 그 외 값은 입력칸에 직접 입력.
 - **`--apply` 없으면 dry-run(read-only)**. 반환 `{applied:true, anchor, to, page, docId, shot}`. 단락을 못 찾으면 `{status:"anchor_not_found"}`.
 
 > ⚠️ 편집은 headless 전용(`--headed`는 보기 전용).

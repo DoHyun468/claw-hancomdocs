@@ -1229,6 +1229,56 @@ async function cmdList(args) {
   await caretParagraphOp(args, 'list', SEL[type], { type });
 }
 
+// line-spacing: 단락 줄간격(%) 설정. 단락 단위라 선택 불필요 — 앵커로 그 단락에 캐럿을 두고, 툴바
+// .p_line_spacing 드롭다운(▼=클릭으로 열림)에서 % 프리셋(100·130·160·180·200·300) 픽.
+async function cmdLineSpacing(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (!args.anchor) throw new Error('--anchor 필요 (대상 단락 안의 텍스트)');
+  const pct = Math.round(Number(args.to) || 0);
+  if (!pct) throw new Error('--to 필요 (줄간격 %, 예: 160)');
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
+  const anchor = String(args.anchor).normalize('NFC');
+  const scale = Number(args.scale) || 1.5;
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(scale, async (ctx, page) => {
+    const name = String(args.name).normalize('NFC');
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    const r = await findText(editor, anchor);
+    if (!r.found) { out({ cmd: 'line-spacing', status: 'anchor_not_found', anchor, docId: editor.__docId || null }); return; }
+    const n = r.page || 1;
+    if (!apply) { out({ cmd: 'line-spacing', dryRun: true, anchor, to: pct, foundPage: n, docId: editor.__docId || null, note: '--apply 시 그 단락 줄간격 ' + pct + '%.' }); return; }
+    await focusBody(editor);
+    if (r.caret) { await editor.mouse.click(r.caret.x, r.caret.y + 6); await editor.waitForTimeout(250); } // 그 단락에 캐럿
+    // 툴바 줄간격 콤보의 ▼ 화살표(.btn_combo_arrow)를 클릭해 드롭다운을 연다(콤보 중앙=입력칸이라 안 열림).
+    const arrow = await editor.evaluate(() => { const a = document.querySelector('.p_line_spacing .btn_combo_arrow'); if (!a) return null; const r = a.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; });
+    if (!arrow) throw new Error('줄간격 콤보 ▼ 탐색 실패');
+    await editor.mouse.click(arrow.x, arrow.y); await editor.waitForTimeout(700);
+    // 프리셋 항목(.dropdown_data, 텍스트=숫자만 "100".."300") 픽. 프리셋(100/130/160/180/200/300)이면 그걸,
+    // 아니면 입력칸에 직접 타이핑.
+    const pick = await editor.evaluate((target) => {
+      for (const el of document.querySelectorAll('.p_line_spacing.dropdown_data')) {
+        if ((el.textContent || '').trim() === String(target)) { const r = el.getBoundingClientRect(); if (el.offsetParent !== null && r.width > 4 && r.height > 4) return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; }
+      }
+      return null;
+    }, pct);
+    if (pick) { await editor.mouse.click(pick.x, pick.y); await editor.waitForTimeout(900); }
+    else {
+      // 비프리셋 값 — 콤보 입력칸에 직접 입력 후 Enter.
+      const inp = await editor.evaluate(() => { const el = document.querySelector('.p_line_spacing input'); if (!el) return null; const r = el.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; });
+      if (!inp) throw new Error('줄간격 입력칸 탐색 실패 (프리셋: 100/130/160/180/200/300)');
+      await editor.mouse.click(inp.x, inp.y); await editor.keyboard.press('ControlOrMeta+A'); await editor.keyboard.press('Delete');
+      await editor.keyboard.type(String(pct), { delay: 30 }); await editor.keyboard.press('Enter'); await editor.waitForTimeout(900);
+    }
+    await gotoPage(editor, n);
+    const rect2 = await detectPageRect(editor); await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_linespacing_p${n}_${stamp()}.png`);
+    await editor.screenshot(rect2 ? { path: shot, clip: rect2 } : { path: shot });
+    out({ cmd: 'line-spacing', applied: true, anchor, to: pct, page: n, docId: editor.__docId || null, shot });
+  });
+}
+
 // 구절을 마우스 드래그로 정확히 선택. 드래그는 본문 캔버스에서 일어나 포커스를 보장하므로, 이후
 // 툴바(글자크기·색) 적용이 안정적이다(찾기 선택은 닫은 뒤 포커스가 풀려 적용이 간헐 실패).
 // 찾기로 캐럿(매치 끝쪽)·줄 y 를 얻고, 그 줄을 가로로 드래그하며 selChars==글자수가 되게 폭(W) 보정.
@@ -1835,6 +1885,7 @@ async function cmdFind(args) {
     else if (args._ === 'align') await cmdAlign(args);
     else if (args._ === 'list') await cmdList(args);
     else if (args._ === 'font-size') await cmdFontSize(args);
+    else if (args._ === 'line-spacing') await cmdLineSpacing(args);
     else if (args._ === 'font-color') await cmdFontColor(args);
     else { log('사용법: capture --file <경로> [--page N] [--grid] | zoom --name <이름> --clip "x,y,w,h" [--page N] | around --name <이름> --text "<검색어>" [--grid] | locate --name <이름> --clues "a,b,c" [--grid] | insert-text --name <이름> --anchor "<기준 텍스트>" --text "<추가할 줄>" [--apply] | replace-text --name <이름> --find "<대상>" --to "<교체>" [--apply] | set-cell-text --name <이름> --cell "<기준 셀 텍스트>" --text "<값>" [--tab N] [--apply] | format-text --name <이름> --text "<구절>" --bold|--italic|--underline [--apply]'); process.exit(2); }
     process.exit(0);
