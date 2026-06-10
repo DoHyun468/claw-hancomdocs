@@ -1648,7 +1648,7 @@ async function cmdDownload(args) {
     });
     if (!fileTab) throw new Error('파일 메뉴 탐색 실패');
     await editor.mouse.click(fileTab.x, fileTab.y); await editor.waitForTimeout(800);
-    // 파일›다운로드(.d_download = ui-map MENU_MAP) — 원본 형식 직접 다운로드('준비 중' 토스트만, 형식선택 없음)
+    // 파일 메뉴의 '다운로드' 항목(.d_download) — 원본 형식 직접 다운로드('준비 중' 토스트만, 형식선택 없음)
     const dlXY = await editor.evaluate(() => { const el = document.querySelector('.d_download'); if (!el || el.offsetParent === null) return null; const r = el.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; });
     if (!dlXY) throw new Error('.d_download 탐색 실패(파일 메뉴 안 열림)');
     const [download] = await Promise.all([
