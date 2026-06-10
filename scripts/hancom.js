@@ -1108,6 +1108,37 @@ async function clickSel(ed, sel) {
   await ed.waitForTimeout(400);
 }
 
+// 메뉴바 탭(파일/편집/입력/서식/쪽/표 …) 열기 — 텍스트로 탭 위치 찾아 클릭(상단 top<140). 메뉴 항목은
+// 열려야 보이므로(숨김), 다이얼로그/서브 op 호출 전 이걸로 메뉴를 편다.
+async function openMenu(ed, name) {
+  const t = await ed.evaluate((nm) => {
+    for (const el of document.querySelectorAll('*')) {
+      if ((el.textContent || '').trim() === nm && el.childElementCount === 0) {
+        const r = el.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0 && r.top < 140) return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+      }
+    }
+    return null;
+  }, name);
+  if (!t) throw new Error('메뉴 탭 탐색 실패: ' + name);
+  await ed.mouse.click(t.x, t.y); await ed.waitForTimeout(800);
+}
+
+// 다이얼로그의 aria-label 입력칸을 값으로 채움(전체선택 후 교체).
+async function setDialogField(ed, label, value) {
+  const xy = await ed.evaluate((al) => { for (const el of document.querySelectorAll('input')) { if ((el.getAttribute('aria-label') || '') === al) { const r = el.getBoundingClientRect(); if (r.width > 10 && el.offsetParent !== null) return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; } } return null; }, label);
+  if (!xy) throw new Error('입력칸 탐색 실패: ' + label);
+  await ed.mouse.click(xy.x, xy.y); await ed.keyboard.press('ControlOrMeta+A'); await ed.keyboard.press('Delete');
+  await ed.keyboard.type(String(value), { delay: 30 });
+}
+
+// 다이얼로그 버튼(확인/만들기/취소 등) 텍스트로 클릭.
+async function clickDialogBtn(ed, text) {
+  const xy = await ed.evaluate((t) => { for (const el of document.querySelectorAll('button, a, div, span')) { if ((el.textContent || '').trim() === t && el.offsetParent !== null && el.childElementCount === 0) { const r = el.getBoundingClientRect(); if (r.width > 15 && r.height > 10) return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; } } return null; }, text);
+  if (!xy) return false;
+  await ed.mouse.click(xy.x, xy.y); await ed.waitForTimeout(1000); return true;
+}
+
 // align: 단락 정렬(왼/가운데/오른/양쪽). 단락 단위라 선택 불필요 — 기준 텍스트(--anchor)로 그 단락에
 // 캐럿을 두고, 본문 포커스 후 툴바 정렬 셀렉터 클릭.
 async function cmdAlign(args) {
@@ -1332,6 +1363,78 @@ async function cmdFontColor(args) {
 
 // find: 같은 구절의 모든 occurrence 를 열거(개수 + 각 페이지). 긴 문서에서 "어느 것"을 보거나
 // 편집할지 정하는 출발점 — 목록을 보고 around --nth N(맥락 읽기) / 편집 op --nth N(타겟)으로 잇는다.
+// ───────────────────────── 삽입 (표/그림) ─────────────────────────
+// insert-table: 입력›표 다이얼로그로 R×C 표 생성. --anchor 있으면 그 줄 끝 다음 줄에, 없으면 문서 시작에.
+async function cmdInsertTable(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  const rows = Math.max(1, Number(args.rows) || 0), cols = Math.max(1, Number(args.cols) || 0);
+  if (!rows || !cols) throw new Error('--rows 와 --cols 필요 (양수)');
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용.');
+  const name = String(args.name).normalize('NFC');
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    // 삽입 위치 캐럿
+    if (args.anchor) {
+      const r = await findText(editor, String(args.anchor).normalize('NFC'));
+      if (!r.found) { out({ cmd: 'insert-table', status: 'anchor_not_found', anchor: args.anchor, docId: editor.__docId || null }); return; }
+    } else { await goDocStart(editor); }
+    if (!apply) { out({ cmd: 'insert-table', dryRun: true, rows, cols, anchor: args.anchor || null, docId: editor.__docId || null, note: '--apply 시 표 생성. --anchor 있으면 그 줄 다음에.' }); return; }
+    await focusBody(editor);
+    if (args.anchor) { await editor.keyboard.press('End'); await editor.keyboard.press('Enter'); await editor.waitForTimeout(300); }
+    // 입력 메뉴 → 표 만들기 다이얼로그 → 줄/칸 개수 → 만들기
+    await openMenu(editor, '입력');
+    await clickSel(editor, '.insert_table'); await editor.waitForTimeout(900);
+    await setDialogField(editor, '줄 개수', rows);
+    await setDialogField(editor, '칸 개수', cols);
+    await editor.waitForTimeout(200);
+    if (!await clickDialogBtn(editor, '만들기')) throw new Error("'만들기' 버튼 탐색 실패");
+    await editor.waitForTimeout(1300);
+    const n = (await readCurrentPage(editor)) || 1; await gotoPage(editor, n);
+    const rect = await detectPageRect(editor); await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_inserttbl_${stamp()}.png`);
+    await editor.screenshot(rect ? { path: shot, clip: rect } : { path: shot });
+    out({ cmd: 'insert-table', applied: true, rows, cols, anchor: args.anchor || null, page: n, shot, docId: editor.__docId || null });
+  });
+}
+
+// insert-image: 입력›그림 다이얼로그(장치)로 로컬 이미지 삽입. --anchor 있으면 그 줄 다음에, 없으면 문서 시작.
+async function cmdInsertImage(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (!args.file) throw new Error('--file 필요 (삽입할 이미지 경로)');
+  const imgPath = path.resolve(args.file);
+  if (!fs.existsSync(imgPath)) throw new Error('이미지 파일 없음: ' + imgPath);
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용.');
+  const name = String(args.name).normalize('NFC');
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    if (args.anchor) {
+      const r = await findText(editor, String(args.anchor).normalize('NFC'));
+      if (!r.found) { out({ cmd: 'insert-image', status: 'anchor_not_found', anchor: args.anchor, docId: editor.__docId || null }); return; }
+    } else { await goDocStart(editor); }
+    if (!apply) { out({ cmd: 'insert-image', dryRun: true, file: imgPath, anchor: args.anchor || null, docId: editor.__docId || null, note: '--apply 시 그림 삽입. --anchor 있으면 그 줄 다음에.' }); return; }
+    await focusBody(editor);
+    if (args.anchor) { await editor.keyboard.press('End'); await editor.keyboard.press('Enter'); await editor.waitForTimeout(300); }
+    // 입력 메뉴 → 그림 → '그림 넣기' 다이얼로그(장치) → file input 에 파일 → 넣기
+    await openMenu(editor, '입력');
+    await clickSel(editor, '.insert_image'); await editor.waitForTimeout(900);
+    await editor.locator('input[type="file"]').last().setInputFiles(imgPath);
+    await editor.waitForTimeout(1200);
+    if (!await clickDialogBtn(editor, '넣기')) throw new Error("'넣기' 버튼 탐색 실패");
+    await editor.waitForTimeout(1600);
+    const n = (await readCurrentPage(editor)) || 1; await gotoPage(editor, n);
+    const rect = await detectPageRect(editor); await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_insertimg_${stamp()}.png`);
+    await editor.screenshot(rect ? { path: shot, clip: rect } : { path: shot });
+    out({ cmd: 'insert-image', applied: true, file: imgPath, anchor: args.anchor || null, page: n, shot, docId: editor.__docId || null });
+  });
+}
+
 // ───────────────────────── 객체(그림·차트) ─────────────────────────
 // 객체는 본문 canvas 에 픽셀로 그려져 DOM 셀렉터로 못 짚는다 → 페이지 좌표(--at "x,y", 그리드 캡처 참고)에
 // 클릭. 우클릭 컨텍스트 메뉴(개체 속성/데이터 편집)로 진입. --at 의 한 점이 객체 안이면 충분(중앙 권장).
@@ -1548,6 +1651,8 @@ async function cmdFind(args) {
     else if (args._ === 'upload') await cmdUpload(args);
     else if (args._ === 'resize-object') await cmdResizeObject(args);
     else if (args._ === 'chart-data') await cmdChartData(args);
+    else if (args._ === 'insert-table') await cmdInsertTable(args);
+    else if (args._ === 'insert-image') await cmdInsertImage(args);
     else if (args._ === 'insert-text') await cmdInsertText(args);
     else if (args._ === 'replace-text') await cmdReplaceText(args);
     else if (args._ === 'set-cell-text') await cmdSetCellText(args);

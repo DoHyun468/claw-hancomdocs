@@ -78,6 +78,8 @@ node hancom.js download --name <문서이름>  [--out <로컬경로>]
 node hancom.js upload   --file <로컬경로>
 node hancom.js resize-object --name <문서이름> --at "x,y" [--width <mm>] [--height <mm>] [--apply]
 node hancom.js chart-data    --name <문서이름> --at "x,y" --set "B2=9.9,C3=4" [--apply]
+node hancom.js insert-table  --name <문서이름> --rows R --cols C [--anchor "<텍스트>"] [--apply]
+node hancom.js insert-image  --name <문서이름> --file <이미지경로> [--anchor "<텍스트>"] [--apply]
 node read.mjs <로컬 .hwp/.hwpx> [--text "<구절>"] [--locate --nth N] [--inspect]
 node hancom.js insert-text  --name <문서이름> --anchor "<기준 텍스트>" --text "<추가할 한 줄>" [--apply]
 node hancom.js replace-text --name <문서이름> --find "<바꿀 대상>" --to "<바꿀 결과>" [--apply]
@@ -144,6 +146,12 @@ node hancom.js font-color   --name <문서이름> --text "<구절>" --color red|
   - `--apply` 없으면 현재 크기만 읽음(`currentSize`). `--width`/`--height` 중 하나만도 가능. 그 좌표에 객체 없으면 `object_not_found`.
 - **`chart-data`**: 차트의 **데이터 편집 그리드** 셀 값을 바꿔 차트를 갱신. `--set "B2=9.9,C3=4"`(엑셀식 열문자+행번호=값). 셀=열헤더∩행헤더 교차 → 더블클릭 입력. 그 좌표에 차트 없으면 `chart_not_found`.
 - ⚠️ 편집은 **headless 전용**. 표 셀은 작아 좌표클릭이 빗나가니 셀은 `set-cell-text`(셀 텍스트로 찾기)가 정확.
+
+### ➕ 삽입 — `insert-table` · `insert-image`
+입력 메뉴로 새 표/그림을 삽입. `--anchor` 있으면 **그 텍스트 줄 다음에**, 없으면 문서(본문 흐름) 시작에.
+- **`insert-table --rows R --cols C`**: 입력›표 다이얼로그(줄/칸 개수)로 R×C 표 생성.
+- **`insert-image --file <이미지>`**: 입력›그림(장치) 다이얼로그에 로컬 이미지 파일을 넣어 삽입.
+- ⚠️ 편집 **headless 전용**. 떠다니는 객체가 많은 문서는 삽입 위치가 본문 흐름 기준이라 시각적 최상단과 다를 수 있음(`--anchor`로 위치 지정 권장).
 
 ## ✏️ 편집 — 한 줄 추가 (`insert-text`)
 
