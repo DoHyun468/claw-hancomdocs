@@ -73,7 +73,7 @@ node hancom.js zoom    --name <문서이름>  --clip "x,y,w,h" [--page N] [--sca
 node hancom.js around  --name <문서이름>  --text "<검색어>" [--zoom [--band N]] [--grid] [--out <png>]
 node hancom.js locate  --name <문서이름>  --clues "a,b,c" [--grid] [--out <png>]
 node hancom.js find    --name <문서이름>  --text "<구절>"
-node hancom.js pinpoint --file <로컬 .hwp/.hwpx> --text "<구절>" [--nth N] [--name <문서이름>] [--band N] [--scale N] [--out <png>]
+node hancom.js pinpoint --file <로컬 .hwp/.hwpx> --text "<구절>" [--nth N] [--name <문서이름>] [--replace "<새 텍스트>" [--apply]] [--band N] [--scale N] [--out <png>]
 node hancom.js download --name <문서이름>  [--out <로컬경로>]
 node hancom.js upload   --file <로컬경로>
 node read.mjs <로컬 .hwp/.hwpx> [--text "<구절>"] [--locate --nth N] [--inspect]
@@ -128,6 +128,7 @@ node hancom.js font-color   --name <문서이름> --text "<구절>" --color red|
   - `node hancom.js pinpoint --file <로컬> --text "<구절>" --nth <N>` (`--name` 생략 시 파일명에서 유추)
   - 같은 텍스트가 여러 곳(예: 여러 표의 동일 컬럼헤더)이거나 옆에 맥락이 없어도 **문서순으로 그 N번째**를 집는다(유니크 문자열이 되면 검색 1회로 빠르게, 안 되면 전체를 훑어 문서 위치순으로 그 자리에 착지).
   - 반환: `{found, nth, address(표·행·열), context, page, shot, method}`. 못 집으면 `status`로 정직하게 알린다(예: 구절 자체가 파일에 없음, UI 매치 수가 파일과 달라 순서 정합이 안 됨).
+  - **`--replace "<새 텍스트>"` (핀포인트 편집)**: 그 N번째 occurrence **한 곳만** 새 텍스트로 교체. `--apply` 없으면 dry-run(교체할 `replaceFind`/`replaceTo` 만 보여줌). 원리: read.mjs 의 **유니크 앵커**(그 칸 맥락)로 네이티브 '모두 바꾸기' → 유일하므로 정확히 1곳. 이웃 텍스트는 보존(서식은 평문화될 수 있음). ⚠️ 동일/빈 텍스트라 유니크 앵커가 없으면 `replace_needs_unique_anchor`로 거부(더 구체적 구절 필요 or 구조 기반 op). 편집은 **headless 전용**(`--headed` 금지).
   - 글자가 없는 대상(그림·도형 등)은 read.mjs가 못 보므로, **옆의 유니크한 텍스트**를 `around --zoom --band`(넓게)로 잡는 게 길이다.
 
 - **`download` / `upload`** (로컬 ↔ 드라이브): read.mjs/pinpoint 의 `--file` 은 **로컬 원본**이 필요하다.

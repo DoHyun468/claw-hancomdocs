@@ -161,18 +161,19 @@ export function deriveAnchor(units, phrase, nth = 1, maxLen = 60) {
   const countAll = (s) => units.reduce((n, u) => {
     let i = 0, c = 0; while ((i = u.text.indexOf(s, i)) !== -1) { c++; i += s.length; } return n + c;
   }, 0);
-  const make = (anchor, unique) => ({
-    found: true, anchor, unique, anchorCount: countAll(anchor), matchCount: occ.length,
+  // matchOffset = 앵커 안에서 phrase(match)가 시작하는 위치 → 편집(교체) 시 앵커에서 그 부분만 바꾸려고.
+  const make = (anchor, unique, matchOffset) => ({
+    found: true, anchor, unique, matchOffset, anchorCount: countAll(anchor), matchCount: occ.length,
     nth: idx + 1, kind: t.kind, address: t.address,
     before: t.before.slice(-20), match: t.match, after: t.after.slice(0, 20),
   });
-  if (countAll(t.match) <= 1) return make(t.match, true);  // 구절 자체로 유일
+  if (countAll(t.match) <= 1) return make(t.match, true, 0);  // 구절 자체로 유일(앵커=match)
   let lo = mStart, hi = mEnd;
   while ((hi - lo) < maxLen && (lo > 0 || hi < full.length)) {
-    if (hi < full.length) { hi++; if (countAll(full.slice(lo, hi)) <= 1) return make(full.slice(lo, hi), true); }
-    if (lo > 0) { lo--; if (countAll(full.slice(lo, hi)) <= 1) return make(full.slice(lo, hi), true); }
+    if (hi < full.length) { hi++; if (countAll(full.slice(lo, hi)) <= 1) return make(full.slice(lo, hi), true, mStart - lo); }
+    if (lo > 0) { lo--; if (countAll(full.slice(lo, hi)) <= 1) return make(full.slice(lo, hi), true, mStart - lo); }
   }
-  return make(full.slice(lo, hi), false);  // 유니크화 실패(동일 텍스트 다수) — 구조주소로 구분
+  return make(full.slice(lo, hi), false, mStart - lo);  // 유니크화 실패(동일 텍스트 다수) — 구조주소로 구분
 }
 
 // --- CLI ---

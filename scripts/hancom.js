@@ -616,12 +616,16 @@ async function cmdPinpoint(args) {
   const phrase = String(args.text).normalize('NFC');
   const nth = Math.max(1, Number(args.nth) || 1);
   const name = String(args.name || path.basename(args.file).replace(/\.[^.]+$/, '')).normalize('NFC');
+  // --replace: 그 Nth occurrence 만 정확히 교체(편집). --apply 없으면 dry-run. 편집은 headless 전용.
+  const isReplace = args.replace !== undefined;
+  const apply = !!args.apply;
+  if (isReplace && apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
   // read.mjs(ESM)를 동적 import — 파일에서 occurrence-맵 → 대상 nth 의 최단 유니크 앵커.
   const reader = await import('./read.mjs');
   const units = await reader.getUnits(args.file);
   const loc = reader.deriveAnchor(units, phrase, nth);
   if (!loc.found) { out({ cmd: 'pinpoint', status: 'not_found_in_file', text: phrase, nth, matchCount: 0 }); return; }
-  const scale = Number(args.scale) || 3;
+  const scale = isReplace ? 1.5 : (Number(args.scale) || 3);
   const band = Number(args.band) || 160;
   fs.mkdirSync(CAPDIR, { recursive: true });
   await withEditor(scale, async (ctx, page) => {
@@ -633,6 +637,26 @@ async function cmdPinpoint(args) {
       context: loc.before + '【' + loc.match + '】' + loc.after,
       docId: editor.__docId || null,
     };
+
+    // ── 핀포인트 교체(--replace): 유니크 앵커 → 네이티브 '모두 바꾸기'로 그 1곳만 교체 ──
+    // 앵커가 유일하므로 모두바꾸기여도 정확히 1곳. 교체 문자열 = 앵커에서 phrase 부분만 새 텍스트로(이웃 보존).
+    if (isReplace) {
+      const newText = String(args.replace === true ? '' : args.replace).normalize('NFC');
+      if (!loc.unique) { out({ ...base, status: 'replace_needs_unique_anchor', anchorCount: loc.anchorCount,
+        note: '동일/빈 텍스트라 유니크 앵커가 없어 네이티브 교체로 그 1곳만 못 집음 — 더 구체적인 구절/맥락으로 재시도하거나, 그 칸이 정말 동일 반복이면 set-cell-text 등 구조 기반 op 사용.' }); return; }
+      const a = loc.anchor, off = loc.matchOffset || 0;
+      const findStr = a, toStr = a.slice(0, off) + newText + a.slice(off + loc.match.length);
+      if (!apply) { out({ ...base, dryRun: true, mode: 'replace', replaceFind: findStr, replaceTo: toStr,
+        note: '--apply 시 이 유니크 앵커로 그 1곳만 교체(이웃 텍스트는 보존, 서식은 평문화될 수 있음).' }); return; }
+      const { replaced, popup } = await nativeReplaceAll(editor, findStr, toStr);
+      // 결과 캡처: 바뀐 자리(toStr) 줌. 못 찾으면 현재 쪽 전체.
+      let shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_pinrepl_nth${loc.nth}_${stamp()}.png`);
+      const rr = await findText(editor, toStr, 1).catch(() => ({ found: false }));
+      if (rr.found && rr.caret) { await zoomBandShot(editor, rr.caret, band, shot); }
+      else { const n2 = (await readCurrentPage(editor)) || 1; await gotoPage(editor, n2); const rect = await detectPageRect(editor); await hideOverlays(editor); await editor.screenshot(rect ? { path: shot, clip: rect } : { path: shot }); }
+      out({ ...base, applied: true, mode: 'replace', replaced, replaceFind: findStr, replaceTo: toStr, shot, popup });
+      return;
+    }
     const shoot = async (r, extra) => {
       const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_pin_nth${loc.nth}_${stamp()}.png`);
       const { rect } = await zoomBandShot(editor, r.caret, band, shot);
@@ -807,6 +831,57 @@ async function dialogInputs(ed) {
   });
 }
 
+// 네이티브 '찾아 바꾸기'로 findStr→toStr 전부 교체 후 교체 횟수 반환(다이얼로그 열기·입력·모두바꾸기·팝업확인·닫기).
+// ⚠️ 호출 전 findText 선호출 금지(다이얼로그 충돌로 교체 0). 다이얼로그 입력칸만 타이핑(본문 미입력). 편집이라
+// headless 전용 호출부에서 가드. findStr 가 문서에서 '유일'하면 정확히 1곳만 교체된다(= pinpoint 교체의 토대).
+async function nativeReplaceAll(editor, findStr, toStr) {
+  await openReplaceDialog(editor);
+  const ins = await dialogInputs(editor);
+  const findBox = ins.find((i) => /찾을/.test(i.al)) || ins[0];
+  const replBox = ins.find((i) => /바꿀/.test(i.al)) || ins[1];
+  if (!findBox || !replBox) throw new Error('찾아 바꾸기 입력칸 탐색 실패(현재 ' + ins.length + '개)');
+  await editor.mouse.click(findBox.x + Math.min(findBox.w / 2, 40), findBox.y + findBox.h / 2);
+  await editor.keyboard.press('ControlOrMeta+A'); await editor.keyboard.press('Delete');
+  await editor.keyboard.type(findStr, { delay: 20 });
+  await editor.mouse.click(replBox.x + Math.min(replBox.w / 2, 40), replBox.y + replBox.h / 2);
+  await editor.keyboard.press('ControlOrMeta+A'); await editor.keyboard.press('Delete');
+  if (toStr) await editor.keyboard.type(toStr, { delay: 20 });
+  const allBtn = await editor.evaluate(() => {
+    for (const el of document.querySelectorAll('a, button, div, span')) {
+      const t = (el.textContent || '').trim();
+      if (t === '모두 바꾸기' && el.offsetParent !== null && el.childElementCount === 0) {
+        const r = el.getBoundingClientRect(); if (r.width > 20 && r.height > 10) return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+      }
+    }
+    return null;
+  });
+  if (!allBtn) throw new Error("'모두 바꾸기' 버튼 탐색 실패");
+  await editor.mouse.click(allBtn.x, allBtn.y); await editor.waitForTimeout(1400);
+  // 결과 팝업 텍스트로 교체 횟수 판정 ("…바꾸기를 N번 했습니다" / "찾을 수 없습니다")
+  const popup = await editor.evaluate(() => {
+    const t = [];
+    for (const el of document.querySelectorAll('div, span, p')) {
+      const s = (el.textContent || '').trim();
+      if (s && s.length < 60 && /바꿨|바꾸기를|찾을 수 없|없습니다|완료|개를/.test(s) && el.offsetParent !== null && el.childElementCount === 0) t.push(s);
+    }
+    return [...new Set(t)];
+  });
+  const joined = popup.join(' ');
+  const mm = joined.match(/(\d+)\s*번/);
+  const replaced = mm ? Number(mm[1]) : (/찾을 수 없|없습니다/.test(joined) ? 0 : null);
+  const okBtn = await editor.evaluate(() => {
+    for (const el of document.querySelectorAll('a, button, div, span')) {
+      const t = (el.textContent || '').trim();
+      if (t === '확인' && el.offsetParent !== null && el.childElementCount === 0) { const r = el.getBoundingClientRect(); if (r.width > 15 && r.height > 10) return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; }
+    }
+    return null;
+  });
+  if (okBtn) await editor.mouse.click(okBtn.x, okBtn.y); else await editor.keyboard.press('Enter').catch(() => {});
+  await editor.waitForTimeout(500);
+  await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(1300); // 다이얼로그 닫기 + 자동저장 여유
+  return { replaced, popup: joined };
+}
+
 // replace-text: 네이티브 '찾아 바꾸기'로 find → to 전부 교체. --to "" 면 삭제.
 // 안전: 다이얼로그 입력칸만 타이핑(본문 미입력), dry-run 기본, 편집 headless 전용, 끝 캡처.
 async function cmdReplaceText(args) {
@@ -831,55 +906,8 @@ async function cmdReplaceText(args) {
             docId: editor.__docId || null, note: '--apply 없으면 read-only. 적용 시: 찾아 바꾸기로 모두 교체.' });
       return;
     }
-    // 적용: 네이티브 찾아 바꾸기 다이얼로그 (findText 선호출 금지 — 다이얼로그 충돌로 교체 0 됨)
-    await openReplaceDialog(editor);
-    const ins = await dialogInputs(editor);
-    const findBox = ins.find((i) => /찾을/.test(i.al)) || ins[0];
-    const replBox = ins.find((i) => /바꿀/.test(i.al)) || ins[1];
-    if (!findBox || !replBox) throw new Error('찾아 바꾸기 입력칸 탐색 실패(현재 ' + ins.length + '개)');
-    // 찾을 내용
-    await editor.mouse.click(findBox.x + Math.min(findBox.w / 2, 40), findBox.y + findBox.h / 2);
-    await editor.keyboard.press('ControlOrMeta+A'); await editor.keyboard.press('Delete');
-    await editor.keyboard.type(findText0, { delay: 20 });
-    // 바꿀 내용 (빈 문자열이면 비워둠 = 삭제)
-    await editor.mouse.click(replBox.x + Math.min(replBox.w / 2, 40), replBox.y + replBox.h / 2);
-    await editor.keyboard.press('ControlOrMeta+A'); await editor.keyboard.press('Delete');
-    if (toText) await editor.keyboard.type(toText, { delay: 20 });
-    // '모두 바꾸기'
-    const allBtn = await editor.evaluate(() => {
-      for (const el of document.querySelectorAll('a, button, div, span')) {
-        const t = (el.textContent || '').trim();
-        if (t === '모두 바꾸기' && el.offsetParent !== null && el.childElementCount === 0) {
-          const r = el.getBoundingClientRect(); if (r.width > 20 && r.height > 10) return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
-        }
-      }
-      return null;
-    });
-    if (!allBtn) throw new Error("'모두 바꾸기' 버튼 탐색 실패");
-    await editor.mouse.click(allBtn.x, allBtn.y); await editor.waitForTimeout(1400);
-    // 결과 팝업 텍스트로 교체 횟수 판정 ("문서의 끝까지 바꾸기를 N번 했습니다" / "찾을 수 없습니다")
-    const popup = await editor.evaluate(() => {
-      const t = [];
-      for (const el of document.querySelectorAll('div, span, p')) {
-        const s = (el.textContent || '').trim();
-        if (s && s.length < 60 && /바꿨|바꾸기를|찾을 수 없|없습니다|완료|개를/.test(s) && el.offsetParent !== null && el.childElementCount === 0) t.push(s);
-      }
-      return [...new Set(t)];
-    });
-    const joined = popup.join(' ');
-    const mm = joined.match(/(\d+)\s*번/);
-    const replaced = mm ? Number(mm[1]) : (/찾을 수 없|없습니다/.test(joined) ? 0 : null);
-    // 결과 팝업 '확인' → 다이얼로그 '닫기'(Esc)
-    const okBtn = await editor.evaluate(() => {
-      for (const el of document.querySelectorAll('a, button, div, span')) {
-        const t = (el.textContent || '').trim();
-        if (t === '확인' && el.offsetParent !== null && el.childElementCount === 0) { const r = el.getBoundingClientRect(); if (r.width > 15 && r.height > 10) return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; }
-      }
-      return null;
-    });
-    if (okBtn) await editor.mouse.click(okBtn.x, okBtn.y); else await editor.keyboard.press('Enter').catch(() => {});
-    await editor.waitForTimeout(500);
-    await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(1300); // 다이얼로그 닫기 + 자동저장 여유
+    // 적용: 네이티브 찾아 바꾸기 (findText 선호출 금지 — 다이얼로그 충돌로 교체 0 됨)
+    const { replaced } = await nativeReplaceAll(editor, findText0, toText);
 
     // regression 캡처 (교체 후 현재 쪽)
     const n = (await readCurrentPage(editor)) || 1;
