@@ -154,11 +154,18 @@ node hancom.js highlight    --name <문서이름> --text "<구절>" --color yell
 - **`insert-image --file <이미지>`**: 입력›그림(장치) 다이얼로그에 로컬 이미지 파일을 넣어 삽입.
 - ⚠️ 편집 **headless 전용**. 떠다니는 객체가 많은 문서는 삽입 위치가 본문 흐름 기준이라 시각적 최상단과 다를 수 있음(`--anchor`로 위치 지정 권장).
 
-### ▦ 표 줄/칸 추가·삭제 — `table-op`
-대상 셀에 캐럿(`--cell` 텍스트로 찾기, 필요시 `--tab N`으로 인접 셀)을 두면 **표 메뉴**가 활성 → 줄/칸 추가·삭제. `--op`:
-`insert-row-above` · `insert-row-below` · `insert-col-left` · `insert-col-right` · `delete-row` · `delete-col`.
+### ▦ 표 줄/칸 추가·삭제·나누기·합치기 — `table-op`
+대상 셀에 캐럿(`--cell` 텍스트로 찾기, 필요시 `--tab N`으로 인접 셀)을 두면 **표 메뉴**가 활성 → 줄/칸 편집. `--op`:
+`insert-row-above` · `insert-row-below` · `insert-col-left` · `insert-col-right` · `delete-row` · `delete-col` · `split` · `merge`.
 - 캐럿이 있는 셀의 행/열 기준으로 동작. dry-run 기본, `--apply`로 실행, **headless 전용**.
-- (셀 합치기 = 블록 선택 필요 / 셀 나누기 = 다이얼로그 — 미구현. 셀 값 채우기는 `set-cell-text`.)
+- **`split`** (셀 나누기): 한 셀을 여러 칸으로 분할. `--split-rows N --split-cols M` (기본 1×1).
+- **`merge`** (셀 합치기): 캐럿 셀부터 **오른쪽으로 `--span N`칸**을 한 셀로 합침(기본 1 = 다음 칸까지). 같은 행 안에서 동작.
+- 셀 값 채우기는 `set-cell-text`.
+
+```bash
+node hancom.js table-op --name <문서이름> --cell "<셀 텍스트>" --op split --split-rows 2 --split-cols 2 --apply
+node hancom.js table-op --name <문서이름> --cell "<셀 텍스트>" --op merge --span 1 --apply
+```
 
 ## ✏️ 편집 — 한 줄 추가 (`insert-text`)
 

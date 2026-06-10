@@ -1547,7 +1547,9 @@ async function cmdTableOp(args) {
     'delete-row': { menu: '줄/칸 지우기', item: '줄 지우기' },
     'delete-col': { menu: '줄/칸 지우기', item: '칸 지우기' },
   };
-  if (!OPS[op]) throw new Error('--op 는 ' + Object.keys(OPS).join(' | '));
+  // split = 셀 나누기 다이얼로그(--split-rows/--split-cols), merge = 인접 셀 블록 선택 후 합치기
+  const valid = [...Object.keys(OPS), 'split', 'merge'];
+  if (!valid.includes(op)) throw new Error('--op 는 ' + valid.join(' | '));
   const apply = !!args.apply;
   if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용.');
   const cellText = String(args.cell).normalize('NFC');
@@ -1563,14 +1565,40 @@ async function cmdTableOp(args) {
     await focusBody(editor);
     await editor.mouse.click(r.caret.x, r.caret.y + 6); await editor.waitForTimeout(250); // 셀에 캐럿
     for (let i = 0; i < tabN; i++) { await editor.keyboard.press('Tab'); await editor.waitForTimeout(160); }
-    const spec = OPS[op];
-    await openMenu(editor, '표');
-    const parent = await menuItemXY(editor, spec.menu);
-    if (!parent) throw new Error('표 메뉴 항목 탐색 실패: ' + spec.menu + ' (셀에 캐럿 없음?)');
-    await editor.mouse.move(parent.x, parent.y); await editor.waitForTimeout(700); // 서브메뉴 펼침(호버)
-    const item = await menuItemXY(editor, spec.item);
-    if (!item) throw new Error('서브 항목 탐색 실패: ' + spec.item);
-    await editor.mouse.click(item.x, item.y); await editor.waitForTimeout(1300);
+    if (op === 'split') {
+      // 셀 나누기 다이얼로그: 줄/칸 개수로 현재 셀을 분할
+      const sr = Math.max(1, Number(args['split-rows']) || 1), sc = Math.max(1, Number(args['split-cols']) || 1);
+      await openMenu(editor, '표');
+      const sp = await menuItemXY(editor, '셀 나누기...');
+      if (!sp) throw new Error('셀 나누기... 탐색 실패 (셀에 캐럿 없음?)');
+      await editor.mouse.click(sp.x, sp.y); await editor.waitForTimeout(1000);
+      // 다이얼로그(셀 나누기): 줄 개수/칸 개수 입력, 확인 버튼 텍스트는 '나누기'
+      try { await setDialogField(editor, '줄 개수', sr); } catch (e) {}
+      try { await setDialogField(editor, '칸 개수', sc); } catch (e) {}
+      await editor.waitForTimeout(200);
+      if (!await clickDialogBtn(editor, '나누기')) throw new Error("'나누기' 버튼 탐색 실패");
+      await editor.waitForTimeout(1300);
+    } else if (op === 'merge') {
+      // 인접 셀 블록 선택(현재 셀 + 오른쪽 N칸) 후 셀 합치기.
+      // 본문 canvas 에선 Shift+→/드래그로는 셀 블록이 안 잡힌다(드래그는 표를 객체로 잡아버림).
+      // 정석은 F5(셀 선택 = 블록 모드) → Shift+→ 로 칸 단위 확장 → 셀 합치기.
+      const span = Math.max(1, Number(args.span) || 1); // 오른쪽으로 확장할 칸 수(1=다음 칸까지)
+      await editor.keyboard.press('F5'); await editor.waitForTimeout(450); // 현재 셀을 블록 선택
+      for (let i = 0; i < span; i++) { await editor.keyboard.press('Shift+ArrowRight'); await editor.waitForTimeout(300); }
+      await openMenu(editor, '표');
+      const mg = await menuItemXY(editor, '셀 합치기');
+      if (!mg) throw new Error('셀 합치기 탐색 실패 (블록 선택 안 됨? 셀에 캐럿 없음?)');
+      await editor.mouse.click(mg.x, mg.y); await editor.waitForTimeout(1300);
+    } else {
+      const spec = OPS[op];
+      await openMenu(editor, '표');
+      const parent = await menuItemXY(editor, spec.menu);
+      if (!parent) throw new Error('표 메뉴 항목 탐색 실패: ' + spec.menu + ' (셀에 캐럿 없음?)');
+      await editor.mouse.move(parent.x, parent.y); await editor.waitForTimeout(700); // 서브메뉴 펼침(호버)
+      const item = await menuItemXY(editor, spec.item);
+      if (!item) throw new Error('서브 항목 탐색 실패: ' + spec.item);
+      await editor.mouse.click(item.x, item.y); await editor.waitForTimeout(1300);
+    }
     const n = (await readCurrentPage(editor)) || 1; await gotoPage(editor, n);
     const rect = await detectPageRect(editor); await hideOverlays(editor);
     const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_tableop_${stamp()}.png`);
