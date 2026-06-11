@@ -2465,18 +2465,28 @@ async function cmdEquation(args) {
     await focusBody(editor);
     await editor.mouse.click(r.caret.x, r.caret.y + Math.round((r.caret.h || 12) / 2)); await editor.waitForTimeout(250);
     await editor.keyboard.press('End'); await editor.keyboard.press('Enter'); await editor.waitForTimeout(200);
-    const syncP = watchSave(editor);
     await openMenu(editor, '입력');
     let opened = false;
     try { await clickSel(editor, '.show_eqeditor'); opened = true; } catch (e) { /* 메뉴 텍스트 폴백 */ }
     if (!opened) { for (const t of ['수식...', '수식…', '수식']) { const it = await menuItemXY(editor, t); if (it) { await editor.mouse.click(it.x, it.y); opened = true; break; } } }
     if (!opened) throw new Error('입력 › 수식 항목 탐색 실패');
-    await editor.waitForTimeout(1500); // 수식 편집기 모달
-    // 하단 입력영역 클릭(모달 타이틀 기준 아래쪽) 후 스크립트 타이핑
-    const inXY = await editor.evaluate(() => { const t = [...document.querySelectorAll('*')].find((e) => (e.textContent || '').trim() === '수식 편집' && e.childElementCount === 0); if (!t) return null; const tr = t.getBoundingClientRect(); return { x: Math.round(tr.left + 320), y: Math.round(tr.bottom + 470) }; });
-    if (inXY) { await editor.mouse.click(inXY.x, inXY.y); await editor.waitForTimeout(300); }
-    await editor.keyboard.type(script, { delay: 35 }); await editor.waitForTimeout(700);
-    // 편집기 닫기 = 본문에 수식 확정. '수식 편집' 타이틀 우측의 보이는 .close_btn 선택(여러 개일 수 있어 근접 필터).
+    // 수식 편집기는 별도 iframe(formula_editor). 그 프레임의 스크립트 입력칸(textarea.textarea_box)에 직접 입력.
+    let ef = null;
+    for (let i = 0; i < 12 && !ef; i++) { ef = editor.frames().find((f) => (f.url() || '').includes('formula_editor')); if (!ef) await editor.waitForTimeout(300); }
+    if (!ef) throw new Error('수식 편집기 프레임 탐색 실패');
+    const ta = ef.locator('.textarea_box');
+    const norm = (s) => s.replace(/\s+/g, '');
+    // 입력칸에 스크립트 타이핑 → 실제로 들어갔는지 확인(클릭 빗나감 대비 1회 재시도)
+    let typed = '';
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await ta.click({ timeout: 3000 }).catch(() => {});
+      await ta.fill('').catch(() => {});
+      await editor.keyboard.type(script, { delay: 28 }); await editor.waitForTimeout(400);
+      typed = (await ta.inputValue().catch(() => '')) || '';
+      if (norm(typed) === norm(script)) break;
+    }
+    if (norm(typed) !== norm(script)) throw new Error('수식 스크립트 입력 실패(입력칸 미반영): "' + typed.slice(0, 40) + '"');
+    // 편집기 닫기(.close_btn, 모달 chrome=메인 프레임) → 확인 대화상자 넣기
     const closed = await editor.evaluate(() => {
       const t = [...document.querySelectorAll('*')].find((e) => (e.textContent || '').trim() === '수식 편집' && e.childElementCount === 0);
       const tr = t ? t.getBoundingClientRect() : null;
@@ -2485,21 +2495,27 @@ async function cmdEquation(args) {
       return best ? { x: Math.round(best.x + best.width / 2), y: Math.round(best.y + best.height / 2) } : null;
     });
     if (!closed) throw new Error('수식 편집기 닫기 버튼(.close_btn) 탐색 실패');
-    await editor.mouse.click(closed.x, closed.y); await editor.waitForTimeout(700);
-    // 닫으면 '수식을 넣을까요?' 확인 대화상자 → 넣기 클릭해야 본문에 확정(나가기=버림).
-    // 이 대화상자는 shadow DOM/별도 프레임이라 querySelector로 안 잡힘 → getByText(섀도/프레임 관통)로 클릭.
-    let put = false;
-    for (let i = 0; i < 6 && !put; i++) {
-      for (const fr of editor.frames()) {
-        const loc = fr.getByText('넣기', { exact: true });
-        if (await loc.count().catch(() => 0)) { await loc.first().click({ timeout: 2000 }).catch(() => {}); put = true; break; }
+    // 닫기(.close_btn) → '수식을 넣을까요?' 확인 대화상자(또 다른 프레임)의 넣기 → '수식 편집' 모달이 닫힘(=확정).
+    // confirmSaved는 줄바꿈 동기화를 수식 저장으로 오인하므로 신뢰하지 않고, 모달이 사라졌는지로 실제 반영을 확인한다.
+    // (formula 편집기 iframe은 재사용되어 DOM에 남으므로 '프레임 소멸'은 신호로 못 씀 → 모달 타이틀 가시성으로 판정.)
+    const modalOpen = () => editor.evaluate(() => { const t = [...document.querySelectorAll('*')].find((e) => (e.textContent || '').trim() === '수식 편집' && e.childElementCount === 0); return !!(t && t.offsetParent !== null); }).catch(() => true);
+    // 수식 '확정(넣기)' 직전에 저장 감시를 다시 무장 — 그래야 앞선 줄바꿈 동기화가 아니라 '수식 삽입' 저장을 기다린다.
+    // (이걸 안 하면 줄바꿈 sync로 confirmSaved가 일찍 끝나 수식이 flush 전에 브라우저가 닫혀 유실됨 = 미반영인데 applied 오보.)
+    const syncP2 = watchSave(editor);
+    let committed = false;
+    for (let attempt = 0; attempt < 2 && !committed; attempt++) {
+      await editor.mouse.click(closed.x, closed.y); await editor.waitForTimeout(700);
+      let put = false;
+      for (let i = 0; i < 8 && !put; i++) {
+        for (const fr of editor.frames()) { const loc = fr.getByText('넣기', { exact: true }); if (await loc.count().catch(() => 0)) { await loc.first().click({ timeout: 2000 }).catch(() => {}); put = true; break; } }
+        if (put) break;
+        await editor.waitForTimeout(300);
       }
-      if (put) break;
-      await editor.waitForTimeout(300);
+      if (!put && attempt === 1) throw new Error("수식 확정 '넣기' 버튼 탐색 실패");
+      for (let i = 0; i < 10 && !committed; i++) { await editor.waitForTimeout(300); committed = !(await modalOpen()); }
     }
-    if (!put) throw new Error("수식 확정 '넣기' 버튼 탐색 실패");
-    await editor.waitForTimeout(1200); // 반영에 ~1초
-    const saved = await confirmSaved(editor, syncP);
+    if (!committed) throw new Error('수식 확정 실패(편집기가 안 닫힘 — 본문 미반영)');
+    const saved = await confirmSaved(editor, syncP2, { settleMs: 650 }); // 수식 삽입 저장 확정(넉넉히 settle)
     const n2 = (await readCurrentPage(editor)) || n; await gotoPage(editor, n2);
     const rect = await detectPageRect(editor); await hideOverlays(editor);
     const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_equation_p${n2}_${stamp()}.png`);
