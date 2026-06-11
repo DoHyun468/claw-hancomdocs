@@ -215,6 +215,7 @@ node hancom.js table-op --name <문서이름> --cell "<셀 텍스트>" --op merg
     - 그리스: `alpha beta gamma theta lambda pi ...`(소문자) · `GAMMA SIGMA OMEGA ...`(대문자)
     - 기호: `+-`(±) · `times`(×) · `cdot`(·) · `div`(÷) · `<=` `>=` `!=` · `rightarrow`(→) · `<=>`(⇔) · 공백 `~`(`~~`=넓게)
     - 예: `x = {-b +- sqrt{b^2 -4ac}} over {2a}` → 근의 공식
+    - **전체 토큰 목록**(그리스/집합/연산·논리/화살표/기타 기호 + 템플릿 변형 전부): `references/equation-syntax.md`
 
 ### 🔡 글자 모양 · 문단 모양 다이얼로그 — `char-shape` / `para-shape`
 - **`char-shape --text "<구절>" [--spacing N] [--width N]`**: 구절을 선택해 글자 모양 적용 — `--spacing`(자간 %)·`--width`(장평 %). `--apply`, **headless 전용**.
