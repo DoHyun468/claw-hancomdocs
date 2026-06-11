@@ -80,6 +80,7 @@ node hancom.js resize-object --name <문서이름> --at "x,y" [--width <mm>] [--
 node hancom.js chart-data    --name <문서이름> --at "x,y" --set "B2=9.9,C3=4" [--apply]
 node hancom.js insert-table  --name <문서이름> --rows R --cols C [--anchor "<텍스트>"] [--apply]
 node hancom.js insert-image  --name <문서이름> --file <이미지경로> [--anchor "<텍스트>"] [--apply]
+node hancom.js insert-chart  --name <문서이름> [--type N] [--anchor "<텍스트>"] [--apply]
 node hancom.js table-op      --name <문서이름> --cell "<셀 텍스트>" [--tab N] --op <op> [--apply]
 node hancom.js page-number   --name <문서이름> --where header|footer --align left|center|right [--apply]
 node hancom.js page-break    --name <문서이름> --anchor "<단락 안 텍스트>" [--apply]
@@ -161,12 +162,19 @@ node hancom.js highlight    --name <문서이름> --text "<구절>" --color yell
 - **`resize-object`**: 객체 크기를 **개체 속성 다이얼로그의 너비/높이(mm 숫자)** 로 설정 — 드래그보다 정밀.
   - `--apply` 없으면 현재 크기만 읽음(`currentSize`). `--width`/`--height` 중 하나만도 가능. 그 좌표에 객체 없으면 `object_not_found`.
 - **`chart-data`**: 차트의 **데이터 편집 그리드** 셀 값을 바꿔 차트를 갱신. `--set "B2=9.9,C3=4"`(엑셀식 열문자+행번호=값). 셀=열헤더∩행헤더 교차 → 더블클릭 입력. 그 좌표에 차트 없으면 `chart_not_found`.
+  - ⚠️ **그리드 구조는 차트 종류마다 다르다**(어느 셀이 무슨 뜻인지 먼저 알아야 함). 세 갈래:
+    - **표준(항목×계열)** — 막대·꺾은선·영역·방사형 등 대부분: **A열 = 항목(범주) 이름**, **1행 = 계열 이름**, 그 교차셀(B2~)= 값. 예: 첫 계열 둘째 항목 값 = `B3`.
+    - **원형 계열(단일 계열)** — 원형·쪼개진 원형·도넛형·3차원 원형/쪼개진 원형: **A열 = 항목 이름**, **B열 = 값 한 줄**(계열 하나). 예: 셋째 항목 값 = `B4`.
+    - **분산형** — **A열 = X값**, **B·C…열 = 각 계열의 Y값**(A1 헤더는 비어 있음). 예: 둘째 점의 X = `A3`, 그 Y1 = `B3`.
+  - 기본 그리드는 4항목(막대류는 3계열×4항목). `chart-data`는 **이미 있는 셀만** 짚는다(없는 셀은 `cell_not_located`) — 종류를 모르면 먼저 `--at` 좌표의 차트를 캡처해 그리드를 확인하고 값을 바꿀 것.
 - ⚠️ 편집은 **headless 전용**. 표 셀은 작아 좌표클릭이 빗나가니 셀은 `set-cell-text`(셀 텍스트로 찾기)가 정확.
 
-### ➕ 삽입 — `insert-table` · `insert-image`
-입력 메뉴로 새 표/그림을 삽입. `--anchor` 있으면 **그 텍스트 줄 다음에**, 없으면 문서(본문 흐름) 시작에.
+### ➕ 삽입 — `insert-table` · `insert-image` · `insert-chart`
+입력 메뉴로 새 표/그림/차트를 삽입. `--anchor` 있으면 **그 텍스트 줄 다음에**, 없으면 문서(본문 흐름) 시작에.
 - **`insert-table --rows R --cols C`**: 입력›표 다이얼로그(줄/칸 개수)로 R×C 표 생성.
 - **`insert-image --file <이미지>`**: 입력›그림(장치) 다이얼로그에 로컬 이미지 파일을 넣어 삽입.
+- **`insert-chart [--type N]`**: 입력›차트의 **종류 그리드**에서 N번째 차트를 삽입(기본 데이터로 생성 — 값은 이후 `chart-data`로 수정). `--type` 0~19(생략=0). 무엇인지 모르면 0으로 두고 삽입 후 캡처로 확인. **종류 인덱스**:
+  - 0 세로 막대형 · 1 누적 세로 막대형 · 2 꺾은선형 · 3 가로 막대형 · 4 누적 가로 막대형 · 5 분산형 · 6 원형 · 7 쪼개진 원형 · 8 도넛형 · 9 영역형 · 10 누적 영역형 · 11 방사형 · 12~19 3차원(세로막대/누적세로막대/가로막대/누적가로막대/원형/쪼개진원형/영역/누적영역)
 - ⚠️ 편집 **headless 전용**. 떠다니는 객체가 많은 문서는 삽입 위치가 본문 흐름 기준이라 시각적 최상단과 다를 수 있음(`--anchor`로 위치 지정 권장).
 
 ### ▦ 표 줄/칸 추가·삭제·나누기·합치기 — `table-op`

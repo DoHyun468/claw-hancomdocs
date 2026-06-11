@@ -3,6 +3,8 @@
 **/package-lock.json
 # 로그인 세션 — 민감, 절대 커밋 금지
 **/auth.json
+# 에디터/세션 로컬 설정
+.claude/
 # 브라우저 프로파일 / 출력물
 **/pw-profile/
 **/captures/

@@ -89,6 +89,7 @@ async function readPageCount(ed) {
 
 // 캔버스 픽셀 스캔으로 흰 A4 페이지 사각형(뷰포트 CSS px) 검출
 async function detectPageRect(ed) {
+  await closeSidebar(ed); // 개체 사이드바가 열려 페이지가 밀렸으면 닫아 정상 위치에서 측정/캡처
   return await ed.evaluate(() => {
     const cvs = Array.from(document.querySelectorAll('canvas'));
     if (!cvs.length) return null;
@@ -2135,8 +2136,8 @@ async function cmdMemo(args) {
   });
 }
 
-// insert-chart: 입력 › 차트… 다이얼로그. ⚠️ 미완성 — '삽입' 버튼만으론 차트가 안 들어감(차트 종류를
-// 먼저 골라야 함, 종류 그리드 셀 셀렉터 미파악). dispatch 에서 분리해둠(추후 종류 선택 추가 시 연결).
+// insert-chart: 입력 › 차트… → 종류 그리드(.e_chart_type)에서 --type N 썸네일을 단일 클릭하면 그 차트가
+// 기본 데이터로 삽입되고 데이터편집 모달이 열림 → Escape로 닫아 확정. 데이터 값은 이후 chart-data로 수정.
 async function cmdInsertChart(args) {
   if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
   const apply = !!args.apply;
@@ -2156,7 +2157,13 @@ async function cmdInsertChart(args) {
     const it = await menuItemXY(editor, '차트...');
     if (!it) throw new Error('입력 › 차트... 메뉴 탐색 실패');
     await editor.mouse.click(it.x, it.y); await editor.waitForTimeout(1100); // 다이얼로그
-    if (!await clickDialogBtn(editor, '삽입')) throw new Error("차트 '삽입' 버튼 탐색 실패");
+    // '차트 삽입' 모달 = 차트 종류 썸네일 그리드(.e_chart_type 20개). 썸네일을 '단일 클릭'하면 그 차트가
+    // 삽입되고 모달이 닫힌다(더블클릭하면 삽입된 차트가 다시 데이터편집 모달로 열려버림 — 단일 클릭만).
+    const typeIdx = Math.max(0, Number(args.type) || 0); // 0=세로막대(기본), 0~19
+    const cxy = await editor.evaluate((idx) => { const els = [...document.querySelectorAll('.e_chart_type')].filter((e) => e.offsetParent !== null && e.getBoundingClientRect().width > 30); const el = els[Math.min(idx, els.length - 1)]; if (!el) return null; const r = el.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2), n: els.length }; }, typeIdx);
+    if (!cxy) throw new Error('차트 종류 썸네일(.e_chart_type) 탐색 실패');
+    await editor.mouse.click(cxy.x, cxy.y); await editor.waitForTimeout(1500); // 썸네일 클릭 = 차트 삽입 + 데이터편집 모달
+    await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(900); // 데이터편집 모달 닫아 차트 확정(기본 데이터)
     const saved = await confirmSaved(editor, syncP);
     const n = (await readCurrentPage(editor)) || 1; await gotoPage(editor, n);
     const rect = await detectPageRect(editor); await hideOverlays(editor);
@@ -2419,6 +2426,23 @@ async function cmdUpload(args) {
   } finally { await browser.close(); }
 }
 
+// 오른쪽 개체 사이드바(.side_bar)가 열려 있으면 닫는다. 사이드바는 객체 포커스가 풀려도 남아 본문을
+// 왼쪽으로 밀어 캡처/좌표를 틀어지게 하므로(차트 더블클릭 등에서 열림), 캡처 전에 닫아 정상 레이아웃 보장.
+async function closeSidebar(ed) {
+  const xy = await ed.evaluate(() => {
+    const sb = document.querySelector('.side_bar');
+    if (!sb || sb.offsetParent === null) return null;
+    const sr = sb.getBoundingClientRect();
+    if (sr.width < 60) return null; // 이미 접힘
+    // 사이드바 상단 우측의 접기('>') 버튼
+    let best = null;
+    for (const e of sb.querySelectorAll('a,button,div,span,i')) { if (e.childElementCount > 1) continue; const r = e.getBoundingClientRect(); if (r.y < sr.top + 42 && r.right > sr.right - 44 && r.width > 6 && r.width < 42 && r.height > 6 && r.height < 42) best = { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; }
+    return best;
+  }).catch(() => null);
+  if (xy) { await ed.mouse.click(xy.x, xy.y); await ed.waitForTimeout(500); return true; }
+  return false;
+}
+
 async function cmdFind(args) {
   if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
   if (args.text == null || args.text === true) throw new Error('--text 필요 (찾을 구절)');
@@ -2463,6 +2487,7 @@ async function cmdFind(args) {
     else if (args._ === 'endnote') await cmdFootnote(args);
     else if (args._ === 'hyperlink') await cmdHyperlink(args);
     else if (args._ === 'memo') await cmdMemo(args);
+    else if (args._ === 'insert-chart') await cmdInsertChart(args);
     else if (args._ === 'textbox') await cmdTextbox(args);
     else if (args._ === 'font-family') await cmdFontFamily(args);
     else if (args._ === 'highlight') await cmdHighlight(args);
