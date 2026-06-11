@@ -2443,6 +2443,71 @@ async function closeSidebar(ed) {
   return false;
 }
 
+// equation: 입력 › 수식. 앵커 줄 다음에 한컴 수식 스크립트(--script, 예 "x^2 + y^2 = z^2")로 수식을 넣는다.
+// 수식 편집기 하단 입력영역에 스크립트를 타이핑하면 렌더되고, 편집기를 닫으면(.close_btn) 본문에 확정.
+async function cmdEquation(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (!args.anchor) throw new Error('--anchor 필요 (수식 넣을 기준 텍스트 — 그 줄 다음)');
+  if (args.script == null || args.script === true) throw new Error('--script 필요 (한컴 수식 스크립트, 예 "x^2 + y^2")');
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
+  const anchor = String(args.anchor).normalize('NFC');
+  const script = String(args.script).normalize('NFC');
+  const name = String(args.name).normalize('NFC');
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    const r = await findText(editor, anchor);
+    if (!r.found || !r.caret) { out({ cmd: 'equation', status: 'anchor_not_found', anchor, docId: editor.__docId || null }); return; }
+    const n = r.page || 1;
+    if (!apply) { out({ cmd: 'equation', dryRun: true, anchor, script, foundPage: n, docId: editor.__docId || null, note: '--apply 시 그 줄 다음에 수식 삽입.' }); return; }
+    await focusBody(editor);
+    await editor.mouse.click(r.caret.x, r.caret.y + Math.round((r.caret.h || 12) / 2)); await editor.waitForTimeout(250);
+    await editor.keyboard.press('End'); await editor.keyboard.press('Enter'); await editor.waitForTimeout(200);
+    const syncP = watchSave(editor);
+    await openMenu(editor, '입력');
+    let opened = false;
+    try { await clickSel(editor, '.show_eqeditor'); opened = true; } catch (e) { /* 메뉴 텍스트 폴백 */ }
+    if (!opened) { for (const t of ['수식...', '수식…', '수식']) { const it = await menuItemXY(editor, t); if (it) { await editor.mouse.click(it.x, it.y); opened = true; break; } } }
+    if (!opened) throw new Error('입력 › 수식 항목 탐색 실패');
+    await editor.waitForTimeout(1500); // 수식 편집기 모달
+    // 하단 입력영역 클릭(모달 타이틀 기준 아래쪽) 후 스크립트 타이핑
+    const inXY = await editor.evaluate(() => { const t = [...document.querySelectorAll('*')].find((e) => (e.textContent || '').trim() === '수식 편집' && e.childElementCount === 0); if (!t) return null; const tr = t.getBoundingClientRect(); return { x: Math.round(tr.left + 320), y: Math.round(tr.bottom + 470) }; });
+    if (inXY) { await editor.mouse.click(inXY.x, inXY.y); await editor.waitForTimeout(300); }
+    await editor.keyboard.type(script, { delay: 35 }); await editor.waitForTimeout(700);
+    // 편집기 닫기 = 본문에 수식 확정. '수식 편집' 타이틀 우측의 보이는 .close_btn 선택(여러 개일 수 있어 근접 필터).
+    const closed = await editor.evaluate(() => {
+      const t = [...document.querySelectorAll('*')].find((e) => (e.textContent || '').trim() === '수식 편집' && e.childElementCount === 0);
+      const tr = t ? t.getBoundingClientRect() : null;
+      let best = null, bestD = 1e9;
+      for (const b of document.querySelectorAll('.close_btn')) { if (b.offsetParent === null) continue; const r = b.getBoundingClientRect(); if (r.width < 6) continue; if (tr) { if (Math.abs(r.top - tr.top) > 40) continue; const d = Math.abs(r.left - tr.right); if (d < bestD) { bestD = d; best = r; } } else best = r; }
+      return best ? { x: Math.round(best.x + best.width / 2), y: Math.round(best.y + best.height / 2) } : null;
+    });
+    if (!closed) throw new Error('수식 편집기 닫기 버튼(.close_btn) 탐색 실패');
+    await editor.mouse.click(closed.x, closed.y); await editor.waitForTimeout(700);
+    // 닫으면 '수식을 넣을까요?' 확인 대화상자 → 넣기 클릭해야 본문에 확정(나가기=버림).
+    // 이 대화상자는 shadow DOM/별도 프레임이라 querySelector로 안 잡힘 → getByText(섀도/프레임 관통)로 클릭.
+    let put = false;
+    for (let i = 0; i < 6 && !put; i++) {
+      for (const fr of editor.frames()) {
+        const loc = fr.getByText('넣기', { exact: true });
+        if (await loc.count().catch(() => 0)) { await loc.first().click({ timeout: 2000 }).catch(() => {}); put = true; break; }
+      }
+      if (put) break;
+      await editor.waitForTimeout(300);
+    }
+    if (!put) throw new Error("수식 확정 '넣기' 버튼 탐색 실패");
+    await editor.waitForTimeout(1200); // 반영에 ~1초
+    const saved = await confirmSaved(editor, syncP);
+    const n2 = (await readCurrentPage(editor)) || n; await gotoPage(editor, n2);
+    const rect = await detectPageRect(editor); await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_equation_p${n2}_${stamp()}.png`);
+    await editor.screenshot(rect ? { path: shot, clip: rect } : { path: shot });
+    out({ cmd: 'equation', applied: true, anchor, script, page: n2, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), docId: editor.__docId || null, shot });
+  });
+}
+
 // caption: 입력 › 캡션 넣기. 페이지 좌표 --at 의 객체(그림/표/차트/도형)를 선택해 캡션을 단다.
 // --position: 아래(기본)·위·왼쪽 위/가운데/아래·오른쪽 위/가운데/아래. --text 로 캡션 내용 지정.
 const CAPTION_POS = { below: '아래', above: '위', left: '왼쪽 가운데', right: '오른쪽 가운데' };
@@ -2711,6 +2776,7 @@ async function cmdFind(args) {
     else if (args._ === 'bookmark') await cmdBookmark(args);
     else if (args._ === 'shape') await cmdShape(args);
     else if (args._ === 'caption') await cmdCaption(args);
+    else if (args._ === 'equation') await cmdEquation(args);
     else if (args._ === 'textbox') await cmdTextbox(args);
     else if (args._ === 'font-family') await cmdFontFamily(args);
     else if (args._ === 'highlight') await cmdHighlight(args);

@@ -135,8 +135,9 @@ export async function getObjects(file) {
   let xmls;
   if (isHwpx) xmls = sectionXmls(bytes);
   else { const doc = await loadRhwpDoc(bytes); try { xmls = sectionXmls(doc.exportHwpx()); } finally { if (typeof doc.free === 'function') doc.free(); } }
-  // 태그 → 타입. 그림/차트/도형/OLE. (chart 를 image 보다 먼저 판정하려고 분리 처리)
-  const PIC = '<hp:pic', CHART = '<hp:chart';
+  // 태그 → 타입. 그림/차트/수식/도형/OLE. (chart·equation 을 image 보다 먼저 판정하려고 분리 처리)
+  // ⚠️ 차트=<hp:chart>, 수식=<hp:equation> 로 별도 저장됨 — 이미지(<hp:pic>)로 세지 않는다.
+  const PIC = '<hp:pic', CHART = '<hp:chart', EQUATION = '<hp:equation';
   const SHAPES = ['<hp:container', '<hp:rect', '<hp:ellipse', '<hp:line', '<hp:polygon', '<hp:curve', '<hp:arc', '<hp:ole'];
   const all = [];
   xmls.forEach((xml, si) => {
@@ -149,6 +150,7 @@ export async function getObjects(file) {
     };
     const pushAll = (tag, type) => { let f = 0, p; while ((p = xml.indexOf(tag, f)) !== -1) { f = p + tag.length; all.push({ section: si, pos: p, type, ...nearText(p) }); } };
     pushAll(CHART, 'chart');
+    pushAll(EQUATION, 'equation');
     pushAll(PIC, 'image');
     for (const s of SHAPES) pushAll(s, 'shape');
   });
