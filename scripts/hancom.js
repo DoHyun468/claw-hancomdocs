@@ -775,7 +775,7 @@ async function cmdInsertText(args) {
     await editor.keyboard.press('Enter'); // 새 줄
     await editor.waitForTimeout(180);
     await editor.keyboard.type(String(args.text).normalize('NFC'), { delay: 35 });
-    await editor.waitForTimeout(1400);    // 자동저장/OT 동기화 여유
+    const saved = await confirmSaved(editor); // 서버 저장(OT 동기화) 확정 후 닫기 — 고정 대기 대체
 
     // 3) regression 캡처 — 의도한 영역만 바뀌었는지 한 장
     await gotoPage(editor, n);
@@ -784,6 +784,7 @@ async function cmdInsertText(args) {
     const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_insert_p${n}_${stamp()}.png`);
     await editor.screenshot(rect2 ? { path: shot, clip: rect2 } : { path: shot });
     out({ cmd: 'insert-text', applied: true, anchor: args.anchor, text: args.text, page: n,
+          saved, ...(saved ? {} : { warning: 'save_unconfirmed: 서버 동기화 미확인 — 재시도/동시열림 확인 권장' }),
           docId: editor.__docId || null, shot });
   });
 }
@@ -1655,6 +1656,24 @@ async function cmdTableOp(args) {
     await editor.screenshot(rect ? { path: shot, clip: rect } : { path: shot });
     out({ cmd: 'table-op', applied: true, cell: cellText, tab: tabN, op, page: n, shot, docId: editor.__docId || null });
   });
+}
+
+// 편집 직후 호출 — 서버 저장 확정 대기. webhwp 는 자동저장이라 명시 저장 버튼/단축키가 없고(.d_save
+// 비활성), 본문 변경은 타이핑 ~0.75s 후 디바운스된 OT 동기화(POST /webhwp/handler/action/<docId>) 로
+// 서버에 올라간다. 그 POST 200 을 기다린 뒤 짧게 settle(서버 커밋 여유) 하고 닫아야 편집이 보존된다.
+// 고정 대기(1.3~1.4s)보다 ① 망 속도에 자동 적응(느린 망에 안전), ② 보통 더 빠름(~1.1s), ③ 동기화가
+// 안 잡히면 synced=false 로 '저장 미확정'을 호출부가 알 수 있다. 실측: settle 300~500ms 면 6/6 보존,
+// settle 0 은 간헐 유실(POST 200 만으론 부족 — 서버 커밋 settle 필요).
+async function confirmSaved(editor, { timeoutMs = 6000, settleMs = 450 } = {}) {
+  let synced = false;
+  try {
+    await editor.waitForResponse(
+      (resp) => /\/webhwp\/handler\/action\//.test(resp.url()) && resp.request().method() === 'POST' && resp.status() === 200,
+      { timeout: timeoutMs });
+    synced = true;
+  } catch { synced = false; }
+  await editor.waitForTimeout(settleMs); // 서버 커밋 여유
+  return synced;
 }
 
 // ───────────────────────── 객체(그림·차트) ─────────────────────────
