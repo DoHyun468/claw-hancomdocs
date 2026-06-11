@@ -612,8 +612,43 @@ async function cmdAround(args) {
 //   --file 로컬 .hwp/.hwpx(읽기 원본) · --text 구절 · --nth 문서순 N번째(기본1)
 //   --name 드라이브 문서명(생략 시 파일명에서 유추) · --band/--scale 캡처 옵션 · --out 저장경로
 // 착지에 쓴 텍스트/위치는 편집 op(insert/replace/format)에도 그대로 이어 쓸 수 있다(정밀 편집의 토대).
+// pinpoint --object <image|chart|shape> [--nth N]: 글자 없는 객체는 read.mjs(XML)로 문서순 열거 → 그
+// N번째 객체의 '옆 텍스트(랜드마크)'를 UI find 로 찾아 그 자리를 넓게(band) 캡처한다(객체는 canvas 라
+// 직접 못 짚으므로 랜드마크 우회). 읽기 전용(편집 아님).
+async function pinpointObject(args) {
+  const objType = String(args.object).toLowerCase();
+  if (!['image', 'chart', 'shape'].includes(objType)) throw new Error('--object 는 image | chart | shape');
+  const oN = Math.max(1, Number(args.nth) || 1);
+  const name = String(args.name || path.basename(args.file).replace(/\.[^.]+$/, '')).normalize('NFC');
+  const reader = await import('./read.mjs');
+  const allObjs = await reader.getObjects(args.file);
+  const objs = allObjs.filter((o) => o.type === objType);
+  const counts = allObjs.reduce((a, o) => { a[o.type] = (a[o.type] || 0) + 1; return a; }, {});
+  if (!objs.length) { out({ cmd: 'pinpoint', status: 'no_object', object: objType, available: counts }); return; }
+  if (oN > objs.length) { out({ cmd: 'pinpoint', status: 'object_nth_out_of_range', object: objType, objectCount: objs.length }); return; }
+  const obj = objs[oN - 1];
+  const landmark = obj.beforeText || obj.afterText;
+  const side = obj.beforeText ? 'before' : (obj.afterText ? 'after' : null);
+  if (!landmark) { out({ cmd: 'pinpoint', status: 'no_landmark', object: objType, nth: oN, objectCount: objs.length, note: '그 객체 옆에 텍스트가 없어 랜드마크로 못 잡음 — capture --grid 로 좌표 캡처 권장.' }); return; }
+  const band = Number(args.band) || 400; // 객체는 넓게
+  const scale = Number(args.scale) || 2.5;
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(scale, async (ctx, page) => {
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('드라이브에서 문서 못 찾음: ' + name);
+    const r = await findText(editor, landmark.normalize('NFC'));
+    if (!r.found || !r.caret) { out({ cmd: 'pinpoint', status: 'landmark_not_found', object: objType, nth: oN, landmark, docId: editor.__docId || null, note: '랜드마크 텍스트를 UI 에서 못 찾음 — 더 가까운/유니크한 텍스트 필요.' }); return; }
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_pinobj_${objType}${oN}_${stamp()}.png`);
+    const { rect } = await zoomBandShot(editor, r.caret, band, shot);
+    out({ cmd: 'pinpoint', mode: 'object', object: objType, nth: oN, objectCount: objs.length, available: counts, landmark, landmarkSide: side, page: r.page, band, pageWidth: rect.width, shot, docId: editor.__docId || null,
+      note: '객체 옆 랜드마크 "' + landmark.slice(0, 20) + '" 자리를 넓게 캡처. 객체가 캡처 안에 있는지 눈으로 확인.' });
+  });
+}
+
 async function cmdPinpoint(args) {
   if (!args.file) throw new Error('--file 필요 (로컬 .hwp/.hwpx — 읽기 원본)');
+  // --object <image|chart|shape>: 글자 없는 객체를 옆 텍스트(랜드마크)로 찾아 넓게 캡처(read.mjs 가 본다).
+  if (args.object !== undefined && args.object !== true) { await pinpointObject(args); return; }
   if (args.text == null || args.text === true) throw new Error('--text 필요 (찾을 구절)');
   const phrase = String(args.text).normalize('NFC');
   const nth = Math.max(1, Number(args.nth) || 1);

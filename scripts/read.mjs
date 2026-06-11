@@ -126,6 +126,39 @@ export async function getUnits(file) {
   } finally { if (typeof doc.free === 'function') doc.free(); }
 }
 
+// 문서 내 비텍스트 객체(그림/차트/도형)를 문서순으로 열거 + 각 객체의 앞/뒤 인접 텍스트(랜드마크).
+// 본문이 canvas 라 UI 로는 객체를 못 짚으므로, XML 로 "N번째 그림"의 위치를 옆 텍스트로 잡아 캡처한다.
+// 차트는 <hp:chart>(있으면) 우선, 그 chart 를 감싼 <hp:pic>/<hp:gso>는 중복 제외(같은 위치면 차트로).
+export async function getObjects(file) {
+  const bytes = fs.readFileSync(file);
+  const isHwpx = bytes[0] === 0x50 && bytes[1] === 0x4b; // 'PK'
+  let xmls;
+  if (isHwpx) xmls = sectionXmls(bytes);
+  else { const doc = await loadRhwpDoc(bytes); try { xmls = sectionXmls(doc.exportHwpx()); } finally { if (typeof doc.free === 'function') doc.free(); } }
+  // 태그 → 타입. 그림/차트/도형/OLE. (chart 를 image 보다 먼저 판정하려고 분리 처리)
+  const PIC = '<hp:pic', CHART = '<hp:chart';
+  const SHAPES = ['<hp:container', '<hp:rect', '<hp:ellipse', '<hp:line', '<hp:polygon', '<hp:curve', '<hp:arc', '<hp:ole'];
+  const all = [];
+  xmls.forEach((xml, si) => {
+    const texts = [...xml.matchAll(/<hp:t\b[^>]*>([^<]*)<\/hp:t>/g)].map((m) => ({ pos: m.index, end: m.index + m[0].length, text: decodeXmlEntities(m[1]) }));
+    const nearText = (p) => {
+      let before = '', after = '';
+      for (let i = texts.length - 1; i >= 0; i--) { if (texts[i].end <= p && texts[i].text.trim()) { before = texts[i].text.trim(); break; } }
+      for (let i = 0; i < texts.length; i++) { if (texts[i].pos >= p && texts[i].text.trim()) { after = texts[i].text.trim(); break; } }
+      return { before, after };
+    };
+    const pushAll = (tag, type) => { let f = 0, p; while ((p = xml.indexOf(tag, f)) !== -1) { f = p + tag.length; all.push({ section: si, pos: p, type, ...nearText(p) }); } };
+    pushAll(CHART, 'chart');
+    pushAll(PIC, 'image');
+    for (const s of SHAPES) pushAll(s, 'shape');
+  });
+  // 차트를 감싼 pic(거의 같은 위치)을 image 중복으로 빼기: 같은 섹션에서 chart 와 pos 가 매우 가까운 image 제거.
+  const charts = all.filter((o) => o.type === 'chart');
+  const filtered = all.filter((o) => !(o.type === 'image' && charts.some((c) => c.section === o.section && Math.abs(c.pos - o.pos) < 400)));
+  filtered.sort((a, b) => a.section - b.section || a.pos - b.pos);
+  return filtered.map((o, i) => ({ nth: i + 1, type: o.type, section: o.section, beforeText: o.before, afterText: o.after }));
+}
+
 // 구절의 occurrence-맵. 각 단위 텍스트에서 모든 매치를 찾아 nth+맥락+주소로(문서 스트림 순서).
 export function occurrenceMap(units, phrase, ctx = 24) {
   const occ = [];
@@ -203,18 +236,24 @@ export async function cellNav(file, tableIdx, targetRow, targetCol) {
 
 // --- CLI ---
 const argv = process.argv.slice(2);
-let file = null, text = null, inspect = false, locate = false, nth = 1;
+let file = null, text = null, inspect = false, locate = false, nth = 1, objects = false;
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
   if (a === '--text') text = argv[++i];
   else if (a === '--inspect') inspect = true;
+  else if (a === '--objects') objects = true;
   else if (a === '--locate') locate = true;
   else if (a === '--nth') nth = Math.max(1, Number(argv[++i]) || 1);
-  else if (a === '-h' || a === '--help') { process.stderr.write('usage: read.mjs <file.hwp|.hwpx> [--text "<phrase>"] [--locate --nth N] [--inspect]\n'); process.exit(0); }
+  else if (a === '-h' || a === '--help') { process.stderr.write('usage: read.mjs <file.hwp|.hwpx> [--text "<phrase>"] [--locate --nth N] [--inspect] [--objects]\n'); process.exit(0); }
   else if (!a.startsWith('--')) file = a;
 }
 if (import.meta.url === url.pathToFileURL(process.argv[1]).href) {
-  if (!file) { process.stderr.write('usage: read.mjs <file.hwp|.hwpx> [--text "<phrase>"] [--locate --nth N] [--inspect]\n'); process.exit(2); }
+  if (!file) { process.stderr.write('usage: read.mjs <file.hwp|.hwpx> [--text "<phrase>"] [--locate --nth N] [--inspect] [--objects]\n'); process.exit(2); }
+  if (objects) {
+    const objs = await getObjects(file);
+    process.stdout.write(JSON.stringify({ cmd: 'objects', file: path.basename(file), count: objs.length, objects: objs }, null, 2) + '\n');
+    process.exit(0);
+  }
   const units = await getUnits(file);
   if (locate && text) {
     const loc = deriveAnchor(units, text, nth);

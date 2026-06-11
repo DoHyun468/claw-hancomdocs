@@ -140,7 +140,7 @@ node hancom.js highlight    --name <문서이름> --text "<구절>" --color yell
     - (서식은 평문화될 수 있음.)
   - **`--format "<토큰들>"` (핀포인트 서식)**: 그 N번째 매치에만 서식 적용. 토큰(쉼표 구분): `bold`·`italic`·`underline`·`color:<색>`·`highlight:<색>` (예: `--format "bold,color:red"`). `--apply` 필요, headless 전용.
   - **`--insert "<텍스트>"` (핀포인트 삽입)**: 그 N번째 매치 **바로 뒤**에 텍스트 삽입. `--apply` 필요, headless 전용.
-  - 글자가 없는 대상(그림·도형 등)은 read.mjs가 못 보므로, **옆의 유니크한 텍스트**를 `around --zoom --band`(넓게)로 잡는 게 길이다.
+  - **`--object <image|chart|shape> [--nth N]` (글자 없는 객체 찾기)**: 그림·차트·도형은 글자가 없어 텍스트로 못 찾는다 → read.mjs가 XML에서 **문서순으로 객체를 열거**하고, 그 N번째 객체의 **옆 텍스트(랜드마크)**를 찾아 그 자리를 넓게(`--band`, 기본 400) 캡처한다. 읽기 전용. 반환에 `landmark`·`objectCount`·`available`(타입별 개수). 예: `pinpoint --file <로컬> --object image --nth 2` → 2번째 그림 옆을 캡처. (객체 옆에 텍스트가 전혀 없으면 `no_landmark` — 그땐 `capture --grid`로 좌표 캡처.)
 
 - **`download` / `upload`** (로컬 ↔ 드라이브): read.mjs/pinpoint 의 `--file` 은 **로컬 원본**이 필요하다.
   - `node hancom.js download --name <문서이름> [--out <경로>]` → 드라이브 문서의 **현재 상태**를 로컬 `.hwp/.hwpx`로(원본 형식 그대로, 변환 없음). 기본 저장 위치 `scripts/downloads/`. 반환 `{saved, suggestedFilename, bytes, docId}`.
