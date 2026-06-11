@@ -159,6 +159,18 @@ export async function getObjects(file) {
   return filtered.map((o, i) => ({ nth: i + 1, type: o.type, section: o.section, beforeText: o.before, afterText: o.after }));
 }
 
+// 책갈피(bookmark) 열거 — 본문에 안 보이는 이름표. .hwp/.hwpx 모두 섹션 XML 의 <hp:bookmark name="..."> 스캔.
+export async function getBookmarks(file) {
+  const bytes = fs.readFileSync(file);
+  const isHwpx = bytes[0] === 0x50 && bytes[1] === 0x4b;
+  let xmls;
+  if (isHwpx) xmls = sectionXmls(bytes);
+  else { const doc = await loadRhwpDoc(bytes); try { xmls = sectionXmls(doc.exportHwpx()); } finally { if (typeof doc.free === 'function') doc.free(); } }
+  const names = [];
+  xmls.forEach((xml, si) => { for (const m of xml.matchAll(/<hp:bookmark\b[^>]*\bname="([^"]*)"/g)) names.push({ section: si, name: decodeXmlEntities(m[1]) }); });
+  return names;
+}
+
 // 구절의 occurrence-맵. 각 단위 텍스트에서 모든 매치를 찾아 nth+맥락+주소로(문서 스트림 순서).
 export function occurrenceMap(units, phrase, ctx = 24) {
   const occ = [];
@@ -236,22 +248,28 @@ export async function cellNav(file, tableIdx, targetRow, targetCol) {
 
 // --- CLI ---
 const argv = process.argv.slice(2);
-let file = null, text = null, inspect = false, locate = false, nth = 1, objects = false;
+let file = null, text = null, inspect = false, locate = false, nth = 1, objects = false, bookmarks = false;
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
   if (a === '--text') text = argv[++i];
   else if (a === '--inspect') inspect = true;
   else if (a === '--objects') objects = true;
+  else if (a === '--bookmarks') bookmarks = true;
   else if (a === '--locate') locate = true;
   else if (a === '--nth') nth = Math.max(1, Number(argv[++i]) || 1);
-  else if (a === '-h' || a === '--help') { process.stderr.write('usage: read.mjs <file.hwp|.hwpx> [--text "<phrase>"] [--locate --nth N] [--inspect] [--objects]\n'); process.exit(0); }
+  else if (a === '-h' || a === '--help') { process.stderr.write('usage: read.mjs <file.hwp|.hwpx> [--text "<phrase>"] [--locate --nth N] [--inspect] [--objects] [--bookmarks]\n'); process.exit(0); }
   else if (!a.startsWith('--')) file = a;
 }
 if (import.meta.url === url.pathToFileURL(process.argv[1]).href) {
-  if (!file) { process.stderr.write('usage: read.mjs <file.hwp|.hwpx> [--text "<phrase>"] [--locate --nth N] [--inspect] [--objects]\n'); process.exit(2); }
+  if (!file) { process.stderr.write('usage: read.mjs <file.hwp|.hwpx> [--text "<phrase>"] [--locate --nth N] [--inspect] [--objects] [--bookmarks]\n'); process.exit(2); }
   if (objects) {
     const objs = await getObjects(file);
     process.stdout.write(JSON.stringify({ cmd: 'objects', file: path.basename(file), count: objs.length, objects: objs }, null, 2) + '\n');
+    process.exit(0);
+  }
+  if (bookmarks) {
+    const bm = await getBookmarks(file);
+    process.stdout.write(JSON.stringify({ cmd: 'bookmarks', file: path.basename(file), count: bm.length, bookmarks: bm }, null, 2) + '\n');
     process.exit(0);
   }
   const units = await getUnits(file);

@@ -2443,6 +2443,46 @@ async function closeSidebar(ed) {
   return false;
 }
 
+// bookmark: 입력 › 책갈피. 앵커 위치에 이름표(책갈피)를 단다 — 본문엔 안 보이고 이동(이동 대상)용.
+async function cmdBookmark(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (!args.anchor) throw new Error('--anchor 필요 (책갈피 달 기준 텍스트)');
+  if (args['mark-name'] == null || args['mark-name'] === true) throw new Error('--mark-name 필요 (책갈피 이름)');
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
+  const anchor = String(args.anchor).normalize('NFC');
+  const markName = String(args['mark-name']).normalize('NFC');
+  const name = String(args.name).normalize('NFC');
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    const r = await findText(editor, anchor);
+    if (!r.found || !r.caret) { out({ cmd: 'bookmark', status: 'anchor_not_found', anchor, docId: editor.__docId || null }); return; }
+    const n = r.page || 1;
+    if (!apply) { out({ cmd: 'bookmark', dryRun: true, anchor, markName, foundPage: n, docId: editor.__docId || null, note: '--apply 시 그 위치에 책갈피(이름표) 삽입.' }); return; }
+    await focusBody(editor);
+    await editor.mouse.click(r.caret.x, r.caret.y + Math.round((r.caret.h || 12) / 2)); await editor.waitForTimeout(300);
+    const syncP = watchSave(editor);
+    await openMenu(editor, '입력');
+    let opened = false;
+    try { await clickSel(editor, '.bookmark'); opened = true; } catch (e) { /* 메뉴 텍스트 폴백 */ }
+    if (!opened) { for (const t of ['책갈피...', '책갈피…', '책갈피']) { const it = await menuItemXY(editor, t); if (it) { await editor.mouse.click(it.x, it.y); opened = true; break; } } }
+    if (!opened) throw new Error('책갈피 항목 탐색 실패');
+    await editor.waitForTimeout(1100);
+    // 책갈피 이름 입력칸: aria-label 후보들 → 실패 시 다이얼로그 내 첫 텍스트 input
+    let filled = false;
+    for (const lab of ['책갈피 이름', '이름', '책갈피']) { try { await setDialogField(editor, lab, markName); filled = true; break; } catch (e) {} }
+    if (!filled) { await editor.keyboard.type(markName, { delay: 30 }); } // 보통 이름칸 자동 포커스
+    let inserted = false;
+    for (const b of ['넣기', '추가', '설정', '확인']) { if (await clickDialogBtn(editor, b)) { inserted = true; break; } }
+    if (!inserted) throw new Error('책갈피 삽입 버튼(넣기) 탐색 실패');
+    await editor.waitForTimeout(500);
+    const saved = await confirmSaved(editor, syncP);
+    out({ cmd: 'bookmark', applied: true, anchor, markName, page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), docId: editor.__docId || null, note: '책갈피는 본문에 안 보임 — .hwpx는 다운로드 후 read.mjs --bookmarks로 확인. (.hwp는 read.mjs가 못 읽어 0으로 나올 수 있음 — 삽입은 됨.)' });
+  });
+}
+
 // field: 입력 › 필드 입력(누름틀). 앵커 줄 끝에 '클릭해 내용을 채우는 양식 자리(누름틀)'를 삽입한다.
 // --guide = 자리에 표시될 안내문(예: "이름을 입력하세요"), --field-name = 필드 이름(선택, 양식 식별용).
 async function cmdField(args) {
@@ -2566,6 +2606,7 @@ async function cmdFind(args) {
     else if (args._ === 'insert-chart') await cmdInsertChart(args);
     else if (args._ === 'para-line') await cmdParaLine(args);
     else if (args._ === 'field') await cmdField(args);
+    else if (args._ === 'bookmark') await cmdBookmark(args);
     else if (args._ === 'textbox') await cmdTextbox(args);
     else if (args._ === 'font-family') await cmdFontFamily(args);
     else if (args._ === 'highlight') await cmdHighlight(args);
