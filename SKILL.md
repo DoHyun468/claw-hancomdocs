@@ -81,7 +81,9 @@ node hancom.js chart-data    --name <문서이름> --at "x,y" --set "B2=9.9,C3=4
 node hancom.js insert-table  --name <문서이름> --rows R --cols C [--anchor "<텍스트>"] [--apply]
 node hancom.js insert-image  --name <문서이름> --file <이미지경로> [--anchor "<텍스트>"] [--apply]
 node hancom.js table-op      --name <문서이름> --cell "<셀 텍스트>" [--tab N] --op <op> [--apply]
-node read.mjs <로컬 .hwp/.hwpx> [--text "<구절>"] [--locate --nth N] [--inspect]
+node hancom.js page-number   --name <문서이름> --where header|footer --align left|center|right [--apply]
+node hancom.js page-break    --name <문서이름> --anchor "<단락 안 텍스트>" [--apply]
+node read.mjs <로컬 .hwp/.hwpx> [--text "<구절>"] [--locate --nth N] [--inspect] [--objects]
 node hancom.js insert-text  --name <문서이름> --anchor "<기준 텍스트>" --text "<추가할 한 줄>" [--apply]
 node hancom.js replace-text --name <문서이름> --find "<바꿀 대상>" --to "<바꿀 결과>" [--apply]
 node hancom.js set-cell-text --name <문서이름> --cell "<기준 셀 텍스트>" --text "<채울 값>" [--tab N] [--apply]
@@ -172,6 +174,10 @@ node hancom.js highlight    --name <문서이름> --text "<구절>" --color yell
 node hancom.js table-op --name <문서이름> --cell "<셀 텍스트>" --op split --split-rows 2 --split-cols 2 --apply
 node hancom.js table-op --name <문서이름> --cell "<셀 텍스트>" --op merge --span 1 --apply
 ```
+
+### 🔢 쪽 번호 · 쪽 나누기 — `page-number` / `page-break`
+- **`page-number --where header|footer --align left|center|right`**: 머리말/꼬리말에 쪽 번호 삽입(모든 쪽에 자동). dry-run 기본, `--apply`로 실행, **headless 전용**.
+- **`page-break --anchor "<단락 안 텍스트>"`**: 그 줄 **끝에서 쪽을 나눠** 뒤 내용을 새 쪽으로. `--apply`, **headless 전용**.
 
 ## ✏️ 편집 — 한 줄 추가 (`insert-text`)
 

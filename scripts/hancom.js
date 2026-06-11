@@ -1861,6 +1861,78 @@ async function confirmSaved(editor, syncP = null, { settleMs = 450 } = {}) {
   return synced;
 }
 
+// page-number: 머리말/꼬리말에 쪽 번호 삽입. 쪽 메뉴 → 머리말|꼬리말 서브메뉴 → 왼쪽|가운데|오른쪽 쪽 번호.
+async function cmdPageNumber(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  const where = String(args.where || 'header').toLowerCase();
+  const align = String(args.align || 'right').toLowerCase();
+  const WHERE = { header: '머리말', footer: '꼬리말' };
+  const ALIGN = { left: '왼쪽 쪽 번호', center: '가운데 쪽 번호', right: '오른쪽 쪽 번호' };
+  if (!WHERE[where]) throw new Error('--where 는 header | footer');
+  if (!ALIGN[align]) throw new Error('--align 는 left | center | right');
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
+  const name = String(args.name).normalize('NFC');
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    if (!apply) { out({ cmd: 'page-number', dryRun: true, where, align, docId: editor.__docId || null, note: '--apply 시 ' + WHERE[where] + '에 ' + ALIGN[align] + ' 삽입.' }); return; }
+    await focusBody(editor);
+    const syncP = watchSave(editor);
+    await openMenu(editor, '쪽');
+    const parent = await menuItemXY(editor, WHERE[where]); // 머리말/꼬리말 (서브메뉴 부모)
+    if (!parent) throw new Error(WHERE[where] + ' 메뉴 항목 탐색 실패');
+    await editor.mouse.move(parent.x, parent.y); await editor.waitForTimeout(700); // 서브메뉴 펼침(호버)
+    const item = await menuItemXY(editor, ALIGN[align]);
+    if (!item) throw new Error(ALIGN[align] + ' 항목 탐색 실패 (서브메뉴 안 펼쳐짐?)');
+    await editor.mouse.click(item.x, item.y); await editor.waitForTimeout(900);
+    const saved = await confirmSaved(editor, syncP);
+    // 머리말/꼬리말은 본문 밖(쪽 가장자리) → 맨 위로 스크롤 후 전체 뷰포트 캡처.
+    await goDocStart(editor); await editor.waitForTimeout(400); await hideOverlays(editor);
+    const n = (await readCurrentPage(editor)) || 1;
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_pagenum_${where}_${stamp()}.png`);
+    await editor.screenshot({ path: shot });
+    out({ cmd: 'page-number', applied: true, where, align, page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), docId: editor.__docId || null, shot });
+  });
+}
+
+// page-break: 기준 텍스트(--anchor) 줄 끝에서 쪽을 나눠 다음 내용을 새 쪽으로 보냄(쪽 메뉴 › 쪽 나누기).
+async function cmdPageBreak(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (!args.anchor) throw new Error('--anchor 필요 (쪽 나눌 기준 텍스트 — 그 줄 끝에서 나눔)');
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
+  const anchor = String(args.anchor).normalize('NFC');
+  const name = String(args.name).normalize('NFC');
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    const r = await findText(editor, anchor);
+    if (!r.found || !r.caret) { out({ cmd: 'page-break', status: 'anchor_not_found', anchor, docId: editor.__docId || null }); return; }
+    const n = r.page || 1;
+    if (!apply) { out({ cmd: 'page-break', dryRun: true, anchor, foundPage: n, docId: editor.__docId || null, note: '--apply 시 그 줄 끝에서 쪽 나누기.' }); return; }
+    await focusBody(editor);
+    await editor.mouse.click(r.caret.x, r.caret.y + Math.round((r.caret.h || 12) / 2)); await editor.waitForTimeout(300);
+    await editor.keyboard.press('End'); await editor.waitForTimeout(150); // 줄 끝
+    const syncP = watchSave(editor);
+    // 쪽 메뉴 › 쪽 나누기(.p_page_break). 키보드 단축키보다 메뉴 셀렉터가 견고.
+    await openMenu(editor, '쪽');
+    let clicked = false;
+    try { await clickSel(editor, '.p_page_break'); clicked = true; } catch (e) { /* 메뉴 항목 텍스트로 폴백 */ }
+    if (!clicked) { const it = await menuItemXY(editor, '쪽 나누기'); if (!it) throw new Error('쪽 나누기 항목 탐색 실패'); await editor.mouse.click(it.x, it.y); }
+    await editor.waitForTimeout(800);
+    const saved = await confirmSaved(editor, syncP);
+    const pc = await readPageCount(editor);
+    const n2 = (await readCurrentPage(editor)) || n; await gotoPage(editor, n2);
+    const rect = await detectPageRect(editor); await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_pagebreak_p${n2}_${stamp()}.png`);
+    await editor.screenshot(rect ? { path: shot, clip: rect } : { path: shot });
+    out({ cmd: 'page-break', applied: true, anchor, page: n2, totalPages: pc ? pc.total : null, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), docId: editor.__docId || null, shot });
+  });
+}
+
 // ───────────────────────── 객체(그림·차트) ─────────────────────────
 // 객체는 본문 canvas 에 픽셀로 그려져 DOM 셀렉터로 못 짚는다 → 페이지 좌표(--at "x,y", 그리드 캡처 참고)에
 // 클릭. 우클릭 컨텍스트 메뉴(개체 속성/데이터 편집)로 진입. --at 의 한 점이 객체 안이면 충분(중앙 권장).
@@ -2083,6 +2155,8 @@ async function cmdFind(args) {
     else if (args._ === 'insert-table') await cmdInsertTable(args);
     else if (args._ === 'insert-image') await cmdInsertImage(args);
     else if (args._ === 'table-op') await cmdTableOp(args);
+    else if (args._ === 'page-number') await cmdPageNumber(args);
+    else if (args._ === 'page-break') await cmdPageBreak(args);
     else if (args._ === 'font-family') await cmdFontFamily(args);
     else if (args._ === 'highlight') await cmdHighlight(args);
     else if (args._ === 'insert-text') await cmdInsertText(args);
