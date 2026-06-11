@@ -138,6 +138,8 @@ node hancom.js highlight    --name <문서이름> --text "<구절>" --color yell
     - **유니크 앵커**(그 칸 맥락이 문서에서 유일)면 → 네이티브 '모두 바꾸기'로 그 1곳(`mode:"replace"`). 이웃 텍스트 보존.
     - **동일/반복 텍스트**(여러 표의 같은 헤더 등)라 유니크 앵커가 없으면 → 찾아바꾸기에서 **문서순 N번째 매치만 단일 '바꾸기'**(`mode:"replace-nth"`). 그 한 곳만 바뀐다.
     - (서식은 평문화될 수 있음.)
+  - **`--format "<토큰들>"` (핀포인트 서식)**: 그 N번째 매치에만 서식 적용. 토큰(쉼표 구분): `bold`·`italic`·`underline`·`color:<색>`·`highlight:<색>` (예: `--format "bold,color:red"`). `--apply` 필요, headless 전용.
+  - **`--insert "<텍스트>"` (핀포인트 삽입)**: 그 N번째 매치 **바로 뒤**에 텍스트 삽입. `--apply` 필요, headless 전용.
   - 글자가 없는 대상(그림·도형 등)은 read.mjs가 못 보므로, **옆의 유니크한 텍스트**를 `around --zoom --band`(넓게)로 잡는 게 길이다.
 
 - **`download` / `upload`** (로컬 ↔ 드라이브): read.mjs/pinpoint 의 `--file` 은 **로컬 원본**이 필요하다.

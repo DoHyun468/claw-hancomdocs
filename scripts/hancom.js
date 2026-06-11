@@ -618,10 +618,12 @@ async function cmdPinpoint(args) {
   const phrase = String(args.text).normalize('NFC');
   const nth = Math.max(1, Number(args.nth) || 1);
   const name = String(args.name || path.basename(args.file).replace(/\.[^.]+$/, '')).normalize('NFC');
-  // --replace: 그 Nth occurrence 만 정확히 교체(편집). --apply 없으면 dry-run. 편집은 headless 전용.
+  // 편집 모드: --replace(교체) / --format(서식) / --insert(삽입). 셋 다 그 Nth occurrence 만. headless 전용.
   const isReplace = args.replace !== undefined;
+  const isFormat = args.format !== undefined && args.format !== true;
+  const isInsert = args.insert !== undefined;
   const apply = !!args.apply;
-  if (isReplace && apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
+  if ((isReplace || isFormat || isInsert) && apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
   // read.mjs(ESM)를 동적 import — 파일에서 occurrence-맵 → 대상 nth 의 최단 유니크 앵커.
   const reader = await import('./read.mjs');
   const units = await reader.getUnits(args.file);
@@ -639,18 +641,19 @@ async function cmdPinpoint(args) {
       context: loc.before + '【' + loc.match + '】' + loc.after,
       docId: editor.__docId || null,
     };
+    // 편집 결과 줌 캡처(바뀐/삽입된 자리). 못 찾으면 현재 쪽 전체. (replace/format/insert 공용)
+    const capShot = async (findFor) => {
+      const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_pinedit_nth${loc.nth}_${stamp()}.png`);
+      const rr = await findText(editor, findFor, 1).catch(() => ({ found: false }));
+      if (rr.found && rr.caret) { await zoomBandShot(editor, rr.caret, band, shot); }
+      else { const n2 = (await readCurrentPage(editor)) || 1; await gotoPage(editor, n2); const rect = await detectPageRect(editor); await hideOverlays(editor); await editor.screenshot(rect ? { path: shot, clip: rect } : { path: shot }); }
+      return shot;
+    };
 
     // ── 핀포인트 교체(--replace): 유니크 앵커 → 네이티브 '모두 바꾸기'로 그 1곳만 교체 ──
     // 앵커가 유일하므로 모두바꾸기여도 정확히 1곳. 교체 문자열 = 앵커에서 phrase 부분만 새 텍스트로(이웃 보존).
     if (isReplace) {
       const newText = String(args.replace === true ? '' : args.replace).normalize('NFC');
-      const capShot = async (findFor) => { // 결과 줌 캡처(바뀐 자리). 못 찾으면 현재 쪽 전체.
-        const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_pinrepl_nth${loc.nth}_${stamp()}.png`);
-        const rr = await findText(editor, findFor, 1).catch(() => ({ found: false }));
-        if (rr.found && rr.caret) { await zoomBandShot(editor, rr.caret, band, shot); }
-        else { const n2 = (await readCurrentPage(editor)) || 1; await gotoPage(editor, n2); const rect = await detectPageRect(editor); await hideOverlays(editor); await editor.screenshot(rect ? { path: shot, clip: rect } : { path: shot }); }
-        return shot;
-      };
       // ── 유니크 앵커 경로: 그 앵커는 문서에서 유일 → '모두 바꾸기'여도 정확히 1곳(이웃 보존) ──
       if (loc.unique) {
         const a = loc.anchor, off = loc.matchOffset || 0;
@@ -672,6 +675,65 @@ async function cmdPinpoint(args) {
       const { saved } = await nativeReplaceNth(editor, phrase, newText, uiNth);
       const shot = await capShot(newText);
       out({ ...base, applied: true, mode: 'replace-nth', uiNth, uiMatchCount: order.length, replaceFind: phrase, replaceTo: newText, shot, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }) });
+      return;
+    }
+
+    // 편집 대상의 UI 착지 위치(uiNth) = 문서순 nth 를 docY 정렬로 복원해 매핑(replace-nth 와 동일).
+    const resolveUiNth = async () => {
+      const order = await enumerateDocOrder(editor, phrase);
+      if (!order.length) { out({ ...base, status: 'not_found_in_ui', note: 'UI find 가 구절을 못 찾음.' }); return null; }
+      if (loc.nth > order.length) { out({ ...base, status: 'nth_out_of_range', uiMatchCount: order.length, note: `UI 는 ${order.length}곳만 찾음(파일 ${loc.matchCount}곳).` }); return null; }
+      return { uiNth: order[loc.nth - 1].uiNth, uiMatchCount: order.length };
+    };
+
+    // ── 핀포인트 서식(--format): 그 N번째 매치만 굵게/기울임/밑줄/글자색/형광 ──
+    if (isFormat) {
+      const tokens = String(args.format).split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+      const KB = { bold: 'b', italic: 'i', underline: 'u' };
+      const kb = [], colors = [];
+      for (const t of tokens) {
+        if (KB[t]) kb.push(KB[t]);
+        else if (t.startsWith('color:')) colors.push(['.font_color', t.slice(6)]);
+        else if (t.startsWith('highlight:')) colors.push(['.font_highlight_color', t.slice(10)]);
+        else throw new Error('--format 토큰: bold|italic|underline|color:<색>|highlight:<색> (쉼표 구분)');
+      }
+      if (!kb.length && !colors.length) throw new Error('--format 비어있음');
+      if (!apply) { out({ ...base, dryRun: true, mode: 'format', format: tokens, note: '--apply 시 그 ' + loc.nth + '번째 매치에 서식 적용.' }); return; }
+      const u = await resolveUiNth(); if (!u) return;
+      let saved = true;
+      if (kb.length) { // 키보드 서식: 한 번 선택 후 토글
+        const sel = await dragSelectPhrase(editor, phrase, u.uiNth);
+        if (!sel.selChars) { out({ ...base, status: 'selection_failed', uiNth: u.uiNth, note: '구절 선택 실패.' }); return; }
+        await focusBody(editor);
+        for (const k of kb) { await editor.keyboard.press('ControlOrMeta+' + k); await editor.waitForTimeout(450); }
+        const sv = await confirmSaved(editor); saved = saved && sv;
+      }
+      for (const [combo, c] of colors) { // 글자색/형광: 각각 재선택+팔레트
+        const tcol = parseColor(c); if (!tcol) throw new Error('색 파싱 실패: ' + c);
+        const res = await selectAndPickColor(editor, phrase, u.uiNth, tcol, combo);
+        if (res.status) { out({ ...base, status: res.status, uiNth: u.uiNth }); return; }
+        saved = saved && res.saved;
+      }
+      await editor.keyboard.press('Escape').catch(() => {});
+      const shot = await capShot(phrase);
+      out({ ...base, applied: true, mode: 'format', format: tokens, uiNth: u.uiNth, uiMatchCount: u.uiMatchCount, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), shot });
+      return;
+    }
+
+    // ── 핀포인트 삽입(--insert): 그 N번째 매치 바로 뒤에 텍스트 삽입 ──
+    if (isInsert) {
+      const insText = String(args.insert === true ? '' : args.insert).normalize('NFC');
+      if (!insText) throw new Error('--insert <텍스트> 필요');
+      if (!apply) { out({ ...base, dryRun: true, mode: 'insert', insertText: insText, note: '--apply 시 그 ' + loc.nth + '번째 매치 뒤에 삽입.' }); return; }
+      const u = await resolveUiNth(); if (!u) return;
+      const r2 = await findText(editor, phrase, u.uiNth);
+      if (!r2.found || !r2.caret) { out({ ...base, status: 'nav_failed', uiNth: u.uiNth, note: '문서순 nth 착지 실패.' }); return; }
+      await focusBody(editor);
+      await editor.mouse.click(r2.caret.x, r2.caret.y + Math.round((r2.caret.h || 12) / 2)); await editor.waitForTimeout(250); // 매치 끝에 캐럿
+      await editor.keyboard.type(insText, { delay: 35 });
+      const saved = await confirmSaved(editor);
+      const shot = await capShot(insText);
+      out({ ...base, applied: true, mode: 'insert', insertText: insText, uiNth: u.uiNth, uiMatchCount: u.uiMatchCount, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), shot });
       return;
     }
     const shoot = async (r, extra) => {
