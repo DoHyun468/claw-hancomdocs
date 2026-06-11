@@ -104,9 +104,11 @@ node hancom.js replace-text --name <문서이름> --find "<바꿀 대상>" --to 
 node hancom.js set-cell-text --name <문서이름> --cell "<기준 셀 텍스트>" --text "<채울 값>" [--tab N] [--apply]
 node hancom.js format-text  --name <문서이름> --text "<구절>" --bold|--italic|--underline|--strike [--apply]
 node hancom.js font-family  --name <문서이름> --text "<구절>" --font "<글꼴명>" [--nth N] [--apply]
-node hancom.js align        --name <문서이름> --anchor "<단락 안 텍스트>" --to left|center|right|justify [--apply]
+node hancom.js align        --name <문서이름> --anchor "<단락 안 텍스트>" --to left|center|right|justify|distribute|divide [--apply]
 node hancom.js line-spacing  --name <문서이름> --anchor "<단락 안 텍스트>" --to 200 [--apply]
 node hancom.js list         --name <문서이름> --anchor "<단락 안 텍스트>" --type bullet|number [--apply]
+node hancom.js level        --name <문서이름> --anchor "<단락 안 텍스트>" --to increase|decrease [--by N] [--apply]
+node hancom.js style        --name <문서이름> --anchor "<단락 안 텍스트>" --style "<스타일명>" [--apply]
 node hancom.js font-size    --name <문서이름> --text "<구절>" --size <pt> [--apply]
 node hancom.js font-color   --name <문서이름> --text "<구절>" --color red|blue|#RRGGBB|... [--apply]
 node hancom.js highlight    --name <문서이름> --text "<구절>" --color yellow|green|#RRGGBB|... [--apply]
@@ -339,21 +341,37 @@ node hancom.js font-size --name <문서이름> --text "<구절>" --size <pt> [--
 node hancom.js list --name <문서이름> --anchor "<단락 안 텍스트>" --type bullet|number [--apply]
 ```
 
-- **동작**: `--anchor` 단락에 캐럿을 두고 `--type bullet`(글머리표 ●) 또는 `number`(문단번호)를 토글. **단락 단위**.
+- **동작**: `--anchor` 단락에 캐럿을 두고 `--type bullet`(글머리표 ●) 또는 `number`(문단번호 1.)를 토글. **단락 단위**.
 - **`--apply` 없으면 dry-run(read-only)**. 반환 `{applied:true, anchor, type, page, docId, shot}`. 단락을 못 찾으면 `{status:"anchor_not_found"}`.
+
+### 목록 수준 (`level`) — 한 수준 증가/감소
+문단번호/개요 단락의 **수준**을 바꾼다. 기본 문단번호 형식은 수준별로 `1.`→`가.`→`1)`→`가)` 로 마커가 달라진다.
+```bash
+node hancom.js level --name <문서이름> --anchor "<단락 안 텍스트>" --to increase|decrease [--by N] [--apply]
+```
+- **`--to decrease`**: 한 수준 **아래로**(하위, 들여쓰기) — `1.`→`가.`→`1)`. **`--to increase`**: 한 수준 **위로**(상위) — `가.`→`1.`.
+- **`--by N`**: N단계(기본 1). 1수준에서 `increase`는 더 올라갈 데가 없어 변화 없음(정상).
+- 번호/글머리표 목록(`list`)을 먼저 적용한 단락에 쓴다. `--apply` 없으면 dry-run.
+
+### 스타일 (`style`) — 단락 스타일 적용
+단락에 **스타일**(바탕글·본문·개요 1~10·쪽 번호·머리말 등)을 적용한다.
+```bash
+node hancom.js style --name <문서이름> --anchor "<단락 안 텍스트>" --style "<스타일명>" [--apply]
+```
+- `--style`은 서식 스타일 콤보의 이름과 정확히 일치해야(예: `"개요 1"`·`"본문"`). 목록에 없으면 `{status:"style_not_available", available:[...]}`.
 
 > ⚠️ 편집은 headless 전용(`--headed`는 보기 전용).
 
 ## ⬌ 편집 — 단락 정렬 (`align`)
 
-기준 텍스트가 있는 **단락의 정렬**을 바꾼다(왼쪽/가운데/오른쪽/양쪽).
+기준 텍스트가 있는 **단락의 정렬**을 바꾼다.
 
 ```bash
-node hancom.js align --name <문서이름> --anchor "<단락 안 텍스트>" --to left|center|right|justify [--apply]
+node hancom.js align --name <문서이름> --anchor "<단락 안 텍스트>" --to left|center|right|justify|distribute|divide [--apply]
 ```
 
 - **동작**: `--anchor` 텍스트가 있는 단락에 캐럿을 두고 정렬을 적용. **단락 단위**(선택 불필요).
-- **`--to`**: `left`(왼쪽) · `center`(가운데) · `right`(오른쪽) · `justify`(양쪽).
+- **`--to`**: `left`(왼쪽) · `center`(가운데) · `right`(오른쪽) · `justify`(양쪽) · `distribute`(배분) · `divide`(나눔).
 - **`--apply` 없으면 dry-run(read-only)**. 반환 `{applied:true, anchor, to, page, docId, shot}`. 단락을 못 찾으면 `{status:"anchor_not_found"}`.
 
 ## ↕ 편집 — 줄간격 (`line-spacing`)

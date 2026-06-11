@@ -1309,12 +1309,88 @@ async function clickDialogBtn(ed, text) {
 
 // align: 단락 정렬(왼/가운데/오른/양쪽). 단락 단위라 선택 불필요 — 기준 텍스트(--anchor)로 그 단락에
 // 캐럿을 두고, 본문 포커스 후 툴바 정렬 셀렉터 클릭.
+// style: 단락에 '스타일'(바탕글/본문/개요 1~10/쪽 번호 등)을 적용. 서식 콤보(.e_style_item)에서 선택.
+async function cmdStyle(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (!args.anchor) throw new Error('--anchor 필요 (스타일 적용할 단락 안의 텍스트)');
+  if (!args.style || args.style === true) throw new Error('--style 필요 (스타일 이름, 예: "개요 1")');
+  const styleName = String(args.style).normalize('NFC');
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
+  const anchor = String(args.anchor).normalize('NFC');
+  const name = String(args.name).normalize('NFC');
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    const r = await findText(editor, anchor);
+    if (!r.found || !r.caret) { out({ cmd: 'style', status: 'anchor_not_found', anchor, docId: editor.__docId || null }); return; }
+    const n = r.page || 1;
+    if (!apply) { out({ cmd: 'style', dryRun: true, anchor, style: styleName, foundPage: n, docId: editor.__docId || null, note: '--apply 시 그 단락에 스타일 적용.' }); return; }
+    await focusBody(editor);
+    await editor.mouse.click(r.caret.x, r.caret.y + Math.round((r.caret.h || 12) / 2)); await editor.waitForTimeout(250);
+    const arrowXY = await editor.evaluate(() => { const a = document.querySelector('.e_style_item .btn_combo_arrow'); if (!a) return null; const r = a.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; });
+    if (!arrowXY) throw new Error('스타일 콤보 ▼(.e_style_item .btn_combo_arrow) 탐색 실패');
+    await editor.mouse.click(arrowXY.x, arrowXY.y); await editor.waitForTimeout(700);
+    const picked = await editor.evaluate((want) => { const el = [...document.querySelectorAll('.e_style_item.dropdown_data')].find((e) => (e.textContent || '').trim() === want); if (!el) return null; el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; }, styleName);
+    if (!picked) {
+      const avail = await editor.evaluate(() => [...document.querySelectorAll('.e_style_item.dropdown_data')].map((e) => (e.textContent || '').trim()).filter(Boolean));
+      await editor.keyboard.press('Escape').catch(() => {});
+      out({ cmd: 'style', status: 'style_not_available', anchor, style: styleName, available: avail, docId: editor.__docId || null, note: '그 스타일이 목록에 없음 — available 중 정확한 이름으로.' }); return;
+    }
+    const syncP = watchSave(editor);
+    await editor.mouse.click(picked.x, picked.y); await editor.waitForTimeout(300);
+    const saved = await confirmSaved(editor, syncP);
+    const n2 = (await readCurrentPage(editor)) || n; await gotoPage(editor, n2);
+    const rect = await detectPageRect(editor); await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_style_p${n2}_${stamp()}.png`);
+    await editor.screenshot(rect ? { path: shot, clip: rect } : { path: shot });
+    out({ cmd: 'style', applied: true, anchor, style: styleName, page: n2, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), docId: editor.__docId || null, shot });
+  });
+}
+
+// level: 단락의 개요/목록 수준을 한 단계 증가/감소(툴바 '한 수준 증가/감소'). --by N으로 여러 단계.
+// level: 단락(문단번호/개요)의 한 수준 증가(상위)/감소(하위). webhwp 단축키 Ctrl+Num-(증가)/Ctrl+Num+(감소).
+async function cmdLevel(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (!args.anchor) throw new Error('--anchor 필요 (수준 바꿀 단락 안의 텍스트)');
+  const to = String(args.to || '').toLowerCase();
+  if (!['increase', 'decrease'].includes(to)) throw new Error('--to 는 increase | decrease');
+  const by = Math.max(1, Number(args.by) || 1);
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
+  const anchor = String(args.anchor).normalize('NFC');
+  const name = String(args.name).normalize('NFC');
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    const r = await findText(editor, anchor);
+    if (!r.found || !r.caret) { out({ cmd: 'level', status: 'anchor_not_found', anchor, docId: editor.__docId || null }); return; }
+    const n = r.page || 1;
+    if (!apply) { out({ cmd: 'level', dryRun: true, anchor, to, by, foundPage: n, docId: editor.__docId || null, note: '--apply 시 그 단락 수준 ' + to + ' ' + by + '단계.' }); return; }
+    // 한 수준 증가/감소는 단축키 Ctrl+Num-(증가=상위, 가.→1.)/Ctrl+Num+(감소=하위, 1.→가.)로.
+    // (툴바 셀렉터 의존 회피 — caret만 단락에 두면 됨. 1수준에서 증가는 더 올라갈 데 없어 무변화=정상.)
+    await focusBody(editor);
+    await editor.mouse.click(r.caret.x, r.caret.y + Math.round((r.caret.h || 12) / 2)); await editor.waitForTimeout(250);
+    const key = to === 'increase' ? 'Control+NumpadSubtract' : 'Control+NumpadAdd';
+    const syncP = watchSave(editor);
+    for (let i = 0; i < by; i++) { await editor.keyboard.press(key); await editor.waitForTimeout(350); }
+    const saved = await confirmSaved(editor, syncP, { settleMs: 650 });
+    const n2 = (await readCurrentPage(editor)) || n; await gotoPage(editor, n2);
+    const rect = await detectPageRect(editor); await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_level_p${n2}_${stamp()}.png`);
+    await editor.screenshot(rect ? { path: shot, clip: rect } : { path: shot });
+    out({ cmd: 'level', applied: true, anchor, to, by, page: n2, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), docId: editor.__docId || null, shot });
+  });
+}
+
 async function cmdAlign(args) {
   if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
   if (!args.anchor) throw new Error('--anchor 필요 (정렬할 단락 안의 텍스트)');
   const to = String(args.to || '').toLowerCase();
-  const SEL = { left: '.align_left', center: '.align_center', right: '.align_right', justify: '.align_justify' };
-  if (!SEL[to]) throw new Error('--to 는 left | center | right | justify');
+  const SEL = { left: '.align_left', center: '.align_center', right: '.align_right', justify: '.align_justify', distribute: '.align_distribute', divide: '.align_divide' };
+  if (!SEL[to]) throw new Error('--to 는 left | center | right | justify | distribute | divide');
   const apply = !!args.apply;
   if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
   const anchor = String(args.anchor).normalize('NFC');
@@ -2979,6 +3055,8 @@ async function cmdFind(args) {
     else if (args._ === 'set-cell-text') await cmdSetCellText(args);
     else if (args._ === 'format-text') await cmdFormatText(args);
     else if (args._ === 'align') await cmdAlign(args);
+    else if (args._ === 'style') await cmdStyle(args);
+    else if (args._ === 'level') await cmdLevel(args);
     else if (args._ === 'list') await cmdList(args);
     else if (args._ === 'font-size') await cmdFontSize(args);
     else if (args._ === 'line-spacing') await cmdLineSpacing(args);
