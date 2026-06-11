@@ -2443,6 +2443,40 @@ async function closeSidebar(ed) {
   return false;
 }
 
+// para-line: 입력 › 문단 띠. 앵커 줄 다음에 새 단락을 만들고 가로 구분선(문단 띠)을 넣는다.
+async function cmdParaLine(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (!args.anchor) throw new Error('--anchor 필요 (문단 띠 넣을 기준 텍스트 — 그 줄 다음에 삽입)');
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
+  const anchor = String(args.anchor).normalize('NFC');
+  const name = String(args.name).normalize('NFC');
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    const r = await findText(editor, anchor);
+    if (!r.found || !r.caret) { out({ cmd: 'para-line', status: 'anchor_not_found', anchor, docId: editor.__docId || null }); return; }
+    const n = r.page || 1;
+    if (!apply) { out({ cmd: 'para-line', dryRun: true, anchor, foundPage: n, docId: editor.__docId || null, note: '--apply 시 그 줄 다음에 문단 띠(가로 구분선) 삽입.' }); return; }
+    await focusBody(editor);
+    await editor.mouse.click(r.caret.x, r.caret.y + Math.round((r.caret.h || 12) / 2)); await editor.waitForTimeout(300);
+    await editor.keyboard.press('End'); await editor.keyboard.press('Enter'); await editor.waitForTimeout(200); // 다음 줄(새 단락)
+    const syncP = watchSave(editor);
+    await openMenu(editor, '입력');
+    let clicked = false;
+    try { await clickSel(editor, '.s_insert_line'); clicked = true; } catch (e) { /* 메뉴 텍스트 폴백 */ }
+    if (!clicked) { const it = await menuItemXY(editor, '문단 띠'); if (!it) throw new Error('문단 띠 항목 탐색 실패'); await editor.mouse.click(it.x, it.y); }
+    await editor.waitForTimeout(800);
+    const saved = await confirmSaved(editor, syncP);
+    const n2 = (await readCurrentPage(editor)) || n; await gotoPage(editor, n2);
+    const rect = await detectPageRect(editor); await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_paraline_p${n2}_${stamp()}.png`);
+    await editor.screenshot(rect ? { path: shot, clip: rect } : { path: shot });
+    out({ cmd: 'para-line', applied: true, anchor, page: n2, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), docId: editor.__docId || null, shot });
+  });
+}
+
 async function cmdFind(args) {
   if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
   if (args.text == null || args.text === true) throw new Error('--text 필요 (찾을 구절)');
@@ -2488,6 +2522,7 @@ async function cmdFind(args) {
     else if (args._ === 'hyperlink') await cmdHyperlink(args);
     else if (args._ === 'memo') await cmdMemo(args);
     else if (args._ === 'insert-chart') await cmdInsertChart(args);
+    else if (args._ === 'para-line') await cmdParaLine(args);
     else if (args._ === 'textbox') await cmdTextbox(args);
     else if (args._ === 'font-family') await cmdFontFamily(args);
     else if (args._ === 'highlight') await cmdHighlight(args);
