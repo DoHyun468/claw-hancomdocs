@@ -85,6 +85,8 @@ node hancom.js page-number   --name <문서이름> --where header|footer --align
 node hancom.js page-break    --name <문서이름> --anchor "<단락 안 텍스트>" [--apply]
 node hancom.js char-shape    --name <문서이름> --text "<구절>" [--spacing N] [--width N] [--apply]
 node hancom.js para-shape    --name <문서이름> --anchor "<단락 안 텍스트>" [--left N] [--right N] [--before N] [--after N] [--apply]
+node hancom.js footnote      --name <문서이름> --anchor "<단락 안 텍스트>" --text "<각주 내용>" [--apply]
+node hancom.js hyperlink     --name <문서이름> --text "<구절>" --url "<주소>" [--apply]
 node read.mjs <로컬 .hwp/.hwpx> [--text "<구절>"] [--locate --nth N] [--inspect] [--objects]
 node hancom.js insert-text  --name <문서이름> --anchor "<기준 텍스트>" --text "<추가할 한 줄>" [--apply]
 node hancom.js replace-text --name <문서이름> --find "<바꿀 대상>" --to "<바꿀 결과>" [--apply]
@@ -184,6 +186,10 @@ node hancom.js table-op --name <문서이름> --cell "<셀 텍스트>" --op merg
 ### 🔡 글자 모양 · 문단 모양 다이얼로그 — `char-shape` / `para-shape`
 - **`char-shape --text "<구절>" [--spacing N] [--width N]`**: 구절을 선택해 글자 모양 적용 — `--spacing`(자간 %)·`--width`(장평 %). `--apply`, **headless 전용**.
 - **`para-shape --anchor "<단락 안 텍스트>" [--left N] [--right N] [--before N] [--after N]`**: 그 단락의 여백/간격(mm) — `--left`/`--right`(좌우 여백)·`--before`/`--after`(문단 위/아래 간격). 단락 단위. `--apply`, **headless 전용**.
+
+### 🔗 각주 · 하이퍼링크 — `footnote` / `hyperlink`
+- **`footnote --anchor "<텍스트>" --text "<각주 내용>"`**: 그 위치에 각주(쪽 하단)를 달고 내용 입력. `--apply`, **headless 전용**.
+- **`hyperlink --text "<구절>" --url "<주소>"`**: 구절에 링크를 건다(파란 밑줄). `--apply`, **headless 전용**.
 
 ## ✏️ 편집 — 한 줄 추가 (`insert-text`)
 

@@ -2015,6 +2015,88 @@ async function cmdParaShape(args) {
   });
 }
 
+// footnote: 기준 텍스트 뒤에 각주를 달고 내용을 입력(입력 툴바 .e_foot_note → 각주 영역에 캐럿).
+async function cmdFootnote(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (!args.anchor) throw new Error('--anchor 필요 (각주 달 기준 텍스트 — 그 뒤에 각주)');
+  if (args.text == null || args.text === true) throw new Error('--text 필요 (각주 내용)');
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
+  const anchor = String(args.anchor).normalize('NFC');
+  const footText = String(args.text).normalize('NFC');
+  const name = String(args.name).normalize('NFC');
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    const r = await findText(editor, anchor);
+    if (!r.found || !r.caret) { out({ cmd: 'footnote', status: 'anchor_not_found', anchor, docId: editor.__docId || null }); return; }
+    const n = r.page || 1;
+    if (!apply) { out({ cmd: 'footnote', dryRun: true, anchor, text: footText, foundPage: n, docId: editor.__docId || null, note: '--apply 시 그 위치에 각주.' }); return; }
+    await focusBody(editor);
+    await editor.mouse.click(r.caret.x, r.caret.y + 6); await editor.waitForTimeout(250); // 각주 달 위치(앵커 끝)
+    const syncP = watchSave(editor);
+    // 각주 = 입력 › 주석 › 각주 (서브메뉴). 툴바 .e_foot_note 는 오버플로로 숨김이라 메뉴로.
+    await openMenu(editor, '입력');
+    const ann = await menuItemXY(editor, '주석');
+    if (!ann) throw new Error('입력 › 주석 메뉴 탐색 실패');
+    await editor.mouse.move(ann.x, ann.y); await editor.waitForTimeout(700); // 서브메뉴 펼침(호버)
+    const fnItem = await menuItemXY(editor, '각주');
+    if (fnItem) await editor.mouse.click(fnItem.x, fnItem.y); else await editor.mouse.click(ann.x, ann.y);
+    await editor.waitForTimeout(1000); // 각주 편집 영역 열림 + 캐럿 이동
+    await editor.keyboard.type(footText, { delay: 35 }); // 각주 내용
+    const saved = await confirmSaved(editor, syncP);
+    await goDocStart(editor); await editor.waitForTimeout(300); await hideOverlays(editor); // 각주는 쪽 하단 → 전체 캡처
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_footnote_${stamp()}.png`);
+    await editor.screenshot({ path: shot });
+    out({ cmd: 'footnote', applied: true, anchor, text: footText, page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), docId: editor.__docId || null, shot });
+  });
+}
+
+// hyperlink: 구절을 선택해 하이퍼링크(주소) 연결(입력 › 하이퍼링크 다이얼로그).
+async function cmdHyperlink(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (args.text == null || args.text === true) throw new Error('--text 필요 (링크 걸 구절)');
+  if (!args.url) throw new Error('--url 필요 (링크 주소)');
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
+  const phrase = String(args.text).normalize('NFC');
+  const url = String(args.url);
+  const name = String(args.name).normalize('NFC');
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    if (!apply) { out({ cmd: 'hyperlink', dryRun: true, text: phrase, url, docId: editor.__docId || null, note: '--apply 시 구절에 링크.' }); return; }
+    let sel = await dragSelectPhrase(editor, phrase);
+    if (!sel.found) { out({ cmd: 'hyperlink', status: 'text_not_found', text: phrase, docId: editor.__docId || null }); return; }
+    for (let i = 0; i < 2 && !sel.selChars; i++) sel = await dragSelectPhrase(editor, phrase);
+    if (!sel.selChars) { out({ cmd: 'hyperlink', status: 'selection_failed', text: phrase, docId: editor.__docId || null }); return; }
+    const n = sel.page || 1;
+    // 하이퍼링크 = 입력 › 하이퍼링크... (툴바 .hyperlink 는 숨김). 메뉴 항목 텍스트에 말줄임표 포함.
+    await openMenu(editor, '입력');
+    const hl = await menuItemXY(editor, '하이퍼링크...');
+    if (!hl) throw new Error('입력 › 하이퍼링크... 메뉴 탐색 실패');
+    await editor.mouse.click(hl.x, hl.y);
+    await editor.waitForTimeout(1200); // 다이얼로그
+    let fieldOk = false;
+    for (const lbl of ['웹 주소', '주소', 'URL', '연결 대상', '파일 이름', '경로']) { try { await setDialogField(editor, lbl, url); fieldOk = true; break; } catch (e) {} }
+    if (!fieldOk) { const ins = await dialogInputs(editor); process.stderr.write('[hlk] inputs=' + JSON.stringify(ins.map((i) => i.al)) + '\n'); throw new Error('하이퍼링크 주소 입력칸 탐색 실패'); }
+    // 표시할 텍스트가 비면(메뉴 열며 선택 풀림) '넣기'가 안 먹는다 → 구절로 채워 링크가 걸리게.
+    try { await setDialogField(editor, '표시할 텍스트', phrase); } catch (e) {}
+    await editor.waitForTimeout(200);
+    const syncP = watchSave(editor);
+    let btnOk = false;
+    for (const b of ['넣기', '확인', '설정', '적용']) { if (await clickDialogBtn(editor, b)) { btnOk = true; break; } }
+    if (!btnOk) await editor.keyboard.press('Enter').catch(() => {}); // 버튼 못 찾으면 Enter
+    const saved = await confirmSaved(editor, syncP);
+    await gotoPage(editor, n); const rect = await detectPageRect(editor); await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_hyperlink_p${n}_${stamp()}.png`);
+    await editor.screenshot(rect ? { path: shot, clip: rect } : { path: shot });
+    out({ cmd: 'hyperlink', applied: true, text: phrase, url, selChars: sel.selChars, page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), docId: editor.__docId || null, shot });
+  });
+}
+
 // ───────────────────────── 객체(그림·차트) ─────────────────────────
 // 객체는 본문 canvas 에 픽셀로 그려져 DOM 셀렉터로 못 짚는다 → 페이지 좌표(--at "x,y", 그리드 캡처 참고)에
 // 클릭. 우클릭 컨텍스트 메뉴(개체 속성/데이터 편집)로 진입. --at 의 한 점이 객체 안이면 충분(중앙 권장).
@@ -2241,6 +2323,8 @@ async function cmdFind(args) {
     else if (args._ === 'page-break') await cmdPageBreak(args);
     else if (args._ === 'char-shape') await cmdCharShape(args);
     else if (args._ === 'para-shape') await cmdParaShape(args);
+    else if (args._ === 'footnote') await cmdFootnote(args);
+    else if (args._ === 'hyperlink') await cmdHyperlink(args);
     else if (args._ === 'font-family') await cmdFontFamily(args);
     else if (args._ === 'highlight') await cmdHighlight(args);
     else if (args._ === 'insert-text') await cmdInsertText(args);
