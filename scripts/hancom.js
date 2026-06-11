@@ -2262,6 +2262,62 @@ async function objMenuClick(ed, vx, vy, itemText) {
 // object-prop: '개체 속성' 다이얼로그 한 번 열어 크기(--width/--height mm)·위치(--pos "x,y" mm, 종이 기준
 // 왼쪽/위쪽)·본문과의 배치(--wrap)를 같이 설정하는 통합 op. resize-object 의 상위 호환.
 // 위치 입력칸(aria-label '기준' 2개: 첫째=가로, 둘째=세로)은 떠 있는 객체에서만 활성 — 글자처럼 취급이면 불가.
+// 다이얼로그 안 정확 텍스트 클릭(탭/라디오 라벨 등). leaf 아니어도 크기 필터로 선별.
+async function dlgClickText(ed, text) {
+  const xy = await ed.evaluate((t) => {
+    let best = null;
+    for (const el of document.querySelectorAll('div,span,a,li,label')) {
+      if ((el.textContent || '').trim() !== t || el.offsetParent === null) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width > 8 && r.width < 160 && r.height > 8 && r.height < 40) best = { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+    }
+    return best;
+  }, text);
+  if (!xy) return false;
+  await ed.mouse.click(xy.x, xy.y); await ed.waitForTimeout(500); return true;
+}
+
+// 라벨 텍스트와 같은 행(y 근접)의 콤보 ▼ 를 연다. 같은 행에 여러 개면 라벨 오른쪽 가장 가까운 것.
+async function openComboNearLabel(ed, label) {
+  const xy = await ed.evaluate((t) => {
+    let lab = null;
+    for (const el of document.querySelectorAll('div,span,label')) { if ((el.textContent || '').trim() === t && el.offsetParent !== null && el.childElementCount === 0) { lab = el.getBoundingClientRect(); break; } }
+    if (!lab) return null;
+    let best = null, bd = 1e9;
+    for (const a of document.querySelectorAll('.btn_combo_arrow')) {
+      if (a.offsetParent === null) continue;
+      const r = a.getBoundingClientRect();
+      if (Math.abs((r.y + r.height / 2) - (lab.y + lab.height / 2)) > 12 || r.x < lab.right) continue;
+      const d = r.x - lab.right;
+      if (d < bd) { bd = d; best = { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; }
+    }
+    return best;
+  }, label);
+  if (!xy) return false;
+  await ed.mouse.click(xy.x, xy.y); await ed.waitForTimeout(800); return true;
+}
+
+// 열려 있는 색 팔레트에서 target [r,g,b] 에 가장 가까운 스와치 클릭. (font-color 팔레트와 같은 메커니즘)
+async function pickNearestSwatch(ed, target) {
+  const cells = await ed.evaluate(() => {
+    const out = [];
+    const pal = document.querySelector('.ui_color_pick');
+    const scope = pal && pal.offsetParent !== null ? pal : document;
+    for (const el of scope.querySelectorAll('a, li, div, span, td')) {
+      const r = el.getBoundingClientRect();
+      if (r.width < 8 || r.height < 8 || r.width > 22 || el.offsetParent === null) continue;
+      const m = getComputedStyle(el).backgroundColor.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
+      if (m) out.push({ r: +m[1], g: +m[2], b: +m[3], x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) });
+    }
+    return out;
+  });
+  if (!cells.length) return null;
+  let best = cells[0], bd = Infinity;
+  for (const c of cells) { const d = (c.r - target[0]) ** 2 + (c.g - target[1]) ** 2 + (c.b - target[2]) ** 2; if (d < bd) { bd = d; best = c; } }
+  await ed.mouse.click(best.x, best.y); await ed.waitForTimeout(400);
+  return { r: best.r, g: best.g, b: best.b };
+}
+
 async function cmdObjectProp(args) {
   if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
   if (!args.at) throw new Error('--at "x,y" 필요 (객체 안의 한 점, 페이지 좌표 — capture --grid 로 확인)');
@@ -2278,6 +2334,16 @@ async function cmdObjectProp(args) {
   const wrap = args.wrap != null && args.wrap !== true ? String(args.wrap).toLowerCase() : null;
   if (wrap && !['inline', 'square', 'topbottom', 'front', 'behind'].includes(wrap)) throw new Error('--wrap 는 inline|square|topbottom|front|behind');
   if (wrap === 'inline' && PX !== null) throw new Error('--wrap inline(글자처럼 취급)과 --pos 는 동시 사용 불가(인라인은 좌표 배치가 없음)');
+  // 도형 스타일: --fill <색|none>(채우기 면 색) · --border <색>(선 색) · --border-width <mm>(선 굵기)
+  const fillArg = args.fill != null && args.fill !== true ? String(args.fill).trim() : null;
+  const fillNone = !!fillArg && ['none', '없음'].includes(fillArg.toLowerCase());
+  const fillRGB = fillArg && !fillNone ? parseColor(fillArg) : null;
+  if (fillArg && !fillNone && !fillRGB) throw new Error('--fill 색 인식 실패: ' + fillArg + ' (이름·#RRGGBB·none)');
+  const borderArg = args.border != null && args.border !== true ? String(args.border).trim() : null;
+  const borderRGB = borderArg ? parseColor(borderArg) : null;
+  if (borderArg && !borderRGB) throw new Error('--border 색 인식 실패: ' + borderArg + ' (이름·#RRGGBB)');
+  const borderW = args['border-width'] !== undefined ? Number(args['border-width']) : null;
+  if (borderW !== null && Number.isNaN(borderW)) throw new Error('--border-width 는 mm 숫자');
   const apply = !!args.apply;
   if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용.');
   const name = String(args.name).normalize('NFC');
@@ -2308,10 +2374,11 @@ async function cmdObjectProp(args) {
       width: fields['너비'] && fields['너비'].val, height: fields['높이'] && fields['높이'].val,
       posX: fields.pos[0] ? fields.pos[0].val : null, posY: fields.pos[1] ? fields.pos[1].val : null,
     };
-    const nothing = W === null && H === null && PX === null && !wrap;
+    const nothing = W === null && H === null && PX === null && !wrap && !fillArg && !borderArg && borderW === null;
+    const req = { width: W, height: H, pos: PX !== null ? [PX, PY] : null, wrap, fill: fillArg, border: borderArg, borderWidth: borderW };
     if (!apply || nothing) {
       await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(400);
-      out({ cmd: 'object-prop', dryRun: !apply, at: [ax, ay], current: cur, requested: { width: W, height: H, pos: PX !== null ? [PX, PY] : null, wrap }, docId: editor.__docId || null,
+      out({ cmd: 'object-prop', dryRun: !apply, at: [ax, ay], current: cur, requested: req, docId: editor.__docId || null,
         note: nothing ? '설정할 속성 없음 → 현재 값만 읽음(mm, 위치=종이 왼쪽/위쪽 기준).' : '--apply 시 적용. 단위 mm.' }); return;
     }
     if (wrap) { await setObjectWrap(editor, wrap); await editor.waitForTimeout(300); fields = await readFields(); } // 배치 변경 후 필드 재독(인라인 해제 시 위치칸 활성화)
@@ -2329,6 +2396,34 @@ async function cmdObjectProp(args) {
       await typeInto(fields.pos[0], PX);
       await typeInto(fields.pos[1], PY);
     }
+    // 도형 스타일 — 채우기 탭(면 색) / 선 탭(선 색·굵기). 색은 팔레트에서 요청색에 가장 가까운 스와치.
+    const styled = {};
+    if (fillArg) {
+      if (!await dlgClickText(editor, '채우기')) {
+        await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(400);
+        out({ cmd: 'object-prop', status: 'fill_unavailable', at: [ax, ay], docId: editor.__docId || null, note: "이 객체엔 '채우기' 탭이 없음(직선/호 등 선 객체) — --border 로 선 색만 가능." }); return;
+      }
+      if (fillNone) {
+        if (!await dlgClickText(editor, '색 채우기 없음')) throw new Error("'색 채우기 없음' 선택 실패");
+        styled.fill = 'none';
+      } else {
+        await dlgClickText(editor, '색'); // '색' 라디오(면 색 활성화)
+        if (!await openComboNearLabel(editor, '면 색')) throw new Error('면 색 콤보 탐색 실패');
+        const picked = await pickNearestSwatch(editor, fillRGB);
+        if (!picked) throw new Error('면 색 팔레트 스와치 탐색 실패');
+        styled.fill = picked;
+      }
+    }
+    if (borderArg || borderW !== null) {
+      if (!await dlgClickText(editor, '선')) throw new Error("'선' 탭 탐색 실패");
+      if (borderArg) {
+        if (!await openComboNearLabel(editor, '색')) throw new Error('선 색 콤보 탐색 실패');
+        const picked = await pickNearestSwatch(editor, borderRGB);
+        if (!picked) throw new Error('선 색 팔레트 스와치 탐색 실패');
+        styled.border = picked;
+      }
+      if (borderW !== null) await setDialogField(editor, '굵기', borderW);
+    }
     await editor.waitForTimeout(300);
     const syncP = watchSave(editor); // 적용(확인) 전에 무장
     if (!await clickDialogApply(editor)) throw new Error('개체 속성 확인 버튼 탐색 실패');
@@ -2337,7 +2432,7 @@ async function cmdObjectProp(args) {
     const rect2 = await detectPageRect(editor); await hideOverlays(editor);
     const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_objprop_${stamp()}.png`);
     await editor.screenshot(rect2 ? { path: shot, clip: rect2 } : { path: shot });
-    out({ cmd: 'object-prop', applied: true, at: [ax, ay], before: cur, requested: { width: W, height: H, pos: PX !== null ? [PX, PY] : null, wrap }, page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), shot, docId: editor.__docId || null });
+    out({ cmd: 'object-prop', applied: true, at: [ax, ay], before: cur, requested: req, ...(Object.keys(styled).length ? { styled } : {}), page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), shot, docId: editor.__docId || null });
   });
 }
 

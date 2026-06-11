@@ -77,7 +77,7 @@ node hancom.js pinpoint --file <로컬 .hwp/.hwpx> --text "<구절>" [--nth N] [
 node hancom.js download --name <문서이름>  [--out <로컬경로>]
 node hancom.js upload   --file <로컬경로>
 node hancom.js resize-object --name <문서이름> --at "x,y" [--width <mm>] [--height <mm>] [--apply]
-node hancom.js object-prop   --name <문서이름> --at "x,y" [--pos "x,y"] [--width <mm>] [--height <mm>] [--wrap <배치>] [--apply]
+node hancom.js object-prop   --name <문서이름> --at "x,y" [--pos "x,y"] [--width <mm>] [--height <mm>] [--wrap <배치>] [--fill <색|none>] [--border <색>] [--border-width <mm>] [--apply]
 node hancom.js chart-data    --name <문서이름> --at "x,y" --set "B2=9.9,C3=4" [--apply]
 node hancom.js insert-table  --name <문서이름> --rows R --cols C [--anchor "<텍스트>"] [--apply]
 node hancom.js insert-image  --name <문서이름> --file <이미지경로> [--anchor "<텍스트>"] [--apply]
@@ -168,10 +168,12 @@ node hancom.js highlight    --name <문서이름> --text "<구절>" --color yell
 객체(그림/차트)는 본문 **canvas에 픽셀로** 그려져 DOM으로 못 짚는다 → **페이지 좌표 `--at "x,y"`** 로 클릭(객체 안 한 점이면 됨, `capture --grid`로 좌표 확인). 위치 자동탐색은 안 됨.
 - **`resize-object`**: 객체 크기를 **개체 속성 다이얼로그의 너비/높이(mm 숫자)** 로 설정 — 드래그보다 정밀.
   - `--apply` 없으면 현재 크기만 읽음(`currentSize`). `--width`/`--height` 중 하나만도 가능. 그 좌표에 객체 없으면 `object_not_found`.
-- **`object-prop`** (통합 — 크기+위치+배치를 한 번에): `--pos "x,y"`(mm, **종이 왼쪽/위쪽 기준** 절대 위치) · `--width`/`--height`(mm) · `--wrap`(배치, textbox와 동일 모드).
+- **`object-prop`** (통합 — 크기+위치+배치+도형 스타일을 한 번에): `--pos "x,y"`(mm, **종이 왼쪽/위쪽 기준** 절대 위치) · `--width`/`--height`(mm) · `--wrap`(배치, textbox와 동일 모드) · **`--fill <색|none>`**(도형 채우기 면 색, `none`=채우기 없음) · **`--border <색>`**(선/테두리 색) · **`--border-width <mm>`**(선 굵기).
   - `--apply` 없으면 현재 값(`current`: 크기+위치)만 읽음 — **객체 위치/크기 조회용으로도 유용**.
+  - 색은 이름(`red`·`빨강`)·`#RRGGBB` 둘 다. 팔레트에서 **가장 가까운 색**을 고르므로 임의 hex도 근사 적용된다(`styled`에 실제 적용된 rgb 반환).
+  - **도형(사각형·타원 등)에 채우기/테두리** — 그림·차트엔 채우기 개념이 없을 수 있다. 선 객체(직선·호)는 `--fill`이 `fill_unavailable`(채우기 탭 없음) → `--border`만 가능.
   - 위치는 **떠 있는 객체만** 가능 — 글자처럼 취급(인라인) 객체면 `pos_unavailable`(그땐 `--wrap square`를 같이 줘서 떠 있는 배치로 바꾸면서 위치 지정).
-  - 선(직선·호) 객체는 획이 가늘어 `--at`이 빗나가기 쉬움 — 획 위의 한 점을 줄 것.
+  - 선(직선·호) 객체는 획이 가늘어 `--at`이 빗나가기 쉬움 — 획 위의 한 점을 줄 것(빗나가면 `object_not_found`).
 - **`chart-data`**: 차트의 **데이터 편집 그리드** 셀 값을 바꿔 차트를 갱신. `--set "B2=9.9,C3=4"`(엑셀식 열문자+행번호=값). 셀=열헤더∩행헤더 교차 → 더블클릭 입력. 그 좌표에 차트 없으면 `chart_not_found`.
   - ⚠️ **그리드 구조는 차트 종류마다 다르다**(어느 셀이 무슨 뜻인지 먼저 알아야 함). 세 갈래:
     - **표준(항목×계열)** — 막대·꺾은선·영역·방사형 등 대부분: **A열 = 항목(범주) 이름**, **1행 = 계열 이름**, 그 교차셀(B2~)= 값. 예: 첫 계열 둘째 항목 값 = `B3`.
@@ -245,7 +247,6 @@ node hancom.js insert-text --name <문서이름> --anchor "<기준 텍스트>" -
 - **`--apply` 없으면 dry-run(read-only)**: 문서를 바꾸지 않고 "어디에(앵커 위치·페이지) 무엇을 넣을지"만 `RESULT_JSON`으로 보여준다. **먼저 dry-run으로 앵커가 잘 잡히는지 확인**하고, 맞으면 `--apply`로 적용을 권장.
 - **반환**: 적용 시 `{applied:true, anchor, text, page, docId, shot}` — `shot`은 적용 후 그 페이지 캡처(바뀐 결과 눈으로 확인용). dry-run은 `{dryRun:true, foundPage, caret, plannedText}`. 앵커를 못 찾으면 `{status:"anchor_not_found"}`.
 - **앵커 고르기**: 문서에 **한 번만 나오는 구체적 구절**로(흔한 단어는 엉뚱한 곳에 잡힐 수 있음). 어디 들어가는지 헷갈리면 dry-run의 `foundPage`/`caret`로 확인.
-- **특수문자(※ ① ㎡ ℃ → 등)는 별도 기능 없이 `--text`에 그대로** 넣으면 된다(모든 텍스트 op 공통). 자주 쓰는 문자 목록: `references/special-characters.md`.
 - **문서 맨 끝에 추가하려면**: 먼저 `capture`로 **마지막 줄 텍스트**를 확인하고, 그 줄을 `--anchor`로 준다.
 
 > ⚠️ **편집은 headless 전용.** `--headed`로는 편집할 수 없다(보기/캡처 전용) — 편집 중 창을 보면 스크롤·상호작용으로 캐럿 위치가 어긋난다. 결과를 보고 싶으면 적용 뒤 `shot`(또는 `capture --page`)으로 확인.
