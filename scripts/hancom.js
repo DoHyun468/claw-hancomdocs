@@ -650,13 +650,13 @@ async function cmdPinpoint(args) {
       const findStr = a, toStr = a.slice(0, off) + newText + a.slice(off + loc.match.length);
       if (!apply) { out({ ...base, dryRun: true, mode: 'replace', replaceFind: findStr, replaceTo: toStr,
         note: '--apply 시 이 유니크 앵커로 그 1곳만 교체(이웃 텍스트는 보존, 서식은 평문화될 수 있음).' }); return; }
-      const { replaced, popup } = await nativeReplaceAll(editor, findStr, toStr);
+      const { replaced, popup, saved } = await nativeReplaceAll(editor, findStr, toStr);
       // 결과 캡처: 바뀐 자리(toStr) 줌. 못 찾으면 현재 쪽 전체.
       let shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_pinrepl_nth${loc.nth}_${stamp()}.png`);
       const rr = await findText(editor, toStr, 1).catch(() => ({ found: false }));
       if (rr.found && rr.caret) { await zoomBandShot(editor, rr.caret, band, shot); }
       else { const n2 = (await readCurrentPage(editor)) || 1; await gotoPage(editor, n2); const rect = await detectPageRect(editor); await hideOverlays(editor); await editor.screenshot(rect ? { path: shot, clip: rect } : { path: shot }); }
-      out({ ...base, applied: true, mode: 'replace', replaced, replaceFind: findStr, replaceTo: toStr, shot, popup });
+      out({ ...base, applied: true, mode: 'replace', replaced, replaceFind: findStr, replaceTo: toStr, shot, popup, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }) });
       return;
     }
     const shoot = async (r, extra) => {
@@ -859,6 +859,7 @@ async function nativeReplaceAll(editor, findStr, toStr) {
     return null;
   });
   if (!allBtn) throw new Error("'모두 바꾸기' 버튼 탐색 실패");
+  const syncP = watchSave(editor); // 교체 동작 전에 무장(팝업 처리 중 동기화가 떠도 놓치지 않게)
   await editor.mouse.click(allBtn.x, allBtn.y); await editor.waitForTimeout(1400);
   // 결과 팝업 텍스트로 교체 횟수 판정 ("…바꾸기를 N번 했습니다" / "찾을 수 없습니다")
   const popup = await editor.evaluate(() => {
@@ -881,8 +882,9 @@ async function nativeReplaceAll(editor, findStr, toStr) {
   });
   if (okBtn) await editor.mouse.click(okBtn.x, okBtn.y); else await editor.keyboard.press('Enter').catch(() => {});
   await editor.waitForTimeout(500);
-  await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(1300); // 다이얼로그 닫기 + 자동저장 여유
-  return { replaced, popup: joined };
+  await editor.keyboard.press('Escape').catch(() => {}); // 다이얼로그 닫기
+  const saved = await confirmSaved(editor, syncP); // 교체 후 서버 저장 확정(미리 무장한 syncP)
+  return { replaced, popup: joined, saved };
 }
 
 // replace-text: 네이티브 '찾아 바꾸기'로 find → to 전부 교체. --to "" 면 삭제.
@@ -910,7 +912,7 @@ async function cmdReplaceText(args) {
       return;
     }
     // 적용: 네이티브 찾아 바꾸기 (findText 선호출 금지 — 다이얼로그 충돌로 교체 0 됨)
-    const { replaced } = await nativeReplaceAll(editor, findText0, toText);
+    const { replaced, saved } = await nativeReplaceAll(editor, findText0, toText);
 
     // regression 캡처 (교체 후 현재 쪽)
     const n = (await readCurrentPage(editor)) || 1;
@@ -919,7 +921,7 @@ async function cmdReplaceText(args) {
     await hideOverlays(editor);
     const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_replace_p${n}_${stamp()}.png`);
     await editor.screenshot(rect2 ? { path: shot, clip: rect2 } : { path: shot });
-    out({ cmd: 'replace-text', applied: true, find: findText0, to: toText, replaced, page: n, docId: editor.__docId || null, shot });
+    out({ cmd: 'replace-text', applied: true, find: findText0, to: toText, replaced, page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), docId: editor.__docId || null, shot });
   });
 }
 
@@ -977,13 +979,13 @@ async function cmdSetCellText(args) {
     await editor.keyboard.down('Shift'); await editor.keyboard.press('End'); await editor.keyboard.up('Shift');
     await editor.waitForTimeout(120);
     await editor.keyboard.type(value, { delay: 35 });
-    await editor.waitForTimeout(1300);
+    const saved = await confirmSaved(editor); // 셀 입력 후 저장 확정
     await gotoPage(editor, n);
     const rect2 = await detectPageRect(editor);
     await hideOverlays(editor);
     const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_cell_p${n}_${stamp()}.png`);
     await editor.screenshot(rect2 ? { path: shot, clip: rect2 } : { path: shot });
-    out({ cmd: 'set-cell-text', applied: true, cell: cellText, tab: tabN, text: value, page: n,
+    out({ cmd: 'set-cell-text', applied: true, cell: cellText, tab: tabN, text: value, page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }),
       ...(nav ? { target: { table: nav.tableIdx, row: nav.targetRow, col: nav.targetCol } } : {}), docId: editor.__docId || null, shot });
   });
 }
@@ -1079,7 +1081,7 @@ async function cmdFormatText(args) {
     await editor.waitForTimeout(150);
     for (const [key] of styles) { await editor.keyboard.press('ControlOrMeta+' + key); await editor.waitForTimeout(450); } // 키보드 서식 토글
     if (strike) { try { await clickSel(editor, '.strikethrough'); } catch (e) { /* 셀렉터 없으면 무시 */ } await editor.waitForTimeout(450); } // 취소선 = 툴바 토글
-    await editor.waitForTimeout(900);
+    const saved = await confirmSaved(editor); // 서식 적용 후 서버 저장 확정
     await editor.keyboard.press('Escape').catch(() => {}); // 선택 해제(깨끗한 캡처)
     await editor.waitForTimeout(300);
     await gotoPage(editor, n);
@@ -1087,7 +1089,7 @@ async function cmdFormatText(args) {
     await hideOverlays(editor);
     const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_format_p${n}_${stamp()}.png`);
     await editor.screenshot(rect2 ? { path: shot, clip: rect2 } : { path: shot });
-    out({ cmd: 'format-text', applied: true, text: phrase, styles: [...styles.map((s) => s[1]), ...(strike ? ['취소선'] : [])], selChars: r.selChars, page: n, docId: editor.__docId || null, shot });
+    out({ cmd: 'format-text', applied: true, text: phrase, styles: [...styles.map((s) => s[1]), ...(strike ? ['취소선'] : [])], selChars: r.selChars, page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), docId: editor.__docId || null, shot });
   });
 }
 
@@ -1182,13 +1184,13 @@ async function cmdAlign(args) {
     }
     await focusBody(editor);
     await clickSel(editor, SEL[to]);
-    await editor.waitForTimeout(900);
+    const saved = await confirmSaved(editor); // 정렬 적용 후 저장 확정
     await gotoPage(editor, n);
     const rect2 = await detectPageRect(editor);
     await hideOverlays(editor);
     const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_align_p${n}_${stamp()}.png`);
     await editor.screenshot(rect2 ? { path: shot, clip: rect2 } : { path: shot });
-    out({ cmd: 'align', applied: true, anchor, to, page: n, docId: editor.__docId || null, shot });
+    out({ cmd: 'align', applied: true, anchor, to, page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), docId: editor.__docId || null, shot });
   });
 }
 
@@ -1211,14 +1213,14 @@ async function caretParagraphOp(args, cmd, sel, extra) {
     if (!apply) { out({ cmd, dryRun: true, anchor, ...extra, foundPage: n, docId: editor.__docId || null, note: '--apply 없으면 read-only.' }); return; }
     await focusBody(editor);
     await clickSel(editor, sel);
-    await editor.waitForTimeout(1000);
+    const saved = await confirmSaved(editor); // 단락 op 적용 후 저장 확정
     const pc = await readPageCount(editor);
     await gotoPage(editor, n);
     const rect2 = await detectPageRect(editor);
     await hideOverlays(editor);
     const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_${cmd}_p${n}_${stamp()}.png`);
     await editor.screenshot(rect2 ? { path: shot, clip: rect2 } : { path: shot });
-    out({ cmd, applied: true, anchor, ...extra, page: n, totalPages: pc ? pc.total : null, docId: editor.__docId || null, shot });
+    out({ cmd, applied: true, anchor, ...extra, page: n, totalPages: pc ? pc.total : null, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), docId: editor.__docId || null, shot });
   });
 }
 
@@ -1264,19 +1266,20 @@ async function cmdLineSpacing(args) {
       }
       return null;
     }, pct);
-    if (pick) { await editor.mouse.click(pick.x, pick.y); await editor.waitForTimeout(900); }
+    if (pick) { await editor.mouse.click(pick.x, pick.y); }
     else {
       // 비프리셋 값 — 콤보 입력칸에 직접 입력 후 Enter.
       const inp = await editor.evaluate(() => { const el = document.querySelector('.p_line_spacing input'); if (!el) return null; const r = el.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; });
       if (!inp) throw new Error('줄간격 입력칸 탐색 실패 (프리셋: 100/130/160/180/200/300)');
       await editor.mouse.click(inp.x, inp.y); await editor.keyboard.press('ControlOrMeta+A'); await editor.keyboard.press('Delete');
-      await editor.keyboard.type(String(pct), { delay: 30 }); await editor.keyboard.press('Enter'); await editor.waitForTimeout(900);
+      await editor.keyboard.type(String(pct), { delay: 30 }); await editor.keyboard.press('Enter');
     }
+    const saved = await confirmSaved(editor); // 줄간격 적용 후 저장 확정
     await gotoPage(editor, n);
     const rect2 = await detectPageRect(editor); await hideOverlays(editor);
     const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_linespacing_p${n}_${stamp()}.png`);
     await editor.screenshot(rect2 ? { path: shot, clip: rect2 } : { path: shot });
-    out({ cmd: 'line-spacing', applied: true, anchor, to: pct, page: n, docId: editor.__docId || null, shot });
+    out({ cmd: 'line-spacing', applied: true, anchor, to: pct, page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), docId: editor.__docId || null, shot });
   });
 }
 
@@ -1342,13 +1345,13 @@ async function cmdFontSize(args) {
     await editor.keyboard.press('ControlOrMeta+A');
     await editor.keyboard.type(String(size), { delay: 30 });
     await editor.keyboard.press('Enter');
-    await editor.waitForTimeout(1000);
+    const saved = await confirmSaved(editor); // 글자크기 적용 후 저장 확정
     await gotoPage(editor, n);
     const rect2 = await detectPageRect(editor);
     await hideOverlays(editor);
     const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_fontsize_p${n}_${stamp()}.png`);
     await editor.screenshot(rect2 ? { path: shot, clip: rect2 } : { path: shot });
-    out({ cmd: 'font-size', applied: true, text: phrase, size, selChars: sel.selChars, page: n, docId: editor.__docId || null, shot });
+    out({ cmd: 'font-size', applied: true, text: phrase, size, selChars: sel.selChars, page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), docId: editor.__docId || null, shot });
   });
 }
 
@@ -1395,8 +1398,9 @@ async function selectAndPickColor(editor, phrase, nth, target, comboSel) {
   if (!cells.length) throw new Error('색 팔레트 스와치 탐색 실패');
   let best = cells[0], bd = Infinity;
   for (const c of cells) { const d = (c.r - target[0]) ** 2 + (c.g - target[1]) ** 2 + (c.b - target[2]) ** 2; if (d < bd) { bd = d; best = c; } }
-  await editor.mouse.click(best.x, best.y); await editor.waitForTimeout(1000);
-  return { sel, picked: { r: best.r, g: best.g, b: best.b } };
+  await editor.mouse.click(best.x, best.y); // 스와치 클릭(색 적용)
+  const saved = await confirmSaved(editor);  // 색 적용 후 저장 확정
+  return { sel, picked: { r: best.r, g: best.g, b: best.b }, saved };
 }
 
 async function cmdFontColor(args) {
@@ -1429,7 +1433,7 @@ async function cmdFontColor(args) {
     await hideOverlays(editor);
     const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_fontcolor_p${n}_${stamp()}.png`);
     await editor.screenshot(rect2 ? { path: shot, clip: rect2 } : { path: shot });
-    out({ cmd: 'font-color', applied: true, text: phrase, color: args.color, picked: res.picked, selChars: res.sel.selChars, page: n, docId: editor.__docId || null, shot });
+    out({ cmd: 'font-color', applied: true, text: phrase, color: args.color, picked: res.picked, selChars: res.sel.selChars, page: n, saved: res.saved, ...(res.saved ? {} : { warning: 'save_unconfirmed' }), docId: editor.__docId || null, shot });
   });
 }
 
@@ -1465,7 +1469,7 @@ async function cmdHighlight(args) {
     const rect2 = await detectPageRect(editor); await hideOverlays(editor);
     const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_highlight_p${n}_${stamp()}.png`);
     await editor.screenshot(rect2 ? { path: shot, clip: rect2 } : { path: shot });
-    out({ cmd: 'highlight', applied: true, text: phrase, color: args.color, picked: res.picked, selChars: res.sel.selChars, page: n, docId: editor.__docId || null, shot });
+    out({ cmd: 'highlight', applied: true, text: phrase, color: args.color, picked: res.picked, selChars: res.sel.selChars, page: n, saved: res.saved, ...(res.saved ? {} : { warning: 'save_unconfirmed' }), docId: editor.__docId || null, shot });
   });
 }
 
@@ -1502,12 +1506,12 @@ async function cmdFontFamily(args) {
     await editor.keyboard.press('ControlOrMeta+A');
     await editor.keyboard.type(font, { delay: 30 });
     await editor.keyboard.press('Enter');
-    await editor.waitForTimeout(1000);
+    const saved = await confirmSaved(editor); // 글꼴 적용 후 저장 확정
     await gotoPage(editor, n);
     const rect2 = await detectPageRect(editor); await hideOverlays(editor);
     const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_fontfam_p${n}_${stamp()}.png`);
     await editor.screenshot(rect2 ? { path: shot, clip: rect2 } : { path: shot });
-    out({ cmd: 'font-family', applied: true, text: phrase, font, selChars: sel.selChars, page: n, docId: editor.__docId || null, shot });
+    out({ cmd: 'font-family', applied: true, text: phrase, font, selChars: sel.selChars, page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), docId: editor.__docId || null, shot });
   });
 }
 
@@ -1538,13 +1542,14 @@ async function cmdInsertTable(args) {
     await setDialogField(editor, '줄 개수', rows);
     await setDialogField(editor, '칸 개수', cols);
     await editor.waitForTimeout(200);
+    const syncP = watchSave(editor); // 만들기(표 생성) 전에 무장
     if (!await clickDialogBtn(editor, '만들기')) throw new Error("'만들기' 버튼 탐색 실패");
-    await editor.waitForTimeout(1300);
+    const saved = await confirmSaved(editor, syncP); // 표 생성 후 저장 확정
     const n = (await readCurrentPage(editor)) || 1; await gotoPage(editor, n);
     const rect = await detectPageRect(editor); await hideOverlays(editor);
     const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_inserttbl_${stamp()}.png`);
     await editor.screenshot(rect ? { path: shot, clip: rect } : { path: shot });
-    out({ cmd: 'insert-table', applied: true, rows, cols, anchor: args.anchor || null, page: n, shot, docId: editor.__docId || null });
+    out({ cmd: 'insert-table', applied: true, rows, cols, anchor: args.anchor || null, page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), shot, docId: editor.__docId || null });
   });
 }
 
@@ -1573,13 +1578,14 @@ async function cmdInsertImage(args) {
     await clickSel(editor, '.insert_image'); await editor.waitForTimeout(900);
     await editor.locator('input[type="file"]').last().setInputFiles(imgPath);
     await editor.waitForTimeout(1200);
+    const syncP = watchSave(editor); // 넣기(그림 삽입) 전에 무장
     if (!await clickDialogBtn(editor, '넣기')) throw new Error("'넣기' 버튼 탐색 실패");
-    await editor.waitForTimeout(1600);
+    const saved = await confirmSaved(editor, syncP); // 그림 삽입 후 저장 확정
     const n = (await readCurrentPage(editor)) || 1; await gotoPage(editor, n);
     const rect = await detectPageRect(editor); await hideOverlays(editor);
     const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_insertimg_${stamp()}.png`);
     await editor.screenshot(rect ? { path: shot, clip: rect } : { path: shot });
-    out({ cmd: 'insert-image', applied: true, file: imgPath, anchor: args.anchor || null, page: n, shot, docId: editor.__docId || null });
+    out({ cmd: 'insert-image', applied: true, file: imgPath, anchor: args.anchor || null, page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), shot, docId: editor.__docId || null });
   });
 }
 
@@ -1616,6 +1622,7 @@ async function cmdTableOp(args) {
     await focusBody(editor);
     await editor.mouse.click(r.caret.x, r.caret.y + 6); await editor.waitForTimeout(250); // 셀에 캐럿
     for (let i = 0; i < tabN; i++) { await editor.keyboard.press('Tab'); await editor.waitForTimeout(160); }
+    const syncP = watchSave(editor); // 표 구조 변경 전에 무장(메뉴/다이얼로그 처리 중 동기화 놓치지 않게)
     if (op === 'split') {
       // 셀 나누기 다이얼로그: 줄/칸 개수로 현재 셀을 분할
       const sr = Math.max(1, Number(args['split-rows']) || 1), sc = Math.max(1, Number(args['split-cols']) || 1);
@@ -1650,11 +1657,12 @@ async function cmdTableOp(args) {
       if (!item) throw new Error('서브 항목 탐색 실패: ' + spec.item);
       await editor.mouse.click(item.x, item.y); await editor.waitForTimeout(1300);
     }
+    const saved = await confirmSaved(editor, syncP); // 표 op 후 저장 확정(미리 무장한 syncP)
     const n = (await readCurrentPage(editor)) || 1; await gotoPage(editor, n);
     const rect = await detectPageRect(editor); await hideOverlays(editor);
     const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_tableop_${stamp()}.png`);
     await editor.screenshot(rect ? { path: shot, clip: rect } : { path: shot });
-    out({ cmd: 'table-op', applied: true, cell: cellText, tab: tabN, op, page: n, shot, docId: editor.__docId || null });
+    out({ cmd: 'table-op', applied: true, cell: cellText, tab: tabN, op, page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), shot, docId: editor.__docId || null });
   });
 }
 
@@ -1664,14 +1672,17 @@ async function cmdTableOp(args) {
 // 고정 대기(1.3~1.4s)보다 ① 망 속도에 자동 적응(느린 망에 안전), ② 보통 더 빠름(~1.1s), ③ 동기화가
 // 안 잡히면 synced=false 로 '저장 미확정'을 호출부가 알 수 있다. 실측: settle 300~500ms 면 6/6 보존,
 // settle 0 은 간헐 유실(POST 200 만으론 부족 — 서버 커밋 settle 필요).
-async function confirmSaved(editor, { timeoutMs = 6000, settleMs = 450 } = {}) {
-  let synced = false;
-  try {
-    await editor.waitForResponse(
-      (resp) => /\/webhwp\/handler\/action\//.test(resp.url()) && resp.request().method() === 'POST' && resp.status() === 200,
-      { timeout: timeoutMs });
-    synced = true;
-  } catch { synced = false; }
+// watchSave(editor): 편집 '전' 호출 — 다음 OT 동기화(handler/action POST 200)를 잡는 프라미스를 무장.
+// 편집 동작과 confirmSaved 호출 사이에 긴 대기(팝업 처리·다이얼로그 닫기 등)가 있는 op 는 동기화가 그
+// 사이에 이미 떠버려 '편집 후 무장'이면 놓친다(→ timeout). 그런 op 는 watchSave 로 미리 무장하고
+// confirmSaved(editor, syncP) 로 받는다.
+function watchSave(editor, timeoutMs = 6000) {
+  return editor.waitForResponse(
+    (resp) => /\/webhwp\/handler\/action\//.test(resp.url()) && resp.request().method() === 'POST' && resp.status() === 200,
+    { timeout: timeoutMs }).then(() => true).catch(() => false);
+}
+async function confirmSaved(editor, syncP = null, { settleMs = 450 } = {}) {
+  const synced = await (syncP || watchSave(editor)); // syncP 있으면 그걸, 없으면 지금 무장(편집 직후 호출용)
   await editor.waitForTimeout(settleMs); // 서버 커밋 여유
   return synced;
 }
@@ -1741,13 +1752,14 @@ async function cmdResizeObject(args) {
     if (H !== null) await setField('높이', H);
     await editor.waitForTimeout(300);
     const okXY = await editor.evaluate(() => { for (const el of document.querySelectorAll('a, button, div, span')) { const t = (el.textContent || '').trim(); if (t === '확인' && el.offsetParent !== null && el.childElementCount === 0) { const r = el.getBoundingClientRect(); if (r.width > 15 && r.height > 10) return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; } } return null; });
+    const syncP = watchSave(editor); // 크기 적용(확인) 전에 무장
     if (okXY) await editor.mouse.click(okXY.x, okXY.y); else await editor.keyboard.press('Enter').catch(() => {});
-    await editor.waitForTimeout(1300);
+    const saved = await confirmSaved(editor, syncP); // 개체 크기 변경 후 저장 확정
     const n = (await readCurrentPage(editor)) || 1; await gotoPage(editor, n);
     const rect2 = await detectPageRect(editor); await hideOverlays(editor);
     const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_resizeobj_${stamp()}.png`);
     await editor.screenshot(rect2 ? { path: shot, clip: rect2 } : { path: shot });
-    out({ cmd: 'resize-object', applied: true, at: [ax, ay], before: cur, after: { width: W !== null ? W : cur.width, height: H !== null ? H : cur.height }, page: n, shot, docId: editor.__docId || null });
+    out({ cmd: 'resize-object', applied: true, at: [ax, ay], before: cur, after: { width: W !== null ? W : cur.width, height: H !== null ? H : cur.height }, page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), shot, docId: editor.__docId || null });
   });
 }
 
@@ -1789,6 +1801,7 @@ async function cmdChartData(args) {
       out({ cmd: 'chart-data', dryRun: true, at: [ax, ay], sets, docId: editor.__docId || null, note: '--apply 시 각 셀에 값 입력. 좌표는 열문자∩행번호.' }); return;
     }
     const done = [];
+    const syncP = watchSave(editor); // 차트 데이터 변경 전에 무장(모달 닫을 때 동기화 떠도 놓치지 않게)
     for (const s of sets) {
       const xy = await cellXY(s.col, s.row);
       if (!xy) { done.push({ ...s, ok: false, why: 'cell_not_located' }); continue; }
@@ -1796,12 +1809,13 @@ async function cmdChartData(args) {
       await editor.keyboard.press('ControlOrMeta+A'); await editor.keyboard.type(s.value, { delay: 35 }); await editor.keyboard.press('Enter'); await editor.waitForTimeout(500);
       done.push({ ...s, ok: true });
     }
-    await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(1500); // 모달 닫기 + 차트 갱신
+    await editor.keyboard.press('Escape').catch(() => {}); // 모달 닫기
+    const saved = await confirmSaved(editor, syncP); // 차트 데이터 변경 후 저장 확정
     const n = (await readCurrentPage(editor)) || 1; await gotoPage(editor, n);
     const rect2 = await detectPageRect(editor); await hideOverlays(editor);
     const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_chartdata_${stamp()}.png`);
     await editor.screenshot(rect2 ? { path: shot, clip: rect2 } : { path: shot });
-    out({ cmd: 'chart-data', applied: true, at: [ax, ay], set: done, page: n, shot, docId: editor.__docId || null });
+    out({ cmd: 'chart-data', applied: true, at: [ax, ay], set: done, page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), shot, docId: editor.__docId || null });
   });
 }
 
