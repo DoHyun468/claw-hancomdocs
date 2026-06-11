@@ -2017,9 +2017,12 @@ async function cmdParaShape(args) {
 
 // footnote: 기준 텍스트 뒤에 각주를 달고 내용을 입력(입력 툴바 .e_foot_note → 각주 영역에 캐럿).
 async function cmdFootnote(args) {
+  const isEnd = args._ === 'endnote';            // endnote = 미주, footnote = 각주
+  const kind = isEnd ? '미주' : '각주';
+  const cmd = isEnd ? 'endnote' : 'footnote';
   if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
-  if (!args.anchor) throw new Error('--anchor 필요 (각주 달 기준 텍스트 — 그 뒤에 각주)');
-  if (args.text == null || args.text === true) throw new Error('--text 필요 (각주 내용)');
+  if (!args.anchor) throw new Error('--anchor 필요 (' + kind + ' 달 기준 텍스트 — 그 뒤에 ' + kind + ')');
+  if (args.text == null || args.text === true) throw new Error('--text 필요 (' + kind + ' 내용)');
   const apply = !!args.apply;
   if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
   const anchor = String(args.anchor).normalize('NFC');
@@ -2030,26 +2033,27 @@ async function cmdFootnote(args) {
     const editor = await openDoc(ctx, page, name);
     if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
     const r = await findText(editor, anchor);
-    if (!r.found || !r.caret) { out({ cmd: 'footnote', status: 'anchor_not_found', anchor, docId: editor.__docId || null }); return; }
+    if (!r.found || !r.caret) { out({ cmd, status: 'anchor_not_found', anchor, docId: editor.__docId || null }); return; }
     const n = r.page || 1;
-    if (!apply) { out({ cmd: 'footnote', dryRun: true, anchor, text: footText, foundPage: n, docId: editor.__docId || null, note: '--apply 시 그 위치에 각주.' }); return; }
+    if (!apply) { out({ cmd, dryRun: true, anchor, text: footText, foundPage: n, docId: editor.__docId || null, note: '--apply 시 그 위치에 ' + kind + '.' }); return; }
     await focusBody(editor);
-    await editor.mouse.click(r.caret.x, r.caret.y + 6); await editor.waitForTimeout(250); // 각주 달 위치(앵커 끝)
+    await editor.mouse.click(r.caret.x, r.caret.y + 6); await editor.waitForTimeout(250); // 달 위치(앵커 끝)
     const syncP = watchSave(editor);
-    // 각주 = 입력 › 주석 › 각주 (서브메뉴). 툴바 .e_foot_note 는 오버플로로 숨김이라 메뉴로.
+    // 각주/미주 = 입력 › 주석 › 각주|미주 (서브메뉴). 툴바 셀렉터는 오버플로로 숨김이라 메뉴로.
     await openMenu(editor, '입력');
     const ann = await menuItemXY(editor, '주석');
     if (!ann) throw new Error('입력 › 주석 메뉴 탐색 실패');
     await editor.mouse.move(ann.x, ann.y); await editor.waitForTimeout(700); // 서브메뉴 펼침(호버)
-    const fnItem = await menuItemXY(editor, '각주');
-    if (fnItem) await editor.mouse.click(fnItem.x, fnItem.y); else await editor.mouse.click(ann.x, ann.y);
-    await editor.waitForTimeout(1000); // 각주 편집 영역 열림 + 캐럿 이동
-    await editor.keyboard.type(footText, { delay: 35 }); // 각주 내용
+    const fnItem = await menuItemXY(editor, kind);
+    if (!fnItem) throw new Error('주석 › ' + kind + ' 항목 탐색 실패');
+    await editor.mouse.click(fnItem.x, fnItem.y);
+    await editor.waitForTimeout(1000); // 주석 편집 영역 열림 + 캐럿 이동
+    await editor.keyboard.type(footText, { delay: 35 }); // 주석 내용
     const saved = await confirmSaved(editor, syncP);
-    await goDocStart(editor); await editor.waitForTimeout(300); await hideOverlays(editor); // 각주는 쪽 하단 → 전체 캡처
-    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_footnote_${stamp()}.png`);
+    await goDocStart(editor); await editor.waitForTimeout(300); await hideOverlays(editor); // 주석은 쪽/문서 끝 → 전체 캡처
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_${cmd}_${stamp()}.png`);
     await editor.screenshot({ path: shot });
-    out({ cmd: 'footnote', applied: true, anchor, text: footText, page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), docId: editor.__docId || null, shot });
+    out({ cmd, applied: true, anchor, text: footText, page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), docId: editor.__docId || null, shot });
   });
 }
 
@@ -2097,10 +2101,142 @@ async function cmdHyperlink(args) {
   });
 }
 
+// memo: 기준 텍스트 위치에 메모(댓글)를 달고 내용 입력(입력 › 메모, 우측 여백에 표시).
+async function cmdMemo(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (!args.anchor) throw new Error('--anchor 필요 (메모 달 기준 텍스트)');
+  if (args.text == null || args.text === true) throw new Error('--text 필요 (메모 내용)');
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
+  const anchor = String(args.anchor).normalize('NFC');
+  const memoText = String(args.text).normalize('NFC');
+  const name = String(args.name).normalize('NFC');
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    const r = await findText(editor, anchor);
+    if (!r.found || !r.caret) { out({ cmd: 'memo', status: 'anchor_not_found', anchor, docId: editor.__docId || null }); return; }
+    const n = r.page || 1;
+    if (!apply) { out({ cmd: 'memo', dryRun: true, anchor, text: memoText, foundPage: n, docId: editor.__docId || null, note: '--apply 시 그 위치에 메모.' }); return; }
+    await focusBody(editor);
+    await editor.mouse.click(r.caret.x, r.caret.y + 6); await editor.waitForTimeout(250);
+    const syncP = watchSave(editor);
+    await openMenu(editor, '입력');
+    const it = await menuItemXY(editor, '메모');
+    if (!it) throw new Error('입력 › 메모 항목 탐색 실패');
+    await editor.mouse.click(it.x, it.y); await editor.waitForTimeout(1100); // 메모 입력 영역 열림 + 캐럿
+    await editor.keyboard.type(memoText, { delay: 35 });
+    const saved = await confirmSaved(editor, syncP);
+    await editor.waitForTimeout(300); await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_memo_${stamp()}.png`);
+    await editor.screenshot({ path: shot }); // 메모는 우측 여백 → 전체 뷰포트
+    out({ cmd: 'memo', applied: true, anchor, text: memoText, page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), docId: editor.__docId || null, shot });
+  });
+}
+
+// insert-chart: 입력 › 차트… 다이얼로그. ⚠️ 미완성 — '삽입' 버튼만으론 차트가 안 들어감(차트 종류를
+// 먼저 골라야 함, 종류 그리드 셀 셀렉터 미파악). dispatch 에서 분리해둠(추후 종류 선택 추가 시 연결).
+async function cmdInsertChart(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
+  const name = String(args.name).normalize('NFC');
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    if (args.anchor) { const r = await findText(editor, String(args.anchor).normalize('NFC')); if (!r.found) { out({ cmd: 'insert-chart', status: 'anchor_not_found', anchor: args.anchor, docId: editor.__docId || null }); return; } }
+    else { await goDocStart(editor); }
+    if (!apply) { out({ cmd: 'insert-chart', dryRun: true, anchor: args.anchor || null, docId: editor.__docId || null, note: '--apply 시 기본 차트 삽입.' }); return; }
+    await focusBody(editor);
+    if (args.anchor) { await editor.keyboard.press('End'); await editor.keyboard.press('Enter'); await editor.waitForTimeout(300); }
+    const syncP = watchSave(editor);
+    await openMenu(editor, '입력');
+    const it = await menuItemXY(editor, '차트...');
+    if (!it) throw new Error('입력 › 차트... 메뉴 탐색 실패');
+    await editor.mouse.click(it.x, it.y); await editor.waitForTimeout(1100); // 다이얼로그
+    if (!await clickDialogBtn(editor, '삽입')) throw new Error("차트 '삽입' 버튼 탐색 실패");
+    const saved = await confirmSaved(editor, syncP);
+    const n = (await readCurrentPage(editor)) || 1; await gotoPage(editor, n);
+    const rect = await detectPageRect(editor); await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_insertchart_${stamp()}.png`);
+    await editor.screenshot(rect ? { path: shot, clip: rect } : { path: shot });
+    out({ cmd: 'insert-chart', applied: true, anchor: args.anchor || null, page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), shot, docId: editor.__docId || null });
+  });
+}
+
+// textbox: 입력 › 글상자(그리기 모드) → 캔버스에 드래그로 글상자를 그리고 내용 입력. --anchor 근처에 배치.
+async function cmdTextbox(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (!args.anchor) throw new Error('--anchor 필요 (글상자 놓을 근처 텍스트)');
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
+  const anchor = String(args.anchor).normalize('NFC');
+  const boxText = args.text != null && args.text !== true ? String(args.text).normalize('NFC') : '';
+  const wrap = args.wrap != null && args.wrap !== true ? String(args.wrap).toLowerCase() : null; // 본문과의 배치
+  if (wrap && !['inline', 'square', 'topbottom', 'front', 'behind'].includes(wrap)) throw new Error('--wrap 는 inline|square|topbottom|front|behind');
+  const name = String(args.name).normalize('NFC');
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    const r = await findText(editor, anchor);
+    if (!r.found || !r.caret) { out({ cmd: 'textbox', status: 'anchor_not_found', anchor, docId: editor.__docId || null }); return; }
+    const n = r.page || 1;
+    if (!apply) { out({ cmd: 'textbox', dryRun: true, anchor, text: boxText, foundPage: n, docId: editor.__docId || null, note: '--apply 시 그 근처에 글상자.' }); return; }
+    await focusBody(editor);
+    const c = r.caret;
+    const syncP = watchSave(editor);
+    await openMenu(editor, '입력');
+    const it = await menuItemXY(editor, '글상자');
+    if (!it) throw new Error('입력 › 글상자 메뉴 탐색 실패');
+    await editor.mouse.click(it.x, it.y); await editor.waitForTimeout(700); // 그리기 모드 진입
+    // 캐럿 아래쪽에 글상자 드래그(가로 240 × 세로 110px)
+    const x0 = c.x, y0 = c.y + 24;
+    await editor.mouse.move(x0, y0); await editor.mouse.down();
+    await editor.mouse.move(x0 + 120, y0 + 55, { steps: 6 });
+    await editor.mouse.move(x0 + 240, y0 + 110, { steps: 8 }); await editor.waitForTimeout(150);
+    await editor.mouse.up(); await editor.waitForTimeout(600);
+    if (boxText) await editor.keyboard.type(boxText, { delay: 35 }); // 글상자 안 내용
+    let saved = await confirmSaved(editor, syncP); // 글상자 생성 저장 확정
+    if (wrap) {
+      // 글상자 객체 선택 상태로 → 개체 속성 → 본문과의 배치 설정 → 확인
+      await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(300); // 글 편집 빠져나와 객체 선택
+      if (!await objMenuClick(editor, x0 + 120, y0 + 55, '개체 속성...')) throw new Error('글상자 개체 속성 진입 실패');
+      await setObjectWrap(editor, wrap);
+      await editor.waitForTimeout(150);
+      const syncP2 = watchSave(editor);
+      if (!await clickDialogApply(editor)) throw new Error('개체 속성 확인 버튼 탐색 실패');
+      saved = await confirmSaved(editor, syncP2); // 배치 변경 저장 확정
+    }
+    await gotoPage(editor, n); const rect = await detectPageRect(editor); await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_textbox_p${n}_${stamp()}.png`);
+    await editor.screenshot(rect ? { path: shot, clip: rect } : { path: shot });
+    out({ cmd: 'textbox', applied: true, anchor, text: boxText, wrap, page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), docId: editor.__docId || null, shot });
+  });
+}
+
 // ───────────────────────── 객체(그림·차트) ─────────────────────────
 // 객체는 본문 canvas 에 픽셀로 그려져 DOM 셀렉터로 못 짚는다 → 페이지 좌표(--at "x,y", 그리드 캡처 참고)에
 // 클릭. 우클릭 컨텍스트 메뉴(개체 속성/데이터 편집)로 진입. --at 의 한 점이 객체 안이면 충분(중앙 권장).
 // 페이지좌표(at) → 우클릭 → 메뉴 항목(itemText) 클릭. 반환 true(항목 클릭)|false(그 좌표에 객체 없음).
+// 열린 '개체 속성' 다이얼로그(기본 탭)에서 본문과의 배치를 설정. inline=글자처럼 취급(체크박스),
+// square=어울림 · topbottom=자리 차지 · front=글 앞으로 · behind=글 뒤로 (DIV.e_object_properties, aria-label).
+async function setObjectWrap(ed, mode) {
+  if (mode === 'inline') {
+    const xy = await ed.evaluate(() => { for (const el of document.querySelectorAll('input[type=checkbox]')) { const lab = el.closest('label') || el.parentElement; if (lab && /글자처럼 취급/.test(lab.textContent || '')) { if (el.checked) return 'already'; const r = el.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; } } return null; });
+    if (!xy) throw new Error("'글자처럼 취급' 체크박스 탐색 실패");
+    if (xy !== 'already') { await ed.mouse.click(xy.x, xy.y); await ed.waitForTimeout(300); }
+    return;
+  }
+  const AL = { square: '어울림', topbottom: '자리 차지', front: '글 앞으로', behind: '글 뒤로' };
+  const al = AL[mode]; if (!al) throw new Error('--wrap 는 inline|square|topbottom|front|behind');
+  const xy = await ed.evaluate((label) => { for (const e of document.querySelectorAll('.e_object_properties')) { if ((e.getAttribute('aria-label') || '') === label) { const r = e.getBoundingClientRect(); if (r.width > 5 && e.offsetParent !== null) return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; } } return null; }, al);
+  if (!xy) throw new Error('본문과의 배치 버튼 탐색 실패: ' + al);
+  await ed.mouse.click(xy.x, xy.y); await ed.waitForTimeout(300);
+}
+
 async function objMenuClick(ed, vx, vy, itemText) {
   await ed.mouse.click(vx, vy, { button: 'right' }); await ed.waitForTimeout(900);
   const xy = await ed.evaluate((t) => {
@@ -2324,7 +2460,10 @@ async function cmdFind(args) {
     else if (args._ === 'char-shape') await cmdCharShape(args);
     else if (args._ === 'para-shape') await cmdParaShape(args);
     else if (args._ === 'footnote') await cmdFootnote(args);
+    else if (args._ === 'endnote') await cmdFootnote(args);
     else if (args._ === 'hyperlink') await cmdHyperlink(args);
+    else if (args._ === 'memo') await cmdMemo(args);
+    else if (args._ === 'textbox') await cmdTextbox(args);
     else if (args._ === 'font-family') await cmdFontFamily(args);
     else if (args._ === 'highlight') await cmdHighlight(args);
     else if (args._ === 'insert-text') await cmdInsertText(args);
