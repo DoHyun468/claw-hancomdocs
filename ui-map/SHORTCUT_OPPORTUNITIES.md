@@ -76,7 +76,69 @@ MENU_MAP의 "webhwp 단축키 신뢰불가 → 클릭이 정석"은 **사람/hea
 4. **macOS Fn 의존**: F7 등 기능키가 headless에서 그대로 가는지 — Playwright는 OS 키맵 안 타므로 괜찮을 것으로 추정되나 F7(편집용지)로 확인.
 5. 전환하더라도 **기존 메뉴 경로는 폴백으로 보존** 권장(단축키 → 실패 감지 → 메뉴 폴백). level처럼 역방향 사례(툴바 inert, 단축키만 동작)도 있으므로 op별 실측이 정답.
 
-## 6. 추천 착수 순서 (편집 세션용)
+## 6. 플랫폼 분기 전략 — Mac/Windows 단축키를 어떻게 나누나 (2026-06-11 추가 조사)
+
+### 6.0 분기 기준은 "브라우저가 도는 OS" 하나뿐
+
+webhwp는 **접속한 브라우저의 OS를 감지해 키맵을 고른다**(공식 도움말이 Win/macOS 칼럼을 나누는 근거). headless여도 Mac Chromium은 `navigator.platform=MacIntel` → macOS 키맵, Win Chromium은 `Win32` → Windows 키맵. 따라서 하네스의 분기 기준은 단순히 **`process.platform`** (`darwin` ↔ `win32`) — 브라우저는 항상 로컬에서 띄우므로 둘이 어긋날 일 없음.
+
+### 6.1 핵심 발견: 고가치 후보의 ~80%는 **분기 자체가 불필요**
+
+SHORTCUTS.md Win/macOS 칼럼 전수 대조 결과, 갈라지는 패턴은 딱 4종이고 나머지는 동일:
+
+**① 완전 동일(분기 0) — A급 대부분이 여기**: mac 칼럼이 ⌃(=Control)를 그대로 쓰는 시퀀스 계열.
+`⌃+N,N/E`(각주/미주) · `⌃+N,T/B/L/C`(표/글상자/문단띠/캡션) · `⌃+K,H/E`(하이퍼링크/필드) · `⌃+M,*`(8색 글자색) · `⌃+G,Q/P/C/T`(배율·부호) · `⌃+Return`(쪽나누기·줄추가) · `⌃+BackSpace`(줄지우기) · `Ctrl+Shift+L/R/C/M/T`(정렬) · `Ctrl+Shift+S/A/P`(블록 계산) · **단일 키 전부**(`P/L/C/M/S/H/W`) · **F키 전부**(F3/F5/F6/F7/F8) · `Shift+PageUp/Down`(z-order) · `Alt+T`(문단 모양 — Alt=⌥ 같은 키) · 방향키/Home/End/Esc/Tab.
+→ 코드에서 리터럴 한 줄로 양쪽 커버. **분기 작성·검증 비용 zero.**
+
+**② Ctrl↔⌘ 교환 — Playwright `ControlOrMeta` 별칭이 자동 해결**: 브라우저 OS 기준으로 Win=Control/Mac=Meta로 알아서 풀림(이미 format-text가 이 패턴).
+`ControlOrMeta+F`(찾기) · `+Z`/`+Shift+Z`(undo/redo) · `+F10`(문자표) · `+S`(저장) · `+A` · `+B/I/U`.
+→ 역시 **코드 분기 불필요** — 별칭만 쓰면 됨.
+
+**③ 진짜 갈라짐 — 명시적 {win, mac} 분기 필요 (소수)**:
+| 기능 | Windows | macOS | 비고 |
+|---|---|---|---|
+| 글자 모양 다이얼로그 | `Alt+L` | `Meta+L` | **B급 char-shape — 분기 필요한 것 중 유일한 우선 후보** |
+| 칸 추가하기(표) | `Alt+Insert` | `Control+I` | Mac 키보드에 Insert 없어 리맵된 계열 |
+| 칸 지우기(표) | `Alt+Delete` | `Control+D` | 〃 |
+| 문단번호 속성 토글 | `Ctrl+Shift+Insert` | `Control+Shift+I` | 〃 |
+| 글머리표 속성 토글 | `Ctrl+Shift+Delete` | `Control+Shift+BackSpace` | 〃 |
+| 찾아 바꾸기 | `Ctrl+H` | `Meta+Shift+H` | 키 구성 자체가 다름 |
+| 모양 복사 | `Ctrl+Alt+C` | `Alt+C` | |
+| 폭 맞춤 | `Ctrl+G,B` | `Ctrl+G,W` | **글쇠2가 다른 함정** — 시퀀스 계열에서 유일한 예외 |
+| 겹침/삽입 전환 | `Insert` | `Meta+0` | (쓸 일 없음) |
+
+**④ 단어/문단 커서 이동** (`Ctrl+→` vs `⌥+→`, `Ctrl+↓` vs `⌘+↓`): 우리는 findText 캐럿+Home/End로 이동해서 현재 무관 — 쓰게 되면 분기.
+
+### 6.2 권장 구현 형태 (편집 세션 참고)
+
+키맵을 op마다 흩뿌리지 말고 **논리 액션 → 키 테이블 한 곳**으로:
+
+```js
+const IS_MAC = process.platform === 'darwin';
+const K = {
+  footnote:   ['Control+KeyN', 'KeyN'],            // ① 동일 — 그대로
+  insertTable:['Control+KeyN', 'KeyT'],
+  find:       'ControlOrMeta+F',                   // ② 별칭 — 그대로
+  charShape:  IS_MAC ? 'Meta+L' : 'Alt+L',         // ③ 분기 — 여기만 삼항
+  colInsert:  IS_MAC ? 'Control+I' : 'Alt+Insert',
+  fitWidth:   ['Control+G', IS_MAC ? 'KeyW' : 'KeyB'],
+};
+```
+- 3키 시퀀스는 배열(누르고 뗀 후 다음 키): `press(K[0])` → `press(K[1])`.
+- ⚠️ `ControlOrMeta`는 **브라우저 OS**를 따르므로 UA 스푸핑과 함께 쓰면 어긋남(아래 6.3).
+
+### 6.3 검토했다 기각: UA 스푸핑으로 키맵 통일
+
+CDP `Emulation.setUserAgentOverride{platform:'Win32'}`로 Mac에서도 Win 키맵을 강제해 분기를 없애는 방법이 있긴 함. **비추천**: ① webhwp가 UA를 키맵 외(폰트/렌더링/기능 분기)에도 쓸 수 있어 실측 환경이 실사용과 달라짐 ② 스킬은 콜드 사용자 환경(스푸핑 없음)에서 돌므로 검증이 무의미해짐 ③ ②의 `ControlOrMeta` 별칭과 충돌. 분기가 어차피 ③ 소수에만 필요해서 얻는 것도 적음.
+
+### 6.4 검증 매트릭스 — 플랫폼별 별도 실측 필수
+
+- **Mac 세션은 macOS 칼럼만, Win 세션은 Windows 칼럼만 검증 가능** — 한쪽 통과 ≠ 다른쪽 보장(verify-both 원칙의 플랫폼판). 특히 ③ 분기 항목과 "3키 시퀀스 PoC"는 **양쪽 각각** 1회씩.
+- ① 동일 그룹은 키 문자열이 같아도 **앱이 다른 키맵으로 해석**하므로 형식상 양쪽 확인 — 단 1~2개 대표만 통과하면 그룹 전체 신뢰 가능(같은 해석 경로).
+- Win 검증 시 주의: Win 머신은 별도 계정/auth(공유 금지). 문서도 그쪽 드라이브에 따로 준비.
+- macOS Fn 이슈(F7 등)는 합성 이벤트라 무관할 것으로 추정 — F7 1회 실측으로 종결.
+
+## 7. 추천 착수 순서 (편집 세션용)
 
 1. **PoC: `⌃+N,T`** (3키 시퀀스 동작 확인 — 이 결과가 전체 판도 결정)
 2. **find `⌘+F`** (빈도 최다 — 전 op 공통 이득)
@@ -84,3 +146,5 @@ MENU_MAP의 "webhwp 단축키 신뢰불가 → 클릭이 정석"은 **사람/hea
 4. **object-prop `P`/`L`/`C`** (선 객체 한계 해소 + 신규 fill/border 탭 직행)
 5. **hyperlink `⌃+K,H`** (선택 보존 검증)
 6. merge/split `M`/`S` → page-break `⌃+Return` → B급 일괄
+
+(1~6 모두 §6.1 기준 **분기 불필요(①·②) 항목** — Mac에서 만들고 Win에서 동일 코드 재검증만 하면 됨. ③ 분기 항목 중 우선순위에 걸리는 건 char-shape `Alt+L`/`Meta+L` 하나뿐이라, 분기 인프라(§6.2 K 테이블)는 char-shape 착수 때 같이 넣으면 충분.)
