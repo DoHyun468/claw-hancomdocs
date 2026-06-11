@@ -245,6 +245,7 @@ node hancom.js insert-text --name <문서이름> --anchor "<기준 텍스트>" -
 - **`--apply` 없으면 dry-run(read-only)**: 문서를 바꾸지 않고 "어디에(앵커 위치·페이지) 무엇을 넣을지"만 `RESULT_JSON`으로 보여준다. **먼저 dry-run으로 앵커가 잘 잡히는지 확인**하고, 맞으면 `--apply`로 적용을 권장.
 - **반환**: 적용 시 `{applied:true, anchor, text, page, docId, shot}` — `shot`은 적용 후 그 페이지 캡처(바뀐 결과 눈으로 확인용). dry-run은 `{dryRun:true, foundPage, caret, plannedText}`. 앵커를 못 찾으면 `{status:"anchor_not_found"}`.
 - **앵커 고르기**: 문서에 **한 번만 나오는 구체적 구절**로(흔한 단어는 엉뚱한 곳에 잡힐 수 있음). 어디 들어가는지 헷갈리면 dry-run의 `foundPage`/`caret`로 확인.
+- **특수문자(※ ① ㎡ ℃ → 등)는 별도 기능 없이 `--text`에 그대로** 넣으면 된다(모든 텍스트 op 공통). 자주 쓰는 문자 목록: `references/special-characters.md`.
 - **문서 맨 끝에 추가하려면**: 먼저 `capture`로 **마지막 줄 텍스트**를 확인하고, 그 줄을 `--anchor`로 준다.
 
 > ⚠️ **편집은 headless 전용.** `--headed`로는 편집할 수 없다(보기/캡처 전용) — 편집 중 창을 보면 스크롤·상호작용으로 캐럿 위치가 어긋난다. 결과를 보고 싶으면 적용 뒤 `shot`(또는 `capture --page`)으로 확인.
