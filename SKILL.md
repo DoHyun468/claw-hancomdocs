@@ -84,6 +84,7 @@ node hancom.js insert-image  --name <문서이름> --file <이미지경로> [--a
 node hancom.js insert-chart  --name <문서이름> [--type N] [--anchor "<텍스트>"] [--apply]
 node hancom.js table-op      --name <문서이름> --cell "<셀 텍스트>" [--tab N] --op <op> [--apply]
 node hancom.js page-number   --name <문서이름> --where header|footer --align left|center|right [--apply]
+node hancom.js page-setup    --name <문서이름> [--orientation portrait|landscape] [--width <mm>] [--height <mm>] [--top/--bottom/--left/--right/--header/--footer <mm>] [--apply]
 node hancom.js page-break    --name <문서이름> --anchor "<단락 안 텍스트>" [--apply]
 node hancom.js para-line     --name <문서이름> --anchor "<단락 안 텍스트>" [--apply]
 node hancom.js field         --name <문서이름> --anchor "<단락 안 텍스트>" --guide "<안내문>" [--field-name "<이름>"] [--apply]
@@ -209,6 +210,8 @@ node hancom.js table-op --name <문서이름> --cell "<셀 텍스트>" --op merg
 
 ### 🔢 쪽 번호 · 쪽 나누기 — `page-number` / `page-break`
 - **`page-number --where header|footer --align left|center|right`**: 머리말/꼬리말에 쪽 번호 삽입(모든 쪽에 자동). dry-run 기본, `--apply`로 실행, **headless 전용**.
+- **`page-setup`** (편집 용지 — 문서 전체 레이아웃): `--orientation portrait`(세로)`|landscape`(가로) · `--width`/`--height`(용지 크기 mm) · 여백 `--top`/`--bottom`/`--left`/`--right`/`--header`/`--footer`(mm).
+  - `--apply` 없으면 **현재 용지값(`current`: 폭·길이·여백)만 읽음** — 조회용으로도 유용. `--apply`, **headless 전용**.
 - **`page-break --anchor "<단락 안 텍스트>"`**: 그 줄 **끝에서 쪽을 나눠** 뒤 내용을 새 쪽으로. `--apply`, **headless 전용**.
 - **`para-line --anchor "<단락 안 텍스트>"`**: 그 줄 **다음에 가로 구분선(문단 띠)**을 새 단락으로 삽입. `--apply`, **headless 전용**.
 - **`field --anchor "<단락 안 텍스트>" --guide "<안내문>" [--field-name "<이름>"]`**: 그 줄 **끝에 누름틀(양식 자리)**을 삽입 — `--guide`가 자리에 표시될 안내문(예: "이름을 입력하세요"), `--field-name`은 양식 식별용 이름(선택). 채우는 양식 템플릿용. `--apply`, **headless 전용**.

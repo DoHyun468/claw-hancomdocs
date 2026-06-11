@@ -1974,6 +1974,77 @@ async function confirmSaved(editor, syncP = null, { settleMs = 450 } = {}) {
   return synced;
 }
 
+// 다이얼로그에서 라벨 텍스트 바로 오른쪽(같은 행)의 text input 에 값 입력. (aria-label 없는 편집용지 등)
+async function setLabeledInput(ed, label, value) {
+  const xy = await ed.evaluate((t) => {
+    let lab = null;
+    for (const e of document.querySelectorAll('div,span,label')) { if ((e.textContent || '').trim() === t && e.offsetParent !== null && e.childElementCount === 0) { lab = e.getBoundingClientRect(); break; } }
+    if (!lab) return null;
+    let best = null, bd = 1e9;
+    for (const inp of document.querySelectorAll('input[type="text"]')) {
+      if (inp.offsetParent === null) continue;
+      const r = inp.getBoundingClientRect();
+      if (Math.abs((r.y + r.height / 2) - (lab.y + lab.height / 2)) > 16 || r.x < lab.right - 2) continue;
+      const d = r.x - lab.right;
+      if (d < bd && d < 120) { bd = d; best = { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; }
+    }
+    return best;
+  }, label);
+  if (!xy) return false;
+  await ed.mouse.click(xy.x, xy.y); await ed.keyboard.press('ControlOrMeta+A'); await ed.keyboard.press('Delete');
+  await ed.keyboard.type(String(value), { delay: 25 }); await ed.keyboard.press('Tab'); return true;
+}
+
+// page-setup: 편집 용지(쪽›편집 용지) — 용지 크기(폭/길이 mm)·방향(세로/가로)·여백(위/아래/좌/우/머리말/꼬리말/제본 mm).
+async function cmdPageSetup(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  const W = args.width !== undefined ? Number(args.width) : null;
+  const H = args.height !== undefined ? Number(args.height) : null;
+  const orient = args.orientation != null && args.orientation !== true ? String(args.orientation).toLowerCase() : null;
+  if (orient && !['portrait', 'landscape'].includes(orient)) throw new Error('--orientation 는 portrait|landscape');
+  const MARGINS = { top: '위쪽', bottom: '아래쪽', left: '왼쪽', right: '오른쪽', header: '머리말', footer: '꼬리말', gutter: '제본' };
+  const margins = {};
+  for (const k of Object.keys(MARGINS)) if (args[k] !== undefined) margins[k] = Number(args[k]);
+  const nothing = W === null && H === null && !orient && !Object.keys(margins).length;
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용.');
+  const name = String(args.name).normalize('NFC');
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    await openMenu(editor, '쪽');
+    let opened = false;
+    try { await clickSel(editor, '.d_page_setup'); opened = true; } catch (e) { /* 메뉴 텍스트 폴백 */ }
+    if (!opened) { for (const t of ['편집 용지...', '편집 용지…', '편집 용지']) { const it = await menuItemXY(editor, t); if (it) { await editor.mouse.click(it.x, it.y); opened = true; break; } } }
+    if (!opened) throw new Error('쪽 › 편집 용지 항목 탐색 실패');
+    await editor.waitForTimeout(1100);
+    const readCur = () => editor.evaluate(() => {
+      const get = (t) => { let lab = null; for (const e of document.querySelectorAll('div,span,label')) { if ((e.textContent || '').trim() === t && e.offsetParent !== null && e.childElementCount === 0) { lab = e.getBoundingClientRect(); break; } } if (!lab) return null; let best = null, bd = 1e9; for (const inp of document.querySelectorAll('input[type="text"]')) { if (inp.offsetParent === null) continue; const r = inp.getBoundingClientRect(); if (Math.abs((r.y + r.height / 2) - (lab.y + lab.height / 2)) > 16 || r.x < lab.right - 2) continue; const d = r.x - lab.right; if (d < bd && d < 120) { bd = d; best = inp.value; } } return best; };
+      const o = { 폭: get('폭'), 길이: get('길이') }; for (const m of ['위쪽', '아래쪽', '왼쪽', '오른쪽', '머리말', '꼬리말', '제본']) o[m] = get(m); return o;
+    });
+    const cur = await readCur();
+    if (!apply || nothing) {
+      await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(400);
+      out({ cmd: 'page-setup', dryRun: !apply, current: cur, requested: { width: W, height: H, orientation: orient, margins }, docId: editor.__docId || null, note: nothing ? '설정값 없음 → 현재값만 읽음(mm).' : '--apply 시 적용.' }); return;
+    }
+    // 용지 방향 아이콘 = .page_vertical(세로) / .page_horizontal(가로)
+    if (orient) { try { await clickSel(editor, orient === 'portrait' ? '.page_vertical' : '.page_horizontal'); await editor.waitForTimeout(300); } catch (e) { throw new Error('용지 방향 아이콘 탐색 실패'); } }
+    if (W !== null) await setLabeledInput(editor, '폭', W);
+    if (H !== null) await setLabeledInput(editor, '길이', H);
+    for (const [k, v] of Object.entries(margins)) await setLabeledInput(editor, MARGINS[k], v);
+    await editor.waitForTimeout(200);
+    const syncP = watchSave(editor);
+    if (!await clickDialogApply(editor)) throw new Error('편집 용지 확인 버튼 탐색 실패');
+    const saved = await confirmSaved(editor, syncP);
+    const n = (await readCurrentPage(editor)) || 1; await gotoPage(editor, n);
+    const rect = await detectPageRect(editor); await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_pagesetup_${stamp()}.png`);
+    await editor.screenshot(rect ? { path: shot, clip: rect } : { path: shot });
+    out({ cmd: 'page-setup', applied: true, before: cur, requested: { width: W, height: H, orientation: orient, margins }, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), page: n, docId: editor.__docId || null, shot });
+  });
+}
+
 // page-number: 머리말/꼬리말에 쪽 번호 삽입. 쪽 메뉴 → 머리말|꼬리말 서브메뉴 → 왼쪽|가운데|오른쪽 쪽 번호.
 async function cmdPageNumber(args) {
   if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
@@ -3071,6 +3142,7 @@ async function cmdFind(args) {
     else if (args._ === 'insert-image') await cmdInsertImage(args);
     else if (args._ === 'table-op') await cmdTableOp(args);
     else if (args._ === 'page-number') await cmdPageNumber(args);
+    else if (args._ === 'page-setup') await cmdPageSetup(args);
     else if (args._ === 'page-break') await cmdPageBreak(args);
     else if (args._ === 'char-shape') await cmdCharShape(args);
     else if (args._ === 'para-shape') await cmdParaShape(args);
