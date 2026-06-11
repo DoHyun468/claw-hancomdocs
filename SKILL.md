@@ -106,7 +106,7 @@ node hancom.js format-text  --name <문서이름> --text "<구절>" --bold|--ita
 node hancom.js font-family  --name <문서이름> --text "<구절>" --font "<글꼴명>" [--nth N] [--apply]
 node hancom.js align        --name <문서이름> --anchor "<단락 안 텍스트>" --to left|center|right|justify|distribute|divide [--apply]
 node hancom.js line-spacing  --name <문서이름> --anchor "<단락 안 텍스트>" --to 200 [--apply]
-node hancom.js list         --name <문서이름> --anchor "<단락 안 텍스트>" --type bullet|number [--apply]
+node hancom.js list         --name <문서이름> --anchor "<단락 안 텍스트>" --type bullet|number [--shape N] [--apply]
 node hancom.js level        --name <문서이름> --anchor "<단락 안 텍스트>" --to increase|decrease [--by N] [--apply]
 node hancom.js style        --name <문서이름> --anchor "<단락 안 텍스트>" --style "<스타일명>" [--apply]
 node hancom.js font-size    --name <문서이름> --text "<구절>" --size <pt> [--apply]
@@ -338,11 +338,14 @@ node hancom.js font-size --name <문서이름> --text "<구절>" --size <pt> [--
 기준 텍스트가 있는 **단락을 글머리표/문단번호 목록**으로 만든다(토글).
 
 ```bash
-node hancom.js list --name <문서이름> --anchor "<단락 안 텍스트>" --type bullet|number [--apply]
+node hancom.js list --name <문서이름> --anchor "<단락 안 텍스트>" --type bullet|number [--shape N] [--apply]
 ```
 
 - **동작**: `--anchor` 단락에 캐럿을 두고 `--type bullet`(글머리표 ●) 또는 `number`(문단번호 1.)를 토글. **단락 단위**.
-- **`--apply` 없으면 dry-run(read-only)**. 반환 `{applied:true, anchor, type, page, docId, shot}`. 단락을 못 찾으면 `{status:"anchor_not_found"}`.
+- **`--shape N` (모양 선택)**: ▼ 드롭다운의 N번째 모양 적용(생략 시 기본 1). 범위를 벗어나면 `{status:"shape_not_found"}`.
+  - **번호 1~10**: `1` 1.가.1) · `2` (1)(가) · `3` 1)가) · `4` ①(ㄱ) · `5` 가)a) · `6` (ㄱ)(1) · `7` I.A. · `8` i.a. · `9` A.1. · `10` 1.1.1.(다단계)
+  - **글머리표 1~17**: `1` ● · `2` ·(점) · `3` ■ · `4` ▪ · `5` ◆ · `6` ◆(작은) · `7` ▶ · `8` ○ · `9` □ · `10` ◇ · `11` ▷ · `12` ◉ · `13` ☑ · `14` ✓ · `15` ★ · `16` ❖ · `17` ☞
+- **`--apply` 없으면 dry-run(read-only)**. 반환 `{applied:true, anchor, type, shape, page, docId, shot}`. 단락을 못 찾으면 `{status:"anchor_not_found"}`.
 
 ### 목록 수준 (`level`) — 한 수준 증가/감소
 문단번호/개요 단락의 **수준**을 바꾼다. 기본 문단번호 형식은 수준별로 `1.`→`가.`→`1)`→`가)` 로 마커가 달라진다.

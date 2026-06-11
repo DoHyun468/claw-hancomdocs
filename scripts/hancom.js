@@ -1450,11 +1450,47 @@ async function caretParagraphOp(args, cmd, sel, extra) {
 }
 
 // list: 단락을 글머리표(bullet) 또는 문단번호(number) 목록으로 토글.
+// list: 단락을 글머리표(bullet)/문단번호(number) 목록으로. --shape N 으로 모양 선택(▼ swatch 그리드).
+// 글머리표 모양 1~17(●·■·◆·▶·○·☑·✓·★·❖·☞ 등), 번호 모양 1~10(1.·(1)·①·I.·1.1.1. 등). 생략 시 기본.
 async function cmdList(args) {
   const type = String(args.type || 'bullet').toLowerCase();
   const SEL = { bullet: '.bullet_list', number: '.number_list' };
   if (!SEL[type]) throw new Error('--type 는 bullet | number');
-  await caretParagraphOp(args, 'list', SEL[type], { type });
+  if (args.shape === undefined) { await caretParagraphOp(args, 'list', SEL[type], { type }); return; }
+  // --shape N: ▼ 드롭다운 열어 N번째 swatch(.{type}_list{N+1}_hwp) 클릭.
+  const shape = Math.max(1, Number(args.shape) || 1);
+  const max = type === 'bullet' ? 17 : 10;
+  if (shape > max) throw new Error(`--shape 는 ${type}에서 1~${max}`);
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (!args.anchor) throw new Error('--anchor 필요 (대상 단락 안의 텍스트)');
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
+  const anchor = String(args.anchor).normalize('NFC');
+  const name = String(args.name).normalize('NFC');
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    const r = await findText(editor, anchor);
+    if (!r.found || !r.caret) { out({ cmd: 'list', status: 'anchor_not_found', anchor, docId: editor.__docId || null }); return; }
+    const n = r.page || 1;
+    if (!apply) { out({ cmd: 'list', dryRun: true, anchor, type, shape, foundPage: n, docId: editor.__docId || null, note: '--apply 시 그 단락에 ' + type + ' 모양 ' + shape + ' 적용.' }); return; }
+    await focusBody(editor);
+    await editor.mouse.click(r.caret.x, r.caret.y + Math.round((r.caret.h || 12) / 2)); await editor.waitForTimeout(250);
+    const arrow = await editor.evaluate((s) => { const a = document.querySelector(s + ' .btn_combo_arrow'); if (!a) return null; const r = a.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; }, SEL[type]);
+    if (!arrow) throw new Error('목록 모양 ▼(' + SEL[type] + ' .btn_combo_arrow) 탐색 실패');
+    await editor.mouse.click(arrow.x, arrow.y); await editor.waitForTimeout(700);
+    const swXY = await editor.evaluate((cls) => { const el = document.querySelector(cls); if (!el || el.offsetParent === null) return null; const r = el.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; }, '.' + type + '_list' + (shape + 1) + '_hwp');
+    if (!swXY) { await editor.keyboard.press('Escape').catch(() => {}); out({ cmd: 'list', status: 'shape_not_found', anchor, type, shape, docId: editor.__docId || null, note: 'swatch 탐색 실패 — 모양 번호 범위 확인.' }); return; }
+    const syncP = watchSave(editor);
+    await editor.mouse.click(swXY.x, swXY.y); await editor.waitForTimeout(300);
+    const saved = await confirmSaved(editor, syncP);
+    const n2 = (await readCurrentPage(editor)) || n; await gotoPage(editor, n2);
+    const rect = await detectPageRect(editor); await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_list_p${n2}_${stamp()}.png`);
+    await editor.screenshot(rect ? { path: shot, clip: rect } : { path: shot });
+    out({ cmd: 'list', applied: true, anchor, type, shape, page: n2, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), docId: editor.__docId || null, shot });
+  });
 }
 
 // line-spacing: 단락 줄간격(%) 설정. 단락 단위라 선택 불필요 — 앵커로 그 단락에 캐럿을 두고, 툴바
