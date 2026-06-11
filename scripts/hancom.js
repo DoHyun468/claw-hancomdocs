@@ -2443,6 +2443,62 @@ async function closeSidebar(ed) {
   return false;
 }
 
+// shape: 입력 › 도형(그리기 개체). 앵커 근처 본문 canvas에 도형을 드래그로 그린다.
+// --shape rect|ellipse|line|arc (가로 글상자는 textbox 사용). 선택 후 캔버스 드래그 → 도형 생성.
+const SHAPE_TITLES = { rect: '직사각형', ellipse: '타원', line: '직선', arc: '호' };
+async function cmdShape(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (!args.anchor) throw new Error('--anchor 필요 (도형 놓을 근처 텍스트)');
+  const shape = args.shape != null && args.shape !== true ? String(args.shape).toLowerCase() : 'rect';
+  if (!SHAPE_TITLES[shape]) throw new Error('--shape 는 rect|ellipse|line|arc');
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
+  const wrap = args.wrap != null && args.wrap !== true ? String(args.wrap).toLowerCase() : null;
+  if (wrap && !['inline', 'square', 'topbottom', 'front', 'behind'].includes(wrap)) throw new Error('--wrap 는 inline|square|topbottom|front|behind');
+  const anchor = String(args.anchor).normalize('NFC');
+  const name = String(args.name).normalize('NFC');
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    const r = await findText(editor, anchor);
+    if (!r.found || !r.caret) { out({ cmd: 'shape', status: 'anchor_not_found', anchor, docId: editor.__docId || null }); return; }
+    const n = r.page || 1;
+    if (!apply) { out({ cmd: 'shape', dryRun: true, anchor, shape, foundPage: n, docId: editor.__docId || null, note: '--apply 시 그 근처에 도형 그리기.' }); return; }
+    await focusBody(editor);
+    const c = r.caret;
+    const syncP = watchSave(editor);
+    await openMenu(editor, '입력');
+    const it = await menuItemXY(editor, '도형');
+    if (!it) throw new Error('입력 › 도형 메뉴 탐색 실패');
+    await editor.mouse.move(it.x, it.y); await editor.waitForTimeout(800); // 서브메뉴(그리기 개체) 펼침
+    const title = SHAPE_TITLES[shape];
+    const sxy = await editor.evaluate((t) => { for (const el of document.querySelectorAll('.s_insert_shape')) { if ((el.getAttribute('title') || '') === t && el.offsetParent !== null) { const r = el.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; } } return null; }, title);
+    if (!sxy) throw new Error('도형 종류 탐색 실패: ' + title);
+    await editor.mouse.click(sxy.x, sxy.y); await editor.waitForTimeout(600); // 그리기 모드 진입
+    // 캐럿 아래쪽에 도형 드래그. 선/호는 대각선, 사각형/타원은 박스.
+    const x0 = c.x, y0 = c.y + 26;
+    await editor.mouse.move(x0, y0); await editor.mouse.down();
+    await editor.mouse.move(x0 + 100, y0 + 45, { steps: 6 });
+    await editor.mouse.move(x0 + 200, y0 + 90, { steps: 8 }); await editor.waitForTimeout(150);
+    await editor.mouse.up(); await editor.waitForTimeout(600);
+    let saved = await confirmSaved(editor, syncP);
+    if (wrap) {
+      await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(300);
+      if (!await objMenuClick(editor, x0 + 100, y0 + 45, '개체 속성...')) throw new Error('도형 개체 속성 진입 실패');
+      await setObjectWrap(editor, wrap); await editor.waitForTimeout(150);
+      const syncP2 = watchSave(editor);
+      if (!await clickDialogApply(editor)) throw new Error('개체 속성 확인 버튼 탐색 실패');
+      saved = await confirmSaved(editor, syncP2);
+    }
+    await editor.keyboard.press('Escape').catch(() => {});
+    await gotoPage(editor, n); const rect = await detectPageRect(editor); await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_shape_p${n}_${stamp()}.png`);
+    await editor.screenshot(rect ? { path: shot, clip: rect } : { path: shot });
+    out({ cmd: 'shape', applied: true, anchor, shape, wrap, page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), docId: editor.__docId || null, shot });
+  });
+}
+
 // bookmark: 입력 › 책갈피. 앵커 위치에 이름표(책갈피)를 단다 — 본문엔 안 보이고 이동(이동 대상)용.
 async function cmdBookmark(args) {
   if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
@@ -2607,6 +2663,7 @@ async function cmdFind(args) {
     else if (args._ === 'para-line') await cmdParaLine(args);
     else if (args._ === 'field') await cmdField(args);
     else if (args._ === 'bookmark') await cmdBookmark(args);
+    else if (args._ === 'shape') await cmdShape(args);
     else if (args._ === 'textbox') await cmdTextbox(args);
     else if (args._ === 'font-family') await cmdFontFamily(args);
     else if (args._ === 'highlight') await cmdHighlight(args);
