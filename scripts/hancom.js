@@ -2443,6 +2443,48 @@ async function closeSidebar(ed) {
   return false;
 }
 
+// field: 입력 › 필드 입력(누름틀). 앵커 줄 끝에 '클릭해 내용을 채우는 양식 자리(누름틀)'를 삽입한다.
+// --guide = 자리에 표시될 안내문(예: "이름을 입력하세요"), --field-name = 필드 이름(선택, 양식 식별용).
+async function cmdField(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (!args.anchor) throw new Error('--anchor 필요 (누름틀 넣을 기준 텍스트 — 그 줄 끝)');
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
+  const anchor = String(args.anchor).normalize('NFC');
+  const guide = args.guide != null && args.guide !== true ? String(args.guide).normalize('NFC') : null;
+  const fieldName = args['field-name'] != null && args['field-name'] !== true ? String(args['field-name']).normalize('NFC') : null;
+  const name = String(args.name).normalize('NFC');
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    const r = await findText(editor, anchor);
+    if (!r.found || !r.caret) { out({ cmd: 'field', status: 'anchor_not_found', anchor, docId: editor.__docId || null }); return; }
+    const n = r.page || 1;
+    if (!apply) { out({ cmd: 'field', dryRun: true, anchor, guide, fieldName, foundPage: n, docId: editor.__docId || null, note: '--apply 시 그 줄 끝에 누름틀(양식 자리) 삽입.' }); return; }
+    await focusBody(editor);
+    await editor.mouse.click(r.caret.x, r.caret.y + Math.round((r.caret.h || 12) / 2)); await editor.waitForTimeout(300);
+    await editor.keyboard.press('End'); await editor.waitForTimeout(150);
+    const syncP = watchSave(editor);
+    await openMenu(editor, '입력');
+    let opened = false;
+    try { await clickSel(editor, '.field'); opened = true; } catch (e) { /* 메뉴 텍스트 폴백 */ }
+    if (!opened) { for (const t of ['필드 입력...', '필드 입력…', '필드 입력']) { const it = await menuItemXY(editor, t); if (it) { await editor.mouse.click(it.x, it.y); opened = true; break; } } }
+    if (!opened) throw new Error('필드 입력 항목 탐색 실패');
+    await editor.waitForTimeout(1100);
+    if (guide != null) { try { await setDialogField(editor, '입력할 내용의 안내문', guide); } catch (e) {} }
+    if (fieldName != null) { try { await setDialogField(editor, '필드 이름', fieldName); } catch (e) {} }
+    if (!await clickDialogBtn(editor, '넣기')) throw new Error("필드 입력 '넣기' 버튼 탐색 실패");
+    await editor.waitForTimeout(600);
+    const saved = await confirmSaved(editor, syncP);
+    const n2 = (await readCurrentPage(editor)) || n; await gotoPage(editor, n2);
+    const rect = await detectPageRect(editor); await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_field_p${n2}_${stamp()}.png`);
+    await editor.screenshot(rect ? { path: shot, clip: rect } : { path: shot });
+    out({ cmd: 'field', applied: true, anchor, guide, fieldName, page: n2, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), docId: editor.__docId || null, shot });
+  });
+}
+
 // para-line: 입력 › 문단 띠. 앵커 줄 다음에 새 단락을 만들고 가로 구분선(문단 띠)을 넣는다.
 async function cmdParaLine(args) {
   if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
@@ -2523,6 +2565,7 @@ async function cmdFind(args) {
     else if (args._ === 'memo') await cmdMemo(args);
     else if (args._ === 'insert-chart') await cmdInsertChart(args);
     else if (args._ === 'para-line') await cmdParaLine(args);
+    else if (args._ === 'field') await cmdField(args);
     else if (args._ === 'textbox') await cmdTextbox(args);
     else if (args._ === 'font-family') await cmdFontFamily(args);
     else if (args._ === 'highlight') await cmdHighlight(args);
