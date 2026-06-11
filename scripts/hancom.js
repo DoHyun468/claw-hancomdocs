@@ -2443,6 +2443,52 @@ async function closeSidebar(ed) {
   return false;
 }
 
+// caption: 입력 › 캡션 넣기. 페이지 좌표 --at 의 객체(그림/표/차트/도형)를 선택해 캡션을 단다.
+// --position: 아래(기본)·위·왼쪽 위/가운데/아래·오른쪽 위/가운데/아래. --text 로 캡션 내용 지정.
+const CAPTION_POS = { below: '아래', above: '위', left: '왼쪽 가운데', right: '오른쪽 가운데' };
+async function cmdCaption(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (!args.at) throw new Error('--at "x,y" 필요 (객체 안의 한 점, 페이지 좌표 — capture --grid 로 확인)');
+  if (args.text == null || args.text === true) throw new Error('--text 필요 (캡션 내용)');
+  const [ax, ay] = String(args.at).split(',').map(Number);
+  if ([ax, ay].some(Number.isNaN)) throw new Error('--at 형식: "x,y"');
+  const text = String(args.text).normalize('NFC');
+  // --position: 영문 별칭 또는 한글 서브메뉴 텍스트 그대로
+  const posArg = args.position != null && args.position !== true ? String(args.position) : 'below';
+  const posLabel = CAPTION_POS[posArg.toLowerCase()] || posArg.normalize('NFC');
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
+  const name = String(args.name).normalize('NFC');
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    const rect = await detectPageRect(editor);
+    if (!rect || rect.width < 100) throw new Error('A4 페이지 영역 검출 실패');
+    if (!apply) { out({ cmd: 'caption', dryRun: true, at: [ax, ay], text, position: posLabel, docId: editor.__docId || null, note: '--apply 시 그 객체에 캡션.' }); return; }
+    await focusBody(editor);
+    const vx = rect.x + ax, vy = rect.y + ay;
+    await editor.mouse.click(vx, vy); await editor.waitForTimeout(500); // 객체 선택
+    const syncP = watchSave(editor);
+    await openMenu(editor, '입력');
+    const cap = await editor.evaluate(() => { for (const el of document.querySelectorAll('div,span,li,a')) { if ((el.textContent || '').trim() === '캡션 넣기' && el.childElementCount === 0 && el.offsetParent !== null) { const r = el.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; } } return null; });
+    if (!cap) { await editor.keyboard.press('Escape').catch(() => {}); out({ cmd: 'caption', status: 'object_not_selected', at: [ax, ay], docId: editor.__docId || null, note: '그 좌표에 객체 없음(캡션 넣기 비활성). capture --grid 로 좌표 재확인.' }); return; }
+    await editor.mouse.move(cap.x, cap.y); await editor.waitForTimeout(800); // 서브메뉴 펼침
+    const sub = await menuItemXY(editor, posLabel);
+    if (!sub) throw new Error('캡션 위치 항목 탐색 실패: ' + posLabel);
+    await editor.mouse.click(sub.x, sub.y); await editor.waitForTimeout(900); // 캡션 삽입 + 캡션 편집 포커스
+    // 캡션 자리에 기본 텍스트(번호 등)가 선택돼 있음 → 모두 선택 후 교체
+    await editor.keyboard.press('ControlOrMeta+A'); await editor.keyboard.type(text, { delay: 35 });
+    await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(300);
+    const saved = await confirmSaved(editor, syncP);
+    const n = (await readCurrentPage(editor)) || 1; await gotoPage(editor, n);
+    const rect2 = await detectPageRect(editor); await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_caption_p${n}_${stamp()}.png`);
+    await editor.screenshot(rect2 ? { path: shot, clip: rect2 } : { path: shot });
+    out({ cmd: 'caption', applied: true, at: [ax, ay], text, position: posLabel, page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), docId: editor.__docId || null, shot });
+  });
+}
+
 // shape: 입력 › 도형(그리기 개체). 앵커 근처 본문 canvas에 도형을 드래그로 그린다.
 // --shape rect|ellipse|line|arc (가로 글상자는 textbox 사용). 선택 후 캔버스 드래그 → 도형 생성.
 const SHAPE_TITLES = { rect: '직사각형', ellipse: '타원', line: '직선', arc: '호' };
@@ -2664,6 +2710,7 @@ async function cmdFind(args) {
     else if (args._ === 'field') await cmdField(args);
     else if (args._ === 'bookmark') await cmdBookmark(args);
     else if (args._ === 'shape') await cmdShape(args);
+    else if (args._ === 'caption') await cmdCaption(args);
     else if (args._ === 'textbox') await cmdTextbox(args);
     else if (args._ === 'font-family') await cmdFontFamily(args);
     else if (args._ === 'highlight') await cmdHighlight(args);
