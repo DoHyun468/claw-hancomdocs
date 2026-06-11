@@ -2259,6 +2259,88 @@ async function objMenuClick(ed, vx, vy, itemText) {
   return true;
 }
 
+// object-prop: '개체 속성' 다이얼로그 한 번 열어 크기(--width/--height mm)·위치(--pos "x,y" mm, 종이 기준
+// 왼쪽/위쪽)·본문과의 배치(--wrap)를 같이 설정하는 통합 op. resize-object 의 상위 호환.
+// 위치 입력칸(aria-label '기준' 2개: 첫째=가로, 둘째=세로)은 떠 있는 객체에서만 활성 — 글자처럼 취급이면 불가.
+async function cmdObjectProp(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (!args.at) throw new Error('--at "x,y" 필요 (객체 안의 한 점, 페이지 좌표 — capture --grid 로 확인)');
+  const [ax, ay] = String(args.at).split(',').map(Number);
+  if ([ax, ay].some(Number.isNaN)) throw new Error('--at 형식: "x,y"');
+  const W = args.width !== undefined ? Number(args.width) : null;
+  const H = args.height !== undefined ? Number(args.height) : null;
+  let PX = null, PY = null;
+  if (args.pos !== undefined && args.pos !== true) {
+    const p = String(args.pos).split(',').map(Number);
+    if (p.length !== 2 || p.some(Number.isNaN)) throw new Error('--pos 형식: "x,y" (mm, 종이 왼쪽/위쪽 기준)');
+    [PX, PY] = p;
+  }
+  const wrap = args.wrap != null && args.wrap !== true ? String(args.wrap).toLowerCase() : null;
+  if (wrap && !['inline', 'square', 'topbottom', 'front', 'behind'].includes(wrap)) throw new Error('--wrap 는 inline|square|topbottom|front|behind');
+  if (wrap === 'inline' && PX !== null) throw new Error('--wrap inline(글자처럼 취급)과 --pos 는 동시 사용 불가(인라인은 좌표 배치가 없음)');
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용.');
+  const name = String(args.name).normalize('NFC');
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    const rect = await detectPageRect(editor);
+    if (!rect || rect.width < 100) throw new Error('A4 페이지 영역 검출 실패');
+    if (!await objMenuClick(editor, rect.x + ax, rect.y + ay, '개체 속성...')) {
+      out({ cmd: 'object-prop', status: 'object_not_found', at: [ax, ay], docId: editor.__docId || null, note: '그 좌표에 객체 없음(우클릭 메뉴에 "개체 속성" 없음). capture --grid 로 좌표 재확인.' }); return;
+    }
+    // 다이얼로그 필드 읽기: 너비/높이 + 위치 '기준' 2개(문서순: 가로, 세로)
+    const readFields = () => editor.evaluate(() => {
+      const f = { pos: [] };
+      for (const el of document.querySelectorAll('input')) {
+        if (el.offsetParent === null) continue;
+        const al = el.getAttribute('aria-label') || '';
+        const r = el.getBoundingClientRect();
+        const item = { val: el.value, x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2), disabled: el.disabled || el.readOnly };
+        if (al === '너비' || al === '높이') f[al] = item;
+        else if (al === '기준') f.pos.push(item);
+      }
+      return f;
+    });
+    let fields = await readFields();
+    const cur = {
+      width: fields['너비'] && fields['너비'].val, height: fields['높이'] && fields['높이'].val,
+      posX: fields.pos[0] ? fields.pos[0].val : null, posY: fields.pos[1] ? fields.pos[1].val : null,
+    };
+    const nothing = W === null && H === null && PX === null && !wrap;
+    if (!apply || nothing) {
+      await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(400);
+      out({ cmd: 'object-prop', dryRun: !apply, at: [ax, ay], current: cur, requested: { width: W, height: H, pos: PX !== null ? [PX, PY] : null, wrap }, docId: editor.__docId || null,
+        note: nothing ? '설정할 속성 없음 → 현재 값만 읽음(mm, 위치=종이 왼쪽/위쪽 기준).' : '--apply 시 적용. 단위 mm.' }); return;
+    }
+    if (wrap) { await setObjectWrap(editor, wrap); await editor.waitForTimeout(300); fields = await readFields(); } // 배치 변경 후 필드 재독(인라인 해제 시 위치칸 활성화)
+    const typeInto = async (fld, value) => {
+      await editor.mouse.click(fld.x, fld.y); await editor.keyboard.press('ControlOrMeta+A'); await editor.keyboard.press('Delete');
+      await editor.keyboard.type(String(value), { delay: 30 }); await editor.keyboard.press('Tab');
+    };
+    if (W !== null && fields['너비']) await typeInto(fields['너비'], W);
+    if (H !== null && fields['높이']) await typeInto(fields['높이'], H);
+    if (PX !== null) {
+      if (fields.pos.length < 2 || fields.pos[0].disabled) {
+        await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(400);
+        out({ cmd: 'object-prop', status: 'pos_unavailable', at: [ax, ay], docId: editor.__docId || null, note: '위치 입력칸이 비활성(글자처럼 취급 객체) — --wrap square 등으로 떠 있는 배치로 바꿔야 위치 지정 가능.' }); return;
+      }
+      await typeInto(fields.pos[0], PX);
+      await typeInto(fields.pos[1], PY);
+    }
+    await editor.waitForTimeout(300);
+    const syncP = watchSave(editor); // 적용(확인) 전에 무장
+    if (!await clickDialogApply(editor)) throw new Error('개체 속성 확인 버튼 탐색 실패');
+    const saved = await confirmSaved(editor, syncP);
+    const n = (await readCurrentPage(editor)) || 1; await gotoPage(editor, n);
+    const rect2 = await detectPageRect(editor); await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_objprop_${stamp()}.png`);
+    await editor.screenshot(rect2 ? { path: shot, clip: rect2 } : { path: shot });
+    out({ cmd: 'object-prop', applied: true, at: [ax, ay], before: cur, requested: { width: W, height: H, pos: PX !== null ? [PX, PY] : null, wrap }, page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), shot, docId: editor.__docId || null });
+  });
+}
+
 // resize-object: 그림/차트 크기를 '개체 속성' 다이얼로그의 너비/높이(mm 숫자)로 설정(드래그보다 정밀).
 // --at "x,y"(객체 안 한 점, 페이지좌표) · --width/--height mm(둘 중 하나만도 가능) · --apply(없으면 현재크기만 읽음).
 async function cmdResizeObject(args) {
@@ -2774,6 +2856,7 @@ async function cmdFind(args) {
     else if (args._ === 'download') await cmdDownload(args);
     else if (args._ === 'upload') await cmdUpload(args);
     else if (args._ === 'resize-object') await cmdResizeObject(args);
+    else if (args._ === 'object-prop') await cmdObjectProp(args);
     else if (args._ === 'chart-data') await cmdChartData(args);
     else if (args._ === 'insert-table') await cmdInsertTable(args);
     else if (args._ === 'insert-image') await cmdInsertImage(args);

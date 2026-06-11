@@ -77,6 +77,7 @@ node hancom.js pinpoint --file <로컬 .hwp/.hwpx> --text "<구절>" [--nth N] [
 node hancom.js download --name <문서이름>  [--out <로컬경로>]
 node hancom.js upload   --file <로컬경로>
 node hancom.js resize-object --name <문서이름> --at "x,y" [--width <mm>] [--height <mm>] [--apply]
+node hancom.js object-prop   --name <문서이름> --at "x,y" [--pos "x,y"] [--width <mm>] [--height <mm>] [--wrap <배치>] [--apply]
 node hancom.js chart-data    --name <문서이름> --at "x,y" --set "B2=9.9,C3=4" [--apply]
 node hancom.js insert-table  --name <문서이름> --rows R --cols C [--anchor "<텍스트>"] [--apply]
 node hancom.js insert-image  --name <문서이름> --file <이미지경로> [--anchor "<텍스트>"] [--apply]
@@ -163,10 +164,14 @@ node hancom.js highlight    --name <문서이름> --text "<구절>" --color yell
   - `node hancom.js upload --file <로컬경로>` → 로컬 파일을 드라이브에 **새 문서**로 올림(같은 이름이어도 교체 아님 → 중복 생성 주의).
   - **루프**: `download` 로 현재 상태를 받아 → `read.mjs` 로 occurrence-맵 → `pinpoint`/편집은 한컴독스 UI(자동저장). 편집 뒤 다시 읽어야 하면 **재 `download`**(로컬은 편집하면 stale). 편집 자체는 UI 에서 하므로 보통 재업로드는 불필요.
 
-### 🖼 그림·차트 객체 — `resize-object` · `chart-data`
+### 🖼 그림·차트 객체 — `resize-object` · `object-prop` · `chart-data`
 객체(그림/차트)는 본문 **canvas에 픽셀로** 그려져 DOM으로 못 짚는다 → **페이지 좌표 `--at "x,y"`** 로 클릭(객체 안 한 점이면 됨, `capture --grid`로 좌표 확인). 위치 자동탐색은 안 됨.
 - **`resize-object`**: 객체 크기를 **개체 속성 다이얼로그의 너비/높이(mm 숫자)** 로 설정 — 드래그보다 정밀.
   - `--apply` 없으면 현재 크기만 읽음(`currentSize`). `--width`/`--height` 중 하나만도 가능. 그 좌표에 객체 없으면 `object_not_found`.
+- **`object-prop`** (통합 — 크기+위치+배치를 한 번에): `--pos "x,y"`(mm, **종이 왼쪽/위쪽 기준** 절대 위치) · `--width`/`--height`(mm) · `--wrap`(배치, textbox와 동일 모드).
+  - `--apply` 없으면 현재 값(`current`: 크기+위치)만 읽음 — **객체 위치/크기 조회용으로도 유용**.
+  - 위치는 **떠 있는 객체만** 가능 — 글자처럼 취급(인라인) 객체면 `pos_unavailable`(그땐 `--wrap square`를 같이 줘서 떠 있는 배치로 바꾸면서 위치 지정).
+  - 선(직선·호) 객체는 획이 가늘어 `--at`이 빗나가기 쉬움 — 획 위의 한 점을 줄 것.
 - **`chart-data`**: 차트의 **데이터 편집 그리드** 셀 값을 바꿔 차트를 갱신. `--set "B2=9.9,C3=4"`(엑셀식 열문자+행번호=값). 셀=열헤더∩행헤더 교차 → 더블클릭 입력. 그 좌표에 차트 없으면 `chart_not_found`.
   - ⚠️ **그리드 구조는 차트 종류마다 다르다**(어느 셀이 무슨 뜻인지 먼저 알아야 함). 세 갈래:
     - **표준(항목×계열)** — 막대·꺾은선·영역·방사형 등 대부분: **A열 = 항목(범주) 이름**, **1행 = 계열 이름**, 그 교차셀(B2~)= 값. 예: 첫 계열 둘째 항목 값 = `B3`.
