@@ -134,7 +134,10 @@ node hancom.js highlight    --name <문서이름> --text "<구절>" --color yell
   - `node hancom.js pinpoint --file <로컬> --text "<구절>" --nth <N>` (`--name` 생략 시 파일명에서 유추)
   - 같은 텍스트가 여러 곳(예: 여러 표의 동일 컬럼헤더)이거나 옆에 맥락이 없어도 **문서순으로 그 N번째**를 집는다(유니크 문자열이 되면 검색 1회로 빠르게, 안 되면 전체를 훑어 문서 위치순으로 그 자리에 착지).
   - 반환: `{found, nth, address(표·행·열), context, page, shot, method}`. 못 집으면 `status`로 정직하게 알린다(예: 구절 자체가 파일에 없음, UI 매치 수가 파일과 달라 순서 정합이 안 됨).
-  - **`--replace "<새 텍스트>"` (핀포인트 편집)**: 그 N번째 occurrence **한 곳만** 새 텍스트로 교체. `--apply` 없으면 dry-run(교체할 `replaceFind`/`replaceTo` 만 보여줌). 원리: read.mjs 의 **유니크 앵커**(그 칸 맥락)로 네이티브 '모두 바꾸기' → 유일하므로 정확히 1곳. 이웃 텍스트는 보존(서식은 평문화될 수 있음). ⚠️ 동일/빈 텍스트라 유니크 앵커가 없으면 `replace_needs_unique_anchor`로 거부(더 구체적 구절 필요 or 구조 기반 op). 편집은 **headless 전용**(`--headed` 금지).
+  - **`--replace "<새 텍스트>"` (핀포인트 편집)**: 그 N번째 occurrence **한 곳만** 새 텍스트로 교체. `--apply` 없으면 dry-run(교체할 내용만 보여줌). 편집은 **headless 전용**(`--headed` 금지). 두 경로 자동 선택:
+    - **유니크 앵커**(그 칸 맥락이 문서에서 유일)면 → 네이티브 '모두 바꾸기'로 그 1곳(`mode:"replace"`). 이웃 텍스트 보존.
+    - **동일/반복 텍스트**(여러 표의 같은 헤더 등)라 유니크 앵커가 없으면 → 찾아바꾸기에서 **문서순 N번째 매치만 단일 '바꾸기'**(`mode:"replace-nth"`). 그 한 곳만 바뀐다.
+    - (서식은 평문화될 수 있음.)
   - 글자가 없는 대상(그림·도형 등)은 read.mjs가 못 보므로, **옆의 유니크한 텍스트**를 `around --zoom --band`(넓게)로 잡는 게 길이다.
 
 - **`download` / `upload`** (로컬 ↔ 드라이브): read.mjs/pinpoint 의 `--file` 은 **로컬 원본**이 필요하다.

@@ -644,19 +644,34 @@ async function cmdPinpoint(args) {
     // 앵커가 유일하므로 모두바꾸기여도 정확히 1곳. 교체 문자열 = 앵커에서 phrase 부분만 새 텍스트로(이웃 보존).
     if (isReplace) {
       const newText = String(args.replace === true ? '' : args.replace).normalize('NFC');
-      if (!loc.unique) { out({ ...base, status: 'replace_needs_unique_anchor', anchorCount: loc.anchorCount,
-        note: '동일/빈 텍스트라 유니크 앵커가 없어 네이티브 교체로 그 1곳만 못 집음 — 더 구체적인 구절/맥락으로 재시도하거나, 그 칸이 정말 동일 반복이면 set-cell-text 등 구조 기반 op 사용.' }); return; }
-      const a = loc.anchor, off = loc.matchOffset || 0;
-      const findStr = a, toStr = a.slice(0, off) + newText + a.slice(off + loc.match.length);
-      if (!apply) { out({ ...base, dryRun: true, mode: 'replace', replaceFind: findStr, replaceTo: toStr,
-        note: '--apply 시 이 유니크 앵커로 그 1곳만 교체(이웃 텍스트는 보존, 서식은 평문화될 수 있음).' }); return; }
-      const { replaced, popup, saved } = await nativeReplaceAll(editor, findStr, toStr);
-      // 결과 캡처: 바뀐 자리(toStr) 줌. 못 찾으면 현재 쪽 전체.
-      let shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_pinrepl_nth${loc.nth}_${stamp()}.png`);
-      const rr = await findText(editor, toStr, 1).catch(() => ({ found: false }));
-      if (rr.found && rr.caret) { await zoomBandShot(editor, rr.caret, band, shot); }
-      else { const n2 = (await readCurrentPage(editor)) || 1; await gotoPage(editor, n2); const rect = await detectPageRect(editor); await hideOverlays(editor); await editor.screenshot(rect ? { path: shot, clip: rect } : { path: shot }); }
-      out({ ...base, applied: true, mode: 'replace', replaced, replaceFind: findStr, replaceTo: toStr, shot, popup, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }) });
+      const capShot = async (findFor) => { // 결과 줌 캡처(바뀐 자리). 못 찾으면 현재 쪽 전체.
+        const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_pinrepl_nth${loc.nth}_${stamp()}.png`);
+        const rr = await findText(editor, findFor, 1).catch(() => ({ found: false }));
+        if (rr.found && rr.caret) { await zoomBandShot(editor, rr.caret, band, shot); }
+        else { const n2 = (await readCurrentPage(editor)) || 1; await gotoPage(editor, n2); const rect = await detectPageRect(editor); await hideOverlays(editor); await editor.screenshot(rect ? { path: shot, clip: rect } : { path: shot }); }
+        return shot;
+      };
+      // ── 유니크 앵커 경로: 그 앵커는 문서에서 유일 → '모두 바꾸기'여도 정확히 1곳(이웃 보존) ──
+      if (loc.unique) {
+        const a = loc.anchor, off = loc.matchOffset || 0;
+        const findStr = a, toStr = a.slice(0, off) + newText + a.slice(off + loc.match.length);
+        if (!apply) { out({ ...base, dryRun: true, mode: 'replace', replaceFind: findStr, replaceTo: toStr,
+          note: '--apply 시 이 유니크 앵커로 그 1곳만 교체(이웃 텍스트는 보존, 서식은 평문화될 수 있음).' }); return; }
+        const { replaced, popup, saved } = await nativeReplaceAll(editor, findStr, toStr);
+        const shot = await capShot(toStr);
+        out({ ...base, applied: true, mode: 'replace', replaced, replaceFind: findStr, replaceTo: toStr, shot, popup, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }) });
+        return;
+      }
+      // ── 비유니크(동일/빈 텍스트 반복) 경로: 문서순 nth 매치만 단일 '바꾸기'로 교체 ──
+      if (!apply) { out({ ...base, dryRun: true, mode: 'replace-nth', replaceFind: phrase, replaceTo: newText,
+        note: '비유니크 — 유니크 앵커가 없어 문서순 ' + loc.nth + '번째 매치만 단일 바꾸기로 교체(이웃 보존, 서식 평문화 가능). --apply 시 실행.' }); return; }
+      const order = await enumerateDocOrder(editor, phrase);
+      if (!order.length) { out({ ...base, status: 'not_found_in_ui', note: 'UI find 가 구절을 못 찾음.' }); return; }
+      if (loc.nth > order.length) { out({ ...base, status: 'nth_out_of_range', uiMatchCount: order.length, note: `UI 는 ${order.length}곳만 찾음(파일 ${loc.matchCount}곳).` }); return; }
+      const uiNth = order[loc.nth - 1].uiNth;
+      const { saved } = await nativeReplaceNth(editor, phrase, newText, uiNth);
+      const shot = await capShot(newText);
+      out({ ...base, applied: true, mode: 'replace-nth', uiNth, uiMatchCount: order.length, replaceFind: phrase, replaceTo: newText, shot, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }) });
       return;
     }
     const shoot = async (r, extra) => {
@@ -885,6 +900,42 @@ async function nativeReplaceAll(editor, findStr, toStr) {
   await editor.keyboard.press('Escape').catch(() => {}); // 다이얼로그 닫기
   const saved = await confirmSaved(editor, syncP); // 교체 후 서버 저장 확정(미리 무장한 syncP)
   return { replaced, popup: joined, saved };
+}
+
+// 비유니크 occurrence 의 'uiNth 번째' 매치 한 곳만 교체. 유니크 앵커가 없을 때(동일/빈 텍스트 반복)
+// '모두 바꾸기'로는 못 집으므로, 찾아바꾸기에서 '다음 찾기'를 uiNth 번 눌러 그 매치를 선택한 뒤
+// 단일 '바꾸기'(현재 매치만)로 교체한다. 문서순 nth → uiNth 매핑은 호출부(enumerateDocOrder)가 한다.
+async function nativeReplaceNth(editor, findStr, toStr, uiNth) {
+  await goDocStart(editor);
+  await openReplaceDialog(editor);
+  const ins = await dialogInputs(editor);
+  const findBox = ins.find((i) => /찾을/.test(i.al)) || ins[0];
+  const replBox = ins.find((i) => /바꿀/.test(i.al)) || ins[1];
+  if (!findBox || !replBox) throw new Error('찾아 바꾸기 입력칸 탐색 실패(현재 ' + ins.length + '개)');
+  await editor.mouse.click(findBox.x + Math.min(findBox.w / 2, 40), findBox.y + findBox.h / 2);
+  await editor.keyboard.press('ControlOrMeta+A'); await editor.keyboard.press('Delete');
+  await editor.keyboard.type(findStr, { delay: 20 });
+  await editor.mouse.click(replBox.x + Math.min(replBox.w / 2, 40), replBox.y + replBox.h / 2);
+  await editor.keyboard.press('ControlOrMeta+A'); await editor.keyboard.press('Delete');
+  if (toStr) await editor.keyboard.type(toStr, { delay: 20 });
+  // 방향 '문서 전체'(enumerateDocOrder 의 다음찾기 순서와 동일하게 — 문서 맨앞부터)
+  const whole = await dialogBtnXY(editor, '문서 전체');
+  if (whole) { await editor.mouse.click(whole.x, whole.y); await editor.waitForTimeout(300); }
+  // '다음 찾기' uiNth 번 → 대상(문서순 nth) 매치 선택
+  const nextBtn = await dialogBtnXY(editor, '다음 찾기');
+  if (!nextBtn) throw new Error("'다음 찾기' 버튼 탐색 실패");
+  for (let i = 0; i < uiNth; i++) { await editor.mouse.click(nextBtn.x, nextBtn.y); await editor.waitForTimeout(i === 0 ? 1200 : 650); }
+  // 단일 '바꾸기'(현재 선택 매치만 교체)
+  const replBtn = await dialogBtnXY(editor, '바꾸기');
+  if (!replBtn) throw new Error("'바꾸기'(단일) 버튼 탐색 실패");
+  const syncP = watchSave(editor);
+  await editor.mouse.click(replBtn.x, replBtn.y); await editor.waitForTimeout(1000);
+  // 결과 팝업/확인 닫기
+  const okBtn = await dialogBtnXY(editor, '확인');
+  if (okBtn) { await editor.mouse.click(okBtn.x, okBtn.y); await editor.waitForTimeout(400); }
+  await editor.keyboard.press('Escape').catch(() => {});
+  const saved = await confirmSaved(editor, syncP);
+  return { saved };
 }
 
 // replace-text: 네이티브 '찾아 바꾸기'로 find → to 전부 교체. --to "" 면 삭제.
