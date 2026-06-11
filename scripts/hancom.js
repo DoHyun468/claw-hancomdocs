@@ -1376,9 +1376,11 @@ function parseColor(c) {
 // 구절을 드래그 선택 후 색 팔레트(comboSel 의 ▼)에서 target[r,g,b]에 가장 가까운 스와치를 클릭.
 // 글자색(.font_color)·형광펜(.font_highlight_color)이 같은 팔레트 메커니즘이라 공유. 반환 {sel, picked}|{status}.
 async function selectAndPickColor(editor, phrase, nth, target, comboSel) {
-  const sel = await dragSelectPhrase(editor, phrase, nth);
+  // 드래그 선택은 서식 많이 입힌 줄(큰 글자 등)에서 폭 추정이 빗나가 간헐 실패 → selChars 0 이면 재시도.
+  let sel = await dragSelectPhrase(editor, phrase, nth);
   if (!sel.found) return { status: 'text_not_found' };
   if (sel.wrapped) return { status: 'nth_out_of_range', matchCount: sel.matchCount };
+  for (let i = 0; i < 2 && !sel.selChars; i++) { sel = await dragSelectPhrase(editor, phrase, nth); }
   if (!sel.selChars) return { status: 'selection_failed' };
   const arrow = await editor.evaluate((cs) => { const el = document.querySelector(cs + ' .btn_combo_arrow'); if (!el) return null; const r = el.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; }, comboSel);
   if (!arrow) throw new Error('색 드롭다운(' + comboSel + ' .btn_combo_arrow) 탐색 실패');
@@ -1398,8 +1400,16 @@ async function selectAndPickColor(editor, phrase, nth, target, comboSel) {
   if (!cells.length) throw new Error('색 팔레트 스와치 탐색 실패');
   let best = cells[0], bd = Infinity;
   for (const c of cells) { const d = (c.r - target[0]) ** 2 + (c.g - target[1]) ** 2 + (c.b - target[2]) ** 2; if (d < bd) { bd = d; best = c; } }
-  await editor.mouse.click(best.x, best.y); // 스와치 클릭(색 적용)
-  const saved = await confirmSaved(editor);  // 색 적용 후 저장 확정
+  // 스와치 클릭으로 색 설정+적용. 단, 클릭한 색이 콤보의 '현재 색'과 같으면(예: 형광펜 기본=노랑) 설정만
+  // 되고 선택엔 적용 안 되는 경우가 있다 → 동기화(handler/action) 가 안 뜨면 메인 버튼으로 현재색을 적용.
+  const sp1 = watchSave(editor, 2800);
+  await editor.mouse.click(best.x, best.y);
+  let saved = await sp1;
+  if (!saved) {
+    const mainXY = await editor.evaluate((cs) => { const el = document.querySelector(cs + ' .btn_icon_inner') || document.querySelector(cs); if (!el) return null; const r = el.getBoundingClientRect(); return { x: Math.round(r.x + Math.min(12, r.width / 2)), y: Math.round(r.y + r.height / 2) }; }, comboSel);
+    if (mainXY) { const sp2 = watchSave(editor); await editor.mouse.click(mainXY.x, mainXY.y); saved = await sp2; }
+  }
+  await editor.waitForTimeout(450); // 서버 커밋 settle
   return { sel, picked: { r: best.r, g: best.g, b: best.b }, saved };
 }
 
@@ -1500,12 +1510,26 @@ async function cmdFontFamily(args) {
     if (sel.wrapped) { out({ cmd: 'font-family', status: 'nth_out_of_range', text: phrase, nth, matchCount: sel.matchCount, docId: editor.__docId || null }); return; }
     if (!sel.selChars) { out({ cmd: 'font-family', status: 'selection_failed', text: phrase, docId: editor.__docId || null, note: '드래그 선택 실패.' }); return; }
     const n = sel.page || 1;
-    const box = await editor.evaluate(() => { const el = document.querySelector('.font_name input'); if (!el) return null; const r = el.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; });
-    if (!box) throw new Error('글꼴 입력칸(.font_name input) 탐색 실패');
-    await editor.mouse.click(box.x, box.y);
-    await editor.keyboard.press('ControlOrMeta+A');
-    await editor.keyboard.type(font, { delay: 30 });
-    await editor.keyboard.press('Enter');
+    // 글꼴 콤보는 입력칸 타이핑이 안 먹는다(읽기전용 표시). ▼ 드롭다운을 열어 글꼴 목록에서 정확히
+    // 일치하는 항목을 클릭해야 적용된다. 목록에 없는 글꼴이면 적용 불가 → available 목록과 함께 알린다.
+    const arrowXY = await editor.evaluate(() => { const a = document.querySelector('.font_name .btn_combo_arrow'); if (!a) return null; const r = a.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; });
+    if (!arrowXY) throw new Error('글꼴 콤보 ▼(.font_name .btn_combo_arrow) 탐색 실패');
+    await editor.mouse.click(arrowXY.x, arrowXY.y); await editor.waitForTimeout(700); // ▼ 드롭다운 열기
+    // 목록에서 글꼴명 정확 일치 항목을 화면에 보이게(scrollIntoView) 한 뒤 좌표 취득
+    const picked = await editor.evaluate((want) => {
+      const el = [...document.querySelectorAll('.font_name.dropdown_data')].find((e) => (e.textContent || '').trim() === want);
+      if (!el) return null;
+      el.scrollIntoView({ block: 'center' });
+      const r = el.getBoundingClientRect();
+      return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+    }, font);
+    if (!picked) {
+      const avail = await editor.evaluate(() => [...document.querySelectorAll('.font_name.dropdown_data')].map((e) => (e.textContent || '').trim()).filter(Boolean));
+      await editor.keyboard.press('Escape').catch(() => {});
+      out({ cmd: 'font-family', status: 'font_not_available', text: phrase, font, available: avail, docId: editor.__docId || null, note: '그 글꼴이 이 문서의 글꼴 목록에 없음 — available 중에서 정확한 이름으로 지정.' });
+      return;
+    }
+    await editor.mouse.click(picked.x, picked.y); await editor.waitForTimeout(300); // 글꼴 항목 클릭(적용)
     const saved = await confirmSaved(editor); // 글꼴 적용 후 저장 확정
     await gotoPage(editor, n);
     const rect2 = await detectPageRect(editor); await hideOverlays(editor);
@@ -1630,7 +1654,9 @@ async function cmdTableOp(args) {
       const sp = await menuItemXY(editor, '셀 나누기...');
       if (!sp) throw new Error('셀 나누기... 탐색 실패 (셀에 캐럿 없음?)');
       await editor.mouse.click(sp.x, sp.y); await editor.waitForTimeout(1000);
-      // 다이얼로그(셀 나누기): 줄 개수/칸 개수 입력, 확인 버튼 텍스트는 '나누기'
+      // 일부 복잡한 표(대형·병합 다수)는 이 경로로 '셀 나누기' 다이얼로그가 안 열린다 → 명확히 알림.
+      const dialogOpen = await editor.evaluate(() => [...document.querySelectorAll('input')].some((e) => e.getAttribute('aria-label') === '줄 개수' && e.offsetParent !== null));
+      if (!dialogOpen) { out({ cmd: 'table-op', status: 'split_dialog_not_opened', cell: cellText, op, docId: editor.__docId || null, note: "이 표/셀에선 '셀 나누기' 다이얼로그가 안 열림(대형·병합 많은 표의 webhwp 한계). 일반 표에선 정상." }); return; }
       try { await setDialogField(editor, '줄 개수', sr); } catch (e) {}
       try { await setDialogField(editor, '칸 개수', sc); } catch (e) {}
       await editor.waitForTimeout(200);
