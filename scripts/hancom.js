@@ -1933,6 +1933,88 @@ async function cmdPageBreak(args) {
   });
 }
 
+// 글자/문단 모양 다이얼로그 공통 확인 버튼(설정/확인/적용 중 하나) 클릭.
+async function clickDialogApply(ed) {
+  for (const b of ['설정', '확인', '적용']) { if (await clickDialogBtn(ed, b)) return true; }
+  return false;
+}
+
+// char-shape: 구절을 선택해 '글자 모양' 다이얼로그로 자간/장평 등 세밀 글자 서식. (서식 › 글자 모양)
+async function cmdCharShape(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (args.text == null || args.text === true) throw new Error('--text 필요 (서식 적용할 구절)');
+  const fields = [];
+  if (args.spacing !== undefined) fields.push(['자간', Math.round(Number(args.spacing))]);   // 자간(%)
+  if (args.width !== undefined) fields.push(['장평', Math.round(Number(args.width))]);        // 장평(%)
+  if (args['rel-size'] !== undefined) fields.push(['상대 크기', Math.round(Number(args['rel-size']))]);
+  if (args.position !== undefined) fields.push(['글자 위치', Math.round(Number(args.position))]);
+  if (!fields.length) throw new Error('--spacing(자간%) / --width(장평%) / --rel-size / --position 중 하나 이상');
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
+  const phrase = String(args.text).normalize('NFC');
+  const name = String(args.name).normalize('NFC');
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    if (!apply) { out({ cmd: 'char-shape', dryRun: true, text: phrase, fields: Object.fromEntries(fields), docId: editor.__docId || null, note: '--apply 시 구절 선택 후 글자 모양 적용.' }); return; }
+    let sel = await dragSelectPhrase(editor, phrase);
+    if (!sel.found) { out({ cmd: 'char-shape', status: 'text_not_found', text: phrase, docId: editor.__docId || null }); return; }
+    for (let i = 0; i < 2 && !sel.selChars; i++) sel = await dragSelectPhrase(editor, phrase);
+    if (!sel.selChars) { out({ cmd: 'char-shape', status: 'selection_failed', text: phrase, docId: editor.__docId || null }); return; }
+    const n = sel.page || 1;
+    await openMenu(editor, '서식');
+    await clickSel(editor, '.char_shape'); await editor.waitForTimeout(1000);
+    for (const [label, value] of fields) { try { await setDialogField(editor, label, value); } catch (e) {} }
+    await editor.waitForTimeout(200);
+    const syncP = watchSave(editor);
+    if (!await clickDialogApply(editor)) throw new Error('글자 모양 설정/확인 버튼 탐색 실패');
+    const saved = await confirmSaved(editor, syncP);
+    await gotoPage(editor, n); const rect = await detectPageRect(editor); await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_charshape_p${n}_${stamp()}.png`);
+    await editor.screenshot(rect ? { path: shot, clip: rect } : { path: shot });
+    out({ cmd: 'char-shape', applied: true, text: phrase, fields: Object.fromEntries(fields), selChars: sel.selChars, page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), docId: editor.__docId || null, shot });
+  });
+}
+
+// para-shape: 기준 단락에 캐럿을 두고 '문단 모양' 다이얼로그로 여백/간격(mm). (서식 › 문단 모양) 단락 단위.
+async function cmdParaShape(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (!args.anchor) throw new Error('--anchor 필요 (대상 단락 안의 텍스트)');
+  const fields = [];
+  if (args.left !== undefined) fields.push(['왼쪽', Number(args.left)]);       // 왼쪽 여백(mm)
+  if (args.right !== undefined) fields.push(['오른쪽', Number(args.right)]);    // 오른쪽 여백(mm)
+  if (args.before !== undefined) fields.push(['문단 위', Number(args.before)]); // 문단 위 간격(mm)
+  if (args.after !== undefined) fields.push(['문단 아래', Number(args.after)]); // 문단 아래 간격(mm)
+  if (!fields.length) throw new Error('--left / --right / --before / --after 중 하나 이상 (mm)');
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
+  const anchor = String(args.anchor).normalize('NFC');
+  const name = String(args.name).normalize('NFC');
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    const r = await findText(editor, anchor);
+    if (!r.found || !r.caret) { out({ cmd: 'para-shape', status: 'anchor_not_found', anchor, docId: editor.__docId || null }); return; }
+    const n = r.page || 1;
+    if (!apply) { out({ cmd: 'para-shape', dryRun: true, anchor, fields: Object.fromEntries(fields), foundPage: n, docId: editor.__docId || null, note: '--apply 시 그 단락에 문단 모양 적용(mm).' }); return; }
+    await focusBody(editor);
+    await editor.mouse.click(r.caret.x, r.caret.y + 6); await editor.waitForTimeout(250); // 그 단락에 캐럿
+    await openMenu(editor, '서식');
+    await clickSel(editor, '.para_shape'); await editor.waitForTimeout(1000);
+    for (const [label, value] of fields) { try { await setDialogField(editor, label, value); } catch (e) {} }
+    await editor.waitForTimeout(200);
+    const syncP = watchSave(editor);
+    if (!await clickDialogApply(editor)) throw new Error('문단 모양 설정/확인 버튼 탐색 실패');
+    const saved = await confirmSaved(editor, syncP);
+    await gotoPage(editor, n); const rect = await detectPageRect(editor); await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_parashape_p${n}_${stamp()}.png`);
+    await editor.screenshot(rect ? { path: shot, clip: rect } : { path: shot });
+    out({ cmd: 'para-shape', applied: true, anchor, fields: Object.fromEntries(fields), page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), docId: editor.__docId || null, shot });
+  });
+}
+
 // ───────────────────────── 객체(그림·차트) ─────────────────────────
 // 객체는 본문 canvas 에 픽셀로 그려져 DOM 셀렉터로 못 짚는다 → 페이지 좌표(--at "x,y", 그리드 캡처 참고)에
 // 클릭. 우클릭 컨텍스트 메뉴(개체 속성/데이터 편집)로 진입. --at 의 한 점이 객체 안이면 충분(중앙 권장).
@@ -2157,6 +2239,8 @@ async function cmdFind(args) {
     else if (args._ === 'table-op') await cmdTableOp(args);
     else if (args._ === 'page-number') await cmdPageNumber(args);
     else if (args._ === 'page-break') await cmdPageBreak(args);
+    else if (args._ === 'char-shape') await cmdCharShape(args);
+    else if (args._ === 'para-shape') await cmdParaShape(args);
     else if (args._ === 'font-family') await cmdFontFamily(args);
     else if (args._ === 'highlight') await cmdHighlight(args);
     else if (args._ === 'insert-text') await cmdInsertText(args);
