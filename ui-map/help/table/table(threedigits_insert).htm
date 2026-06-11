@@ -1,0 +1,96 @@
+<!--
+  Copyright 2023 Hancom Inc. All rights reserved.
+  https://www.hancom.com/
+-->
+<!DOCTYPE HTML>
+<html>
+<head>
+
+
+
+<meta name="keywords" content="입력|표 만들기" />
+<link rel="stylesheet" type="text/css" href="../help.css" />
+<title>자릿점 넣기</title>
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+<script type="text/javascript" language="JavaScript">
+//<![CDATA[
+function reDo() {
+  if (innerWidth != origWidth || innerHeight != origHeight)
+     location.reload();
+}
+if ((parseInt(navigator.appVersion) == 4) && (navigator.appName == "Netscape")) {
+	origWidth = innerWidth;
+	origHeight = innerHeight;
+	onresize = reDo;
+}
+onerror = null; 
+//]]>
+</script>
+<style type="text/css">
+<!--
+div.WebHelpPopupMenu { position:absolute;
+left:0px;
+top:0px;
+z-index:4;
+visibility:hidden; }
+p.WebHelpNavBar { text-align:right; }
+-->
+</style>
+ <meta name="generator" content="Adobe RoboHelp 2015" />
+<script type="text/javascript" src="../template/scripts/rh.min.js"></script>
+<script type="text/javascript" src="../template/scripts/common.min.js"></script>
+<script type="text/javascript" src="../template/scripts/topic.min.js"></script>
+<script type="text/javascript" src="../template/scripts/constants.js"></script>
+<script type="text/javascript" src="../template/scripts/utils.js"></script>
+<script type="text/javascript" src="../template/scripts/mhutils.js"></script>
+<script type="text/javascript" src="../template/scripts/mhlang.js"></script>
+<script type="text/javascript" src="../template/scripts/mhver.js"></script>
+<script type="text/javascript" src="../template/scripts/settings.js"></script>
+<script type="text/javascript" src="../template/scripts/XmlJsReader.js"></script>
+<script type="text/javascript" src="../template/scripts/loadparentdata.js"></script>
+<script type="text/javascript" src="../template/scripts/loadscreen.js"></script>
+<script type="text/javascript" src="../template/scripts/loadprojdata.js"></script>
+<script type="text/javascript" src="../template/scripts/mhtopic.js"></script>
+ <link rel="stylesheet" type="text/css" href="../template/styles/topic.min.css">
+<script type="text/javascript" >
+gRootRelPath = "..";
+gCommonRootRelPath = "..";
+gTopicId = "8.4.0_1";
+</script>
+ <meta name="brsprev" value="table/table(threedigits).htm">
+ <meta name="brsnext" value="table/table(threedigits_delete).htm">
+ <meta name="topic-breadcrumbs" content="표 > 1,000단위 구분 쉼표" />
+</head>
+<body>
+<script type="text/javascript" src="../ehlpdhtm.js"></script>
+
+<h1>자릿점 넣기</h1>
+<p class="intro">표 안의 숫자에 일괄적으로 1,000단위마다 자릿점을 넣을 때 사용합니다.</p>
+<p class="intro">[1,000 단위 구분 쉼표-자릿점 넣기]를 하면 숫자를 감지하여 셀 블록으로 지정한 영역의 1,000단위가 넘는 모든 숫자에 1,000단위마다 자릿점(,)을 넣어 줍니다. 이렇게 삽입한 1,000단위 자릿점(,)은 [자릿점 빼기]로 일괄 삭제할 수 있습니다.</p>
+<h2>따라 하기</h2>
+<ol>
+<li>[표-표 만들기]를 실행합니다.</li>
+<li>[표 만들기] 대화 상자가 나타나면 줄 수와 칸 수를 지정하고 [만들기] 단추를 누릅니다.</li>
+<li>만들어진 표에 1,000단위 숫자를 입력합니다.</li>
+<li>표 안에 커서를 넣고 &lt;F5&gt;를 세 번 눌러 표 전체에 [셀 블록]을 설정합니다.</li>
+<li>[표-1,000 단위 구분 쉼표-자릿점 넣기]를 누릅니다.</li>
+<li>셀 블록으로 설정된 내용 중 숫자가 입력된 셀에 1,000단위마다 자릿점(,)이 입력됩니다.</li>
+</ol>
+<h2>참고</h2>
+<h3>영역 설정</h3>
+<p>1,000단위마다 자릿점을 입력할 때 영역 설정은 &lt;F5&gt;를 눌러 [셀 블록]을 설정했을 때 동작합니다. 표밖에 커서를 두고 &lt;F3&gt;을 눌러 블록 또는 구역을 설정한 경우엔 [자릿점 넣기] 기능이 올바르게 동작하지 않습니다.</p>
+<h3>자릿점이 입력되지 않는 경우</h3>
+<ol>
+<li>세 자리 이하 연속되는 숫자<br />
+예) 200</li>
+<li>숫자와 마침표(소수점)와 숫자가 연속한 경우 마침표 뒤의 숫자 부분 (소수부)<br />
+예) 200.55555</li>
+<li>날짜/시간 코드를 입력했을 경우에 연도 네 자리<br />
+예) 2013년 10월 9일</li>
+<li>날짜/시간 코드의 필드 사이에 들어간 네 자리 이상 연속된 숫자열</li>
+</ol>
+<h2>관련 기능</h2>
+<p class="related-link"><a href="table(divide).htm">셀 나누기</a>, <a href="table(merge).htm">셀 합치기</a>, <!--<a href="table(cell).htm">셀 블록</a>, --><a href="table(del).htm">줄/칸 지우기</a>, <a href="table(ins).htm">줄/칸 추가하기</a>, <a href="table(eqheight).htm">셀 높이를 같게</a>, <a href="table(eqwidth).htm">셀 너비를 같게</a>, <a href="tableattribute/tableattribute.htm">표/셀 속성</a></p>
+<p class="footer"><a href="http://www.hancom.com/" target="_blank">www.hancom.com</a></p>
+</body>
+</html>

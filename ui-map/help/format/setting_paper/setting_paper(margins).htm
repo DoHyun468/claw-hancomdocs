@@ -1,0 +1,96 @@
+<!--
+  Copyright 2023 Hancom Inc. All rights reserved.
+  https://www.hancom.com/
+-->
+<!DOCTYPE HTML>
+<html>
+<head>
+
+
+
+<meta name="keywords" content="모양|편집 용지" />
+<link rel="stylesheet" type="text/css" href="../../help.css" />
+<title>용지 여백</title>
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+<script type="text/javascript" language="JavaScript">
+//<![CDATA[
+function reDo() {
+  if (innerWidth != origWidth || innerHeight != origHeight)
+     location.reload();
+}
+if ((parseInt(navigator.appVersion) == 4) && (navigator.appName == "Netscape")) {
+	origWidth = innerWidth;
+	origHeight = innerHeight;
+	onresize = reDo;
+}
+onerror = null; 
+//]]>
+</script>
+<style type="text/css">
+<!--
+div.WebHelpPopupMenu { position:absolute;
+left:0px;
+top:0px;
+z-index:4;
+visibility:hidden; }
+p.WebHelpNavBar { text-align:right; }
+-->
+</style>
+ <meta name="generator" content="Adobe RoboHelp 2015" />
+<script type="text/javascript" src="../../template/scripts/rh.min.js"></script>
+<script type="text/javascript" src="../../template/scripts/common.min.js"></script>
+<script type="text/javascript" src="../../template/scripts/topic.min.js"></script>
+<script type="text/javascript" src="../../template/scripts/constants.js"></script>
+<script type="text/javascript" src="../../template/scripts/utils.js"></script>
+<script type="text/javascript" src="../../template/scripts/mhutils.js"></script>
+<script type="text/javascript" src="../../template/scripts/mhlang.js"></script>
+<script type="text/javascript" src="../../template/scripts/mhver.js"></script>
+<script type="text/javascript" src="../../template/scripts/settings.js"></script>
+<script type="text/javascript" src="../../template/scripts/XmlJsReader.js"></script>
+<script type="text/javascript" src="../../template/scripts/loadparentdata.js"></script>
+<script type="text/javascript" src="../../template/scripts/loadscreen.js"></script>
+<script type="text/javascript" src="../../template/scripts/loadprojdata.js"></script>
+<script type="text/javascript" src="../../template/scripts/mhtopic.js"></script>
+ <link rel="stylesheet" type="text/css" href="../../template/styles/topic.min.css">
+<script type="text/javascript" >
+gRootRelPath = "../..";
+gCommonRootRelPath = "../..";
+gTopicId = "2.1.0_3";
+</script>
+ <meta name="brsprev" value="format/setting_paper/setting_paper(paper_orientation).htm">
+ <meta name="brsnext" value="format/setting_paper/setting_paper(books).htm">
+ <meta name="topic-breadcrumbs" content="파일 > 편집 용지" />
+</head>
+<body>
+<script type="text/javascript" src="../../ehlpdhtm.js"></script>
+
+<h1>용지 여백</h1>
+<p class="intro">선택한 용지 종류에서 상하/좌우 여백을 빼고 난 나머지가 본문이 들어가는 자리가 됩니다. 왼쪽/오른쪽 여백을 넓게 주면 문단의 폭이 좁아지고, 위/아래 여백을 많이 주면 한 쪽(페이지)에 들어가는 줄(행) 수가 적어집니다.</p>
+<h2>따라 하기</h2>
+<ol>
+<li>[파일-편집 용지] 또는 [<a href="setting_paper.htm">쪽-편집 용지</a>]를 실행합니다.</li>
+<li>[편집 용지] 대화 상자가 나타나면 [용지 여백-머리말]에 "20mm"를 입력합니다.</li>
+<li>[확인] 단추를 누릅니다. 그러면 위쪽 용지 여백으로부터 머리말을 넣기 위한 길이가 20mm로 바뀌고, 본문이 그만큼 줄어듭니다.</li>
+</ol>
+<h2>참고</h2>
+<h3>제본과 용지 여백</h3>
+<p>[제본-맞쪽]을 지정한 경우에는 [용지 여백-왼쪽/오른쪽]은 [안쪽/바깥쪽]으로 바뀝니다. [안쪽]과 [바깥쪽]은 홀수 쪽인지 짝수 쪽인지에 따라 달라집니다. [안쪽]은 홀수 쪽에서는 '왼쪽', 짝수 쪽에서는 '오른쪽'이고, [바깥쪽]은 홀수 쪽에서는 '오른쪽', 짝수 쪽에서는 '왼쪽'입니다.</p>
+<p><img src="../../images/5f08_001.gif" border="0" alt="" style="width:100%; max-width:375px" /></p>
+<h3>제본 여백</h3>
+<p>문서의 제본을 위해 남기는 여백입니다. [제본-왼쪽]을 지정한 경우에는 용지 끝에서 왼쪽 여백 시작 부분까지의 여백이고, [제본-맞쪽]을 지정한 경우에는 용지 끝에서 안쪽 여백 시작 부분까지의 여백입니다. [제본-위로]를 지정한 경우에는 용지 끝에서 위쪽 여백 시작 부분까지의 여백입니다.</p>
+<!--<h3>눈금자에서 여백 조절</h3>
+<p>[편집 용지] 대화 상자를 띄우지 않고, 가로 눈금자의 왼쪽/오른쪽 여백 위치와 세로 눈금자의 위쪽/아래쪽 여백 위치에서 마우스를 끌어 여백 값을 조절할 수 있습니다. 이때 &lt;Alt&gt;를 누른 채로 마우스 끌기를 하면 눈금을 감추고 현재 여백 값을 보여 주므로, 정확한 값을 설정할 수 있습니다.</p>
+<p>세로 눈금자에서 편집 용지의 위쪽 여백 값을 줄이더라도 머리말 여백은 영향을 받지 않습니다. 머리말 영역을 줄이려면 머리말 편집 화면에 들어가서 눈금자를 마우스로 끌어 머리말 여백을 조절해야 합니다.</p>
+<p>눈금자에서 여백을 조절하기 위해서는 반드시 [<a href="../../view/page_outline.htm">쪽 윤곽 보이기</a>] 상태여야 합니다.</p>-->
+<h3>문단 모양의 왼쪽/오른쪽 여백과의 차이점</h3>
+<p>[<a href="../paragraph/paragraph.htm">문단 모양</a>]의 [<a href="../paragraph/paragraph(margin).htm">여백</a>]은 현재 문단의 왼쪽 여백과 오른쪽 여백을 지정하는 것입니다. 즉, [문단 모양-왼쪽/오른쪽 여백]은 [편집 용지-왼쪽/오른쪽 여백]을 지정한 데에서, 다시 추가로 남길 현재 문단의 왼쪽/오른쪽 여백을 지정하는 기능입니다.</p>
+<h3>내용 없는 머리말과 꼬리말의 여백 적용</h3>
+<p>머리말과 꼬리말 여백은 머리말과 꼬리말 내용을 넣거나 넣지 않는 것에 상관없이, [편집 용지-머리말/꼬리말 여백]에서 지정해 놓은 높이만큼 공간을 띄우고 본문을 시작합니다.</p>
+<h3>용지 종류에 따라 용지 여백 자동 바뀜</h3>
+<p>한/글은 기본으로 제공하는 용지 종류에 따라 가장 보기 좋은 용지 여백 값을 자동으로 설정해 줍니다. 따라서 [<a href="setting_paper(paper_sizes).htm">용지 종류</a>]를 바꾸면 그에 따른 [용지 여백]이 자동으로 바뀝니다.</p>
+<p>편집 용지를 설정할 때에는 먼저 [용지 종류]를 바꾼 다음 [용지 여백]을 바꾸십시오.</p>
+<h2>관련 기능</h2>
+<p class="related-link"><a href="setting_paper.htm">편집 용지</a>, <a href="setting_paper(paper_sizes).htm">용지 종류</a>, <a href="setting_paper(paper_orientation).htm">용지 방향</a>, <a href="setting_paper(books).htm">제본</a></p>
+<p class="footer"><a href="http://www.hancom.com/" target="_blank">www.hancom.com</a></p>
+</body>
+</html>

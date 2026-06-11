@@ -1,0 +1,336 @@
+<!--
+  Copyright 2023 Hancom Inc. All rights reserved.
+  https://www.hancom.com/
+-->
+<!DOCTYPE HTML>
+<html>
+<head>
+
+
+
+<meta name="keywords" content="입력|개체|수식|수식 명령어 설명" />
+<link rel="stylesheet" type="text/css" href="../../help.css" />
+<title>수식 명령어 설명</title>
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+<script type="text/javascript" language="JavaScript">
+//<![CDATA[
+function reDo() {
+  if (innerWidth != origWidth || innerHeight != origHeight)
+     location.reload();
+}
+if ((parseInt(navigator.appVersion) == 4) && (navigator.appName == "Netscape")) {
+	origWidth = innerWidth;
+	origHeight = innerHeight;
+	onresize = reDo;
+}
+onerror = null; 
+//]]>
+</script>
+<style type="text/css">
+<!--
+div.WebHelpPopupMenu { position:absolute;
+left:0px;
+top:0px;
+z-index:4;
+visibility:hidden; }
+p.WebHelpNavBar { text-align:right; }
+-->
+</style>
+ <meta name="generator" content="Adobe RoboHelp 2015" />
+<script type="text/javascript" src="../../template/scripts/rh.min.js"></script>
+<script type="text/javascript" src="../../template/scripts/common.min.js"></script>
+<script type="text/javascript" src="../../template/scripts/topic.min.js"></script>
+<script type="text/javascript" src="../../template/scripts/constants.js"></script>
+<script type="text/javascript" src="../../template/scripts/utils.js"></script>
+<script type="text/javascript" src="../../template/scripts/mhutils.js"></script>
+<script type="text/javascript" src="../../template/scripts/mhlang.js"></script>
+<script type="text/javascript" src="../../template/scripts/mhver.js"></script>
+<script type="text/javascript" src="../../template/scripts/settings.js"></script>
+<script type="text/javascript" src="../../template/scripts/XmlJsReader.js"></script>
+<script type="text/javascript" src="../../template/scripts/loadparentdata.js"></script>
+<script type="text/javascript" src="../../template/scripts/loadscreen.js"></script>
+<script type="text/javascript" src="../../template/scripts/loadprojdata.js"></script>
+<script type="text/javascript" src="../../template/scripts/mhtopic.js"></script>
+ <link rel="stylesheet" type="text/css" href="../../template/styles/topic.min.css">
+<script type="text/javascript" >
+gRootRelPath = "../..";
+gCommonRootRelPath = "../..";
+gTopicId = "5.2.0_2";
+</script>
+ <meta name="brsprev" value="insert/equation/equation(script).htm">
+ <meta name="brsnext" value="insert/symbol.htm">
+ <meta name="topic-breadcrumbs" content="입력 > 수식" />
+</head>
+<body>
+<script type="text/javascript" src="../../ehlpdhtm.js"></script>
+
+<h1>수식 명령어 설명</h1>
+<p class="intro">수식 편집기에서 사용할 수 있는 명령어 목록과 사용 예제입니다.</p>
+<h2>자세한 정보</h2>
+<h3>기본 명령어</h3>
+<div class="table02">
+<table>
+<tr>
+<th>명령어</th>
+<th>설명</th>
+<th>입력 예</th>
+<th>결과</th>
+</tr>
+<tr>
+<td>TIMES</td>
+<td>곱셈 기호를 표시합니다.</td>
+<td>2 times 5=10</td>
+<td><img src="../../images/4i11_011.gif" border="0" alt="" style="width:100%; max-width:79px" /></td>
+</tr>
+<tr>
+<td>OVER</td>
+<td>분수를 표시합니다. 분수는 기본적으로 가운데 맞춤으로 정렬하는데, 굳이 오른쪽이나 왼쪽 맞춤을 쓰려면 &lt;SpaceBar&gt;를 이용합니다.</td>
+<td>1 over 2</td>
+<td><img src="../../images/4i11_012.gif" border="0" alt="" style="width:100%; max-width:19px" /></td>
+</tr>
+<tr>
+<td>ATOP</td>
+<td>"OVER" 명령과 같지만 분수를 나타내는 가로선을 생략합니다.</td>
+<td>x atop y</td>
+<td><img src="../../images/4i11_017.gif" border="0" alt="" style="width:100%; max-width:23px" /></td>
+</tr>
+<tr>
+<td>SQRT</td>
+<td>제곱근을 표시합니다.</td>
+<td>sqrt 2</td>
+<td><img src="../../images/4i11_013.gif" border="0" alt="" style="width:100%; max-width:35px" /></td>
+</tr>
+<tr>
+<td>^</td>
+<td>위 첨자를 표시합니다. 수식 편집 영역에서 "^"를 직접 입력하거나, 명령어 입력 창에 "SUP"를 입력합니다.</td>
+<td>E=mc^2</td>
+<td><img src="../../images/4i11_014.gif" border="0" alt="" style="width:100%; max-width:74px" /></td>
+</tr>
+<tr>
+<td>_</td>
+<td>아래 첨자를 표시합니다. 수식 편집 영역에서 "_"를 직접 입력하거나, 명령어 입력 창에 "SUB"를 입력합니다.</td>
+<td>H_2 O</td>
+<td><img src="../../images/4i11_015.gif" border="0" alt="" style="width:100%; max-width:43px" /></td>
+</tr>
+<tr>
+<td>INT, OINT</td>
+<td>적분 기호를 표시합니다.</td>
+<td>int _1 ^2 {3x^2}dx</td>
+<td><img src="../../images/4i11_016.gif" border="0" alt="" style="width:100%; max-width:80px" /></td>
+</tr>
+<tr>
+<td>SUM</td>
+<td>총합 기호(Sigma)를 표시합니다.</td>
+<td>sum_{x=0} ^{inf}</td>
+<td><img src="../../images/4i11_018.gif" border="0" alt="" style="width:100%; max-width:28px" /></td>
+</tr>
+<tr>
+<td>BIGG 기호</td>
+<td>뒤에 쓰인 기호의 크기를 확대합니다.</td>
+<td>{a+b} over {a-b} bigg / {x+y} over {x-y}</td>
+<td><img src="../../images/4i11_019.gif" border="0" alt="" style="width:100%; max-width:99px" /></td>
+</tr>
+<tr>
+<td>lim, Lim</td>
+<td>극한 기호를 표시합니다. 이때 lim과 Lim은 대소문자를 정확하게 가려 써야 합니다.</td>
+<td>y= lim _{x -&gt; 0} {{1} over {x}}</td>
+<td><img src="../../images/4i11_020.gif" border="0" alt="" style="width:100%; max-width:117px" /></td>
+</tr>
+<tr>
+<td>UNION, INTER, PROD</td>
+<td>집합 기호를 표시합니다. 명령어 앞에 "SMALL"을 덧붙이면 첨자 없는 집합 기호를 입력합니다.</td>
+<td>U=(A SMALLUNION B) SMALLINTER C</td>
+<td><img src="../../images/4i11_021.gif" border="0" alt="" style="width:100%; max-width:130px" /></td>
+</tr>
+<tr>
+<td>NOT</td>
+<td>글자 앞에 not을 붙이면 그 글자에 사선을 그어줍니다.</td>
+<td>not =</td>
+<td><img src="../../images/4i11_022.gif" border="0" alt="" style="width:100%; max-width:20px" /></td>
+</tr>
+<tr>
+<td>REL</td>
+<td>두 항 간의 상호 관계를 상세히 표현할 수 있게 하는 기능으로, 두 항을 연결하는 화살표의 위, 아래에 관계식 등의 내용을 삽입할 수 있습니다.</td>
+<td>A REL &lt;-&gt; {+2} {-5} B</td>
+<td><img src="../../images/4i11_023.gif" border="0" alt="" style="width:100%; max-width:69px" /></td>
+</tr>
+<tr>
+<td>BUILDREL</td>
+<td>REL과 유사한 기능으로, 화살표 아랫부분의 내용을 생략할 수 있습니다.</td>
+<td>A BUILDREL &lt;-&gt; {+2} B</td>
+<td><img src="../../images/4i11_024.gif" border="0" alt="" style="width:100%; max-width:69px" /></td>
+</tr>
+<tr>
+<td>CASES</td>
+<td>여러 개의 행 전체를 나타내는 묶음표{를 표시합니다. 묶음표의 크기는 상황에 따라 자동으로 확대되어 표시됩니다.</td>
+<td>cases {2x+y=4 # 3x-4y=-1}</td>
+<td><img src="../../images/4i11_025.gif" border="0" alt="" style="width:100%; max-width:113px" /></td>
+</tr>
+<tr>
+<td>PILE, LPILE, RPILE</td>
+<td>위에 있는 문자를 기준으로 가운데(PILE), 왼쪽(LPILE), 오른쪽(RPILE) 맞춤을 선택할 수 있습니다.</td>
+<td>&#160;</td>
+<td>&#160;</td>
+</tr>
+<tr>
+<td height="39" class="table_T_sub">EQALIGN</td>
+<td>칸 맞춤 표시인 "&amp;"를 기준으로 수식의 세로 위치를 조절해 줍니다.</td>
+<td>&#160;</td>
+<td>&#160;</td>
+</tr>
+<tr>
+<td>CHOOSE 또는 BINOM</td>
+<td>조합 기호를 입력합니다.</td>
+<td>[전체항] CHOOSE [선택항] 또는 BINOM [전체항] [선택항]</td>
+<td>&#160;</td>
+</tr>
+<tr>
+<td>MATRIX</td>
+<td>행렬(matrix)을 입력합니다.<br />
+matrix는 줄(행) 단위로 입력하는 일반적인 방법과 matrix 다음에 col을 입력하여 칸(열) 단위로 입력하는 방법이 있습니다.<br />
+col을 넣어 행렬을 칸 단위로 입력할 때는 각 수식 앞에 col(가운데) 대신 lcol(왼쪽 맞춤), rcol(오른쪽 맞춤)을 넣어 정렬 위치를 지정할 수도 있습니다.</td>
+<td>matrix{a_{1} &amp;b_{1}&amp;c_{1} # a_{2}&amp;b_{2}&amp;c_{2} # a_{3}&amp;b_{3}&amp;c_{3}}</td>
+<td><img src="../../images/4i11_026.gif" border="0" alt="" style="width:100%; max-width:50px" /></td>
+</tr>
+<tr>
+<td>PMATRIX</td>
+<td>matrix 대신에 pmatrix를 쓰면 행렬(matrix) 앞뒤로 소괄호()를 표시해줍니다.</td>
+<td>pmatrix{a_{1} &amp;b_{1}&amp;c_{1} # a_{2}&amp;b_{2}&amp;c_{2} # a_{3}&amp;b_{3}&amp;c_{3}}</td>
+<td><img src="../../images/4i11_027.gif" border="0" alt="" style="width:100%; max-width:64px" /></td>
+</tr>
+<tr>
+<td>BMATRIX</td>
+<td>matrix 대신에 bmatrix를 쓰면 행렬(matrix) 앞뒤로 대괄호[]를 표시해줍니다.</td>
+<td>bmatrix{a_{1} &amp;b_{1}&amp;c_{1} # a_{2}&amp;b_{2}&amp;c_{2} # a_{3}&amp;b_{3}&amp;c_{3}}</td>
+<td><img src="../../images/4i11_028.gif" border="0" alt="" style="width:100%; max-width:61px" /></td>
+</tr>
+<tr>
+<td>DMATRIX</td>
+<td>matrix 대신에 dmatrix를 쓰면 행렬(matrix) 앞뒤로 세로줄|을 표시해줍니다.</td>
+<td>dmatrix{a_{1} &amp;b_{1}&amp;c_{1} # a_{2}&amp;b_{2}&amp;c_{2} # a_{3}&amp;b_{3}&amp;c_{3}}</td>
+<td><img src="../../images/4i11_029.gif" border="0" alt="" style="width:100%; max-width:56px" /></td>
+</tr>
+</table>
+</div>
+<h3>글자 장식 명령어</h3>
+<p>문자 또는 단어에 간단한 명령어를 앞세워 여러 가지 글자 장식을 할 수 있습니다. 해당 명령어를 먼저 입력한 후 문자는 나중에 입력합니다.</p>
+<p>ACUTE, GRAVE, DOT, DDOT, BAR, VEC, DYAD, UNDER 등이 있습니다.</p>
+<div class="table02">
+<table>
+<tr>
+<th>입력</th>
+<th>결과</th>
+<th>입력</th>
+<th>결과</th>
+</tr>
+<tr>
+<td>acute A</td>
+<td><img src="../../images/4i11_03a.gif" border="0" alt="" style="width:100%; max-width:13px" /></td>
+<td>bar A</td>
+<td><img src="../../images/4i11_03k.gif" border="0" alt="" style="width:100%; max-width:14px" /></td>
+</tr>
+<tr>
+<td>grave A</td>
+<td><img src="../../images/4i11_03b.gif" border="0" alt="" style="width:100%; max-width:13px" /></td>
+<td>vec A</td>
+<td><img src="../../images/4i11_03l.gif" border="0" alt="" style="width:100%; max-width:16px" /></td>
+</tr>
+<tr>
+<td>dot A</td>
+<td><img src="../../images/4i11_03c.gif" border="0" alt="" style="width:100%; max-width:13px" /></td>
+<td>dyad A</td>
+<td><img src="../../images/4i11_03m.gif" border="0" alt="" style="width:100%; max-width:17px" /></td>
+</tr>
+<tr>
+<td>ddot A</td>
+<td><img src="../../images/4i11_03d.gif" border="0" alt="" style="width:100%; max-width:12px" /></td>
+<td>under A</td>
+<td><img src="../../images/4i11_03n.gif" border="0" alt="" style="width:100%; max-width:16px" /></td>
+</tr>
+<tr>
+<td>hat A</td>
+<td><img src="../../images/4i11_03e.gif" border="0" alt="" style="width:100%; max-width:13px" /></td>
+<td>arch A</td>
+<td><img src="../../images/4i11_03o.gif" border="0" alt="" style="width:100%; max-width:14px" /></td>
+</tr>
+<tr>
+<td>hat AA</td>
+<td><img src="../../images/4i11_03f.gif" border="0" alt="" style="width:100%; max-width:26px" /></td>
+<td>arch AA</td>
+<td><img src="../../images/4i11_03p.gif" border="0" alt="" style="width:100%; max-width:27px" /></td>
+</tr>
+<tr>
+<td>hat AAA</td>
+<td><img src="../../images/4i11_03g.gif" border="0" alt="" style="width:100%; max-width:40px" /></td>
+<td>arch AAA</td>
+<td><img src="../../images/4i11_03q.gif" border="0" alt="" style="width:100%; max-width:41px" /></td>
+</tr>
+<tr>
+<td>check A</td>
+<td><img src="../../images/4i11_03h.gif" border="0" alt="" style="width:100%; max-width:14px" /></td>
+<td>tilde A</td>
+<td><img src="../../images/4i11_03r.gif" border="0" alt="" style="width:100%; max-width:13px" /></td>
+</tr>
+<tr>
+<td>check AA</td>
+<td><img src="../../images/4i11_03i.gif" border="0" alt="" style="width:100%; max-width:27px" /></td>
+<td>tilde AA</td>
+<td><img src="../../images/4i11_03s.gif" border="0" alt="" style="width:100%; max-width:27px" /></td>
+</tr>
+<tr>
+<td>check AAA</td>
+<td><img src="../../images/4i11_03j.gif" border="0" alt="" style="width:100%; max-width:41px" /></td>
+<td>tilde AAA</td>
+<td><img src="../../images/4i11_03t.gif" border="0" alt="" style="width:100%; max-width:40px" /></td>
+</tr>
+</table>
+</div>
+<h3>입력 기호 요약</h3>
+<p>문자 또는 단어에 간단한 명령어를 넣어 수식을 편집할 수 있습니다.</p>
+<p>~, `, { }, " ", #, &amp; 등이 있습니다.</p>
+<div class="table02">
+<table>
+<tr>
+<th>입력</th>
+<th>결과</th>
+</tr>
+<tr>
+<td>~</td>
+<td>빈칸 (스페이스 효과)</td>
+</tr>
+<tr>
+<td>'</td>
+<td>빈칸의 1/4</td>
+</tr>
+<tr>
+<td>{ &#160;&#160;}</td>
+<td>여러 항의 묶음</td>
+</tr>
+<tr>
+<td>" &#160;&#160;"</td>
+<td>9자 이상의 한 낱말 묶음</td>
+</tr>
+<tr>
+<td>#</td>
+<td>줄 바꾸기 (&lt;Enter&gt; 효과)</td>
+</tr>
+<tr>
+<td>&amp;</td>
+<td>세로 칸 맞춤 (탭 효과)</td>
+</tr>
+</table>
+</div>
+<h2>참고</h2>
+<h3>사용하지 않는 명령어</h3>
+<p>Windows용 한/글 97의 [수식 편집기]에서 사용하던 다음과 같은 명령어는 더 이상 사용할 수 없습니다.</p>
+<p>FROM, TO: 아래,위 범위</p>
+<p>SCALE: 글자의 크기 비율(%)</p>
+<p>PHANTOM: 허깨비</p>
+<h2>주의</h2>
+<h3>대소문자 구별</h3>
+<p>대부분의 명령어는 대소문자를 구분하지 않지만 첫 글자를 대문자로 기재한 것은 반드시 대문자로 입력해야 합니다.</p>
+<h2>관련 기능</h2>
+<p class="related-link"><a href="equation.htm">수식</a>, <!--<a href="../equation/equation(rule).htm">수식 편집 시 유의 사항</a>, <a href="../equation/equation(font).htm">수식 글꼴과 기본 함수</a>, <a href="../equation/equation(toolbar).htm">수식 도구 상자</a>, <a href="../equation/equation(symbol).htm">수식 기호 입력</a>, --><a href="equation(script).htm">수식 명령어 목록</a></p>
+<p class="footer"><a href="http://www.hancom.com/" target="_blank">www.hancom.com</a></p>
+</body>
+</html>

@@ -1,0 +1,111 @@
+<!--
+  Copyright 2023 Hancom Inc. All rights reserved.
+  https://www.hancom.com/
+-->
+<!DOCTYPE HTML>
+<html>
+<head>
+
+
+
+<meta name="keywords" content="편집|오려 두기" />
+<link rel="stylesheet" type="text/css" href="../help.css" />
+<title>오려 두기</title>
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+ <script type="text/javascript" language="JavaScript">
+//<![CDATA[
+function reDo() {
+  if (innerWidth != origWidth || innerHeight != origHeight)
+     location.reload();
+}
+if ((parseInt(navigator.appVersion) == 4) && (navigator.appName == "Netscape")) {
+	origWidth = innerWidth;
+	origHeight = innerHeight;
+	onresize = reDo;
+}
+onerror = null; 
+//]]>
+</script>
+<style type="text/css">
+<!--
+div.WebHelpPopupMenu { position:absolute;
+left:0px;
+top:0px;
+z-index:4;
+visibility:hidden; }
+p.WebHelpNavBar { text-align:right; }
+-->
+</style>
+ <meta name="generator" content="Adobe RoboHelp 2015" />
+<script type="text/javascript" src="../template/scripts/rh.min.js"></script>
+<script type="text/javascript" src="../template/scripts/common.min.js"></script>
+<script type="text/javascript" src="../template/scripts/topic.min.js"></script>
+<script type="text/javascript" src="../template/scripts/constants.js"></script>
+<script type="text/javascript" src="../template/scripts/utils.js"></script>
+<script type="text/javascript" src="../template/scripts/mhutils.js"></script>
+<script type="text/javascript" src="../template/scripts/mhlang.js"></script>
+<script type="text/javascript" src="../template/scripts/mhver.js"></script>
+<script type="text/javascript" src="../template/scripts/settings.js"></script>
+<script type="text/javascript" src="../template/scripts/XmlJsReader.js"></script>
+<script type="text/javascript" src="../template/scripts/loadparentdata.js"></script>
+<script type="text/javascript" src="../template/scripts/loadscreen.js"></script>
+<script type="text/javascript" src="../template/scripts/loadprojdata.js"></script>
+<script type="text/javascript" src="../template/scripts/mhtopic.js"></script>
+ <link rel="stylesheet" type="text/css" href="../template/styles/topic.min.css">
+<script type="text/javascript" >
+gRootRelPath = "..";
+gCommonRootRelPath = "..";
+gTopicId = "3.0_3";
+</script>
+ <meta name="brsprev" value="edit/redo.htm">
+ <meta name="brsnext" value="edit/copy.htm">
+ <meta name="topic-breadcrumbs" content="편집" />
+</head>
+<body>
+<script type="text/javascript" src="../ehlpdhtm.js"></script>
+
+<h1>오려 두기 &lt;Ctrl+X&gt;</h1>
+<p class="intro">블록으로 선택한 부분을 잘라내어 클립보드에 임시로 저장했다가 원하는 위치에 붙여넣을 수 있습니다. 오려 두기를 실행하면 선택한 내용은 문서에서 사라지고 클립보드에 저장됩니다.</p>
+<p class="intro2">편집 중인 문서의 내용을 다른 곳으로 이동할 때 주로 사용합니다.</p>
+<h2>따라 하기</h2>
+<ol>
+<li>문서에서 잘라낼 글자 또는 개체를 선택합니다.</li>
+<li>&lt;Ctrl+X&gt;를 누릅니다. 선택한 내용이 사라지며 클립보드에 저장됩니다.</li>
+</ol>
+<h2>참고</h2>
+<h3>단축키 사용</h3>
+<p>일부 웹 환경에서 클립보드에 접근하려면 반드시 단축키를 사용해야 합니다. 따라서 오려 두기, 복사하기, 붙이기 기능을 실행하려면 다음 단축키를 사용하시기 바랍니다. <!--<?rh-cbt_start condition="hwpctrl_only" ?>Internet Explorer에서는 단축키 대신 [편집-복사하기]를 사용할 수 있습니다.<?rh-cbt_end ?>--></p>
+<ul>
+<li><strong>오려 두기</strong>: Ctrl + X</li>
+<li><strong>복사하기</strong>: Ctrl + C</li>
+<li><strong>붙이기</strong>: Ctrl + V</li>
+</ul>
+
+<h3>복사하기와 오려 두기</h3>
+<ul>
+<li><strong>복사하기</strong>: 블록으로 설정된 부분을 클립보드에 저장하는 작업만 수행합니다.</li>
+<li><strong>오려 두기</strong>: 블록으로 설정된 부분을 클립보드에 저장하면서 현재 위치에서는 그 내용을 지웁니다.</li>
+</ul>
+<!--<h3>마우스로 끌어다 놓기</h3>
+<p>블록을 설정한 후에 블록 안에 마우스 포인터를 놓고 마우스 포인터를 끌다가 원하는 위치에서 놓으면 블록 영역 내용을 오려내어 다른 곳에 손쉽게 붙여 넣을 수 있습니다.</p>-->
+<h3>클립보드</h3>
+<p>클립보드(clipboard)는 윈도우에서 응용 프로그램 사이의 데이터 전송을 위해 사용되는 임시 기억 장소입니다.</p>
+<p>일반적으로 응용 프로그램에서 [<a href="copy.htm">복사하기</a>]나 [오려 두기]를 실행하여 데이터를 클립보드에 임시로 저장하고, [<a href="paste.htm">붙이기</a>]를 실행하여 클립보드에 임시 저장된 데이터를 문서에 삽입합니다.</p>
+
+<!--<h3>표에서 셀까지 오려 두기</h3>
+<p>셀 블록을 설정하고 [오려 두기]를 실행할 때, 선택된 셀 블록이 줄 전체나 칸 전체를 포함하는 직사각형 모양이면 셀 안의 내용뿐만 아니라 선택한 셀들까지 함께 오릴 수 있습니다.</p>
+<p>"선택된 셀들을 오립니다. 내용만 지우고 셀 모양은 남겨 둘까요?" 메시지가 나타났을 때 [남김]을 선택하면, 셀은 그대로 두고 셀 안의 내용만 오려 냅니다. [지우기]를 선택하면 블록으로 설정한 셀까지 오려 두므로 표의 모양이 바뀝니다.</p>
+<p>줄이나 칸 전체를 셀 블록으로 설정하지 않고 일부분만 셀 블록으로 설정해 [오려 두기]를 실행하면 아무런 질문 없이 셀 안의 내용만 오려 냅니다.</p>
+<p class="factor">"선택된 셀들을 오립니다. 셀 모양은 남겨 둘까요?" - [지우기] 선택</p>
+<p><img src="../images/2e03_003.gif" border="0" alt="" /></p>
+<p class="factor">"선택된 셀들을 오립니다. 셀 모양은 남겨 둘까요?" - [남김] 선택</p>
+<p><img src="../images/2e03_001.gif" border="0" alt="" /></p>-->
+<h2>활용</h2>
+<h3>대화 상자의 입력 상자에서도 사용</h3>
+<p>[<a href="copy.htm">복사하기</a>], [오려 두기], [<a href="paste.htm">붙이기</a>]는 대화 상자에서 [파일 이름]과 같이 사용자가 내용을 직접 입력할 수 있는 대부분의 입력 상자에서도 쓸 수 있습니다.</p>
+
+<h2>관련 기능</h2>
+<p class="related-link"><a href="copy.htm">복사하기</a>, <a href="paste.htm">붙이기</a>, <a href="select_all.htm">모두 선택</a>, <a href="../table/table.htm">표 만들기</a></p>
+<p class="footer"><a href="http://www.hancom.com/" target="_blank">www.hancom.com</a></p>
+</body>
+</html>

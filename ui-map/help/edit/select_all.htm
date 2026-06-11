@@ -1,0 +1,100 @@
+<!--
+  Copyright 2023 Hancom Inc. All rights reserved.
+  https://www.hancom.com/
+-->
+<!DOCTYPE HTML>
+<html>
+<head>
+
+
+
+<meta name="keywords" content="편집|모두 선택" />
+<link rel="stylesheet" type="text/css" href="../help.css" />
+<title>모두 선택</title>
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+ <script type="text/javascript" language="JavaScript">
+//<![CDATA[
+function reDo() {
+  if (innerWidth != origWidth || innerHeight != origHeight)
+     location.reload();
+}
+if ((parseInt(navigator.appVersion) == 4) && (navigator.appName == "Netscape")) {
+	origWidth = innerWidth;
+	origHeight = innerHeight;
+	onresize = reDo;
+}
+onerror = null; 
+//]]>
+</script>
+<style type="text/css">
+<!--
+div.WebHelpPopupMenu { position:absolute;
+left:0px;
+top:0px;
+z-index:4;
+visibility:hidden; }
+p.WebHelpNavBar { text-align:right; }
+-->
+</style>
+ <meta name="generator" content="Adobe RoboHelp 2015" />
+<script type="text/javascript" src="../template/scripts/rh.min.js"></script>
+<script type="text/javascript" src="../template/scripts/common.min.js"></script>
+<script type="text/javascript" src="../template/scripts/topic.min.js"></script>
+<script type="text/javascript" src="../template/scripts/constants.js"></script>
+<script type="text/javascript" src="../template/scripts/utils.js"></script>
+<script type="text/javascript" src="../template/scripts/mhutils.js"></script>
+<script type="text/javascript" src="../template/scripts/mhlang.js"></script>
+<script type="text/javascript" src="../template/scripts/mhver.js"></script>
+<script type="text/javascript" src="../template/scripts/settings.js"></script>
+<script type="text/javascript" src="../template/scripts/XmlJsReader.js"></script>
+<script type="text/javascript" src="../template/scripts/loadparentdata.js"></script>
+<script type="text/javascript" src="../template/scripts/loadscreen.js"></script>
+<script type="text/javascript" src="../template/scripts/loadprojdata.js"></script>
+<script type="text/javascript" src="../template/scripts/mhtopic.js"></script>
+ <link rel="stylesheet" type="text/css" href="../template/styles/topic.min.css">
+<script type="text/javascript" >
+gRootRelPath = "..";
+gCommonRootRelPath = "..";
+gTopicId = "3.1_3";
+</script>
+ <meta name="brsprev" value="edit/erase.htm">
+ <meta name="brsnext" value="edit/find_replace.htm">
+ <meta name="topic-breadcrumbs" content="편집" />
+</head>
+<body>
+<script type="text/javascript" src="../ehlpdhtm.js"></script>
+
+<h1>모두 선택 &lt;Ctrl+A&gt;</h1>
+<p class="intro">문서의 맨 처음부터 끝까지 내용 전부를 블록으로 설정합니다.<br />
+문서 전체에 대한 글자 모양이나 문단 모양을 바꿀 때, 또는 문서 전체를 [복사하기], [오려 두기], [지우기] 등을 실행할 때 편리하게 쓸 수 있습니다.</p>
+<h2>따라 하기</h2>
+<ol>
+<li>[편집-모두 선택]을 실행합니다.</li>
+<li>편집 중인 문서 전체가 블록으로 설정됩니다.</li>
+<li>원하는 다른 명령을 실행합니다.</li>
+<li>블록을 해제하려면 &lt;Esc&gt;를 누릅니다.</li>
+</ol>
+<h2>참고</h2>
+<h3>모두 선택 유의 사항</h3>
+<ul>
+<!--<li><strong>마우스로 모두 선택</strong>
+<p>편집 화면에서 왼쪽 빈 곳(편집 용지 왼쪽 여백 부분)으로 마우스 포인터를 움직이면, 마우스 포인터가 왼쪽에서 오른쪽을 가리키는 모양으로 뒤집힙니다.<br/>
+여기서 마우스를 세 번 누르면 문서 전체가 블록으로 설정됩니다.</p>
+</li>-->
+<li><strong>글자판으로 모두 선택</strong>
+<p>본문에서 어떤 낱말에 커서를 놓고 &lt;F3&gt;을 두 번 누르면 그 낱말이 블록으로 설정됩니다. 세 번 누르면 그 문단이 블록으로 설정됩니다. 그리고 네 번 누르면 [모두 선택]을 한 것과 같이 문서 전체가 블록으로 설정됩니다.</p>
+</li>
+<li><strong>표나 글상자 안에서의 모두 선택</strong>
+<p>표나 글상자 안에 커서를 놓고 [모두 선택]을 하면 현재 셀이나 글상자 안의 내용만 블록으로 설정합니다.</p>
+</li>
+</ul>
+<!--<h2>활용</h2>
+<h3>쪽 설정 상태 복사하기</h3>
+<p>문서 전체를 [모두 선택]한 다음 [<a href="../edit/copy.htm">복사하기</a>]나 [<a href="../edit/cut.htm">오려 두기</a>]를 실행하면, 문서 내용뿐만 아니라 [<a href="../format/setting_paper/setting_paper.htm">편집 용지</a>]와 [<a href="../format/pageborder/page_border.htm">쪽 테두리/배경</a>] 설정 상태까지 복사됩니다.<br />
+이제 [<a href="../file/new/new.htm">새 문서</a>]나 [<a href="../file/new_tab.htm">새 탭</a>]을 실행하여 깨끗한 빈문서를 만든 다음 복사해 둔 내용을 [<a href="../edit/paste.htm">붙이기</a>]하면, 문서의 내용과 쪽 설정 상태까지 그대로 새 문서에 복사됩니다.<br />
+이처럼 내용과 편집 용지를 함께 복사하기 위해서는 문서 전체를 블록으로 설정하여 복사해야 합니다.</p>-->
+<h2>관련 기능</h2>
+<p class="related-link"><a href="copy.htm">복사하기</a>, <a href="cut.htm">오려 두기</a>, <a href="paste.htm">붙이기</a></p>
+<p class="footer"><a href="http://www.hancom.com/" target="_blank">www.hancom.com</a></p>
+</body>
+</html>

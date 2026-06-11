@@ -1,0 +1,101 @@
+<!--
+  Copyright 2023 Hancom Inc. All rights reserved.
+  https://www.hancom.com/
+-->
+<!DOCTYPE HTML>
+<html>
+<head>
+
+
+
+<meta name="keywords" content="편집|지우기" />
+<link rel="stylesheet" type="text/css" href="../help.css" />
+<title>지우기</title>
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+ <script type="text/javascript" language="JavaScript">
+//<![CDATA[
+function reDo() {
+  if (innerWidth != origWidth || innerHeight != origHeight)
+     location.reload();
+}
+if ((parseInt(navigator.appVersion) == 4) && (navigator.appName == "Netscape")) {
+	origWidth = innerWidth;
+	origHeight = innerHeight;
+	onresize = reDo;
+}
+onerror = null; 
+//]]>
+</script>
+<style type="text/css">
+<!--
+div.WebHelpPopupMenu { position:absolute;
+left:0px;
+top:0px;
+z-index:4;
+visibility:hidden; }
+p.WebHelpNavBar { text-align:right; }
+-->
+</style>
+ <meta name="generator" content="Adobe RoboHelp 2015" />
+<script type="text/javascript" src="../template/scripts/rh.min.js"></script>
+<script type="text/javascript" src="../template/scripts/common.min.js"></script>
+<script type="text/javascript" src="../template/scripts/topic.min.js"></script>
+<script type="text/javascript" src="../template/scripts/constants.js"></script>
+<script type="text/javascript" src="../template/scripts/utils.js"></script>
+<script type="text/javascript" src="../template/scripts/mhutils.js"></script>
+<script type="text/javascript" src="../template/scripts/mhlang.js"></script>
+<script type="text/javascript" src="../template/scripts/mhver.js"></script>
+<script type="text/javascript" src="../template/scripts/settings.js"></script>
+<script type="text/javascript" src="../template/scripts/XmlJsReader.js"></script>
+<script type="text/javascript" src="../template/scripts/loadparentdata.js"></script>
+<script type="text/javascript" src="../template/scripts/loadscreen.js"></script>
+<script type="text/javascript" src="../template/scripts/loadprojdata.js"></script>
+<script type="text/javascript" src="../template/scripts/mhtopic.js"></script>
+ <link rel="stylesheet" type="text/css" href="../template/styles/topic.min.css">
+<script type="text/javascript" >
+gRootRelPath = "..";
+gCommonRootRelPath = "..";
+gTopicId = "3.1_1";
+</script>
+ <meta name="brsprev" value="edit/quick_format(cell).htm">
+ <meta name="brsnext" value="edit/select_all.htm">
+ <meta name="topic-breadcrumbs" content="편집" />
+</head>
+<body>
+<script type="text/javascript" src="../ehlpdhtm.js"></script>
+
+<h1>지우기 &lt;Ctrl+E&gt;</h1>
+<p class="intro">블록으로 선택한 내용을 지웁니다. 문서에서 필요 없는 부분을 한꺼번에 지울 때 사용합니다.</p>
+<h2>따라 하기</h2>
+<ol>
+<li>문서에서 지우려는 내용을 블록으로 선택합니다.</li>
+<li>[편집-지우기]를 실행합니다. 블록으로 선택한 내용이 지워집니다.</li>
+</ol>
+<h2>참고</h2>
+<h3>지우기 유의 사항</h3>
+<ul>
+<li><strong>지운 내용은 기억되지 않음</strong>
+<p>[지우기]를 실행한 것은 이름 그대로 지운 것일 뿐입니다. [복사하기], [오려 두기]와 달리 그 내용이 클립보드에 저장되지 않습니다.</p>
+<li><strong>지우기와 되돌리기</strong>
+<p>지금 [지우기]를 실행한 것이 실수였다면, 바로 [되돌리기]를 실행해야 합니다. 바로 전에 실행한 [지우기]의 동작을 취소하므로 지운 내용이 되살아납니다.</p>
+</li>
+<li><strong>&lt;Delete&gt;와 &lt;BackSpace&gt;</strong>
+<p>[지우기]의 단축키는 &lt;Ctrl+E&gt;입니다. 블록을 설정한 상태에서 &lt;Delete&gt;나 &lt;BackSpace&gt;를 눌러도 [지우기]와 똑같이 동작합니다.</p>
+</li>
+<li><strong>블록을 설정한 상태에서 입력하면 블록 내용이 지워짐</strong>
+<p>블록을 설정한 상태에서 글자판을 눌러 입력을 시작하면, 블록으로 설정된 부분이 지워지면서 그 자리에 새로운 내용이 입력됩니다.</p>
+</li>
+</ul>
+<!--<h3>표에서 셀까지 지우기</h3>
+<p>셀 블록을 설정하고 [지우기]를 실행할 때, 선택된 셀 블록이 줄 전체나 칸 전체를 포함하는 직사각형 모양이면 셀 안의 내용뿐만 아니라 선택한 셀들까지 함께 지울 수 있습니다.</p>
+<p>"선택된 셀들을 지웁니다. 내용만 지우고 셀 모양은 남겨 둘까요?" 메시지가 나타났을 때 [남김]을 선택하면, 셀은 그대로 두고 셀 안의 내용만 지웁니다. [지우기]를 선택하면 블록으로 설정한 셀까지 지우므로 표의 모양이 바뀝니다.</p>
+<p>줄이나 칸 전체를 셀 블록으로 설정하지 않고 일부분만 셀 블록으로 설정해 [지우기]를 실행하면 아무런 질문 없이 셀 안의 내용만 지웁니다.</p>
+<p class="factor">"선택된 셀들을 지웁니다. 내용만 지우고 셀 모양은 남겨 둘까요?" - [지우기] 선택</p>
+<p><img src="../images/2e03_003.gif" border="0" class="img01" alt="" /></p>
+<p class="factor">"선택된 셀들을 지웁니다. 내용만 지우고 셀 모양은 남겨 둘까요?" - [남김] 선택</p>
+<p><img src="../images/2e03_001.gif" border="0" class="img01" alt="" /></p>-->
+<h2>관련 기능</h2>
+<p class="related-link"><a href="copy.htm">복사하기</a>, <a href="paste.htm">붙이기</a></p>
+<p class="footer"><a href="http://www.hancom.com/" target="_blank">www.hancom.com</a></p>
+</body>
+</html>

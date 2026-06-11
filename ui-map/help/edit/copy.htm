@@ -1,0 +1,109 @@
+<!--
+  Copyright 2023 Hancom Inc. All rights reserved.
+  https://www.hancom.com/
+-->
+<!DOCTYPE HTML>
+<html>
+<head>
+
+
+
+<meta name="keywords" content="편집|복사하기" />
+<link rel="stylesheet" type="text/css" href="../help.css" />
+<title>복사하기</title>
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+ <script type="text/javascript" language="JavaScript">
+//<![CDATA[
+function reDo() {
+  if (innerWidth != origWidth || innerHeight != origHeight)
+     location.reload();
+}
+if ((parseInt(navigator.appVersion) == 4) && (navigator.appName == "Netscape")) {
+	origWidth = innerWidth;
+	origHeight = innerHeight;
+	onresize = reDo;
+}
+onerror = null; 
+//]]>
+</script>
+<style type="text/css">
+<!--
+div.WebHelpPopupMenu { position:absolute;
+left:0px;
+top:0px;
+z-index:4;
+visibility:hidden; }
+p.WebHelpNavBar { text-align:right; }
+-->
+</style>
+ <meta name="generator" content="Adobe RoboHelp 2015" />
+<script type="text/javascript" src="../template/scripts/rh.min.js"></script>
+<script type="text/javascript" src="../template/scripts/common.min.js"></script>
+<script type="text/javascript" src="../template/scripts/topic.min.js"></script>
+<script type="text/javascript" src="../template/scripts/constants.js"></script>
+<script type="text/javascript" src="../template/scripts/utils.js"></script>
+<script type="text/javascript" src="../template/scripts/mhutils.js"></script>
+<script type="text/javascript" src="../template/scripts/mhlang.js"></script>
+<script type="text/javascript" src="../template/scripts/mhver.js"></script>
+<script type="text/javascript" src="../template/scripts/settings.js"></script>
+<script type="text/javascript" src="../template/scripts/XmlJsReader.js"></script>
+<script type="text/javascript" src="../template/scripts/loadparentdata.js"></script>
+<script type="text/javascript" src="../template/scripts/loadscreen.js"></script>
+<script type="text/javascript" src="../template/scripts/loadprojdata.js"></script>
+<script type="text/javascript" src="../template/scripts/mhtopic.js"></script>
+ <link rel="stylesheet" type="text/css" href="../template/styles/topic.min.css">
+<script type="text/javascript" >
+gRootRelPath = "..";
+gCommonRootRelPath = "..";
+gTopicId = "3.0_4";
+</script>
+ <meta name="brsprev" value="edit/cut.htm">
+ <meta name="brsnext" value="edit/paste.htm">
+ <meta name="topic-breadcrumbs" content="편집" />
+</head>
+<body>
+<script type="text/javascript" src="../ehlpdhtm.js"></script>
+
+<h1>복사하기 &lt;Ctrl+C&gt;</h1>
+<p class="intro">블록으로 선택한 부분을 클립보드에 저장합니다. 저장된 내용은 [편집-붙이기]를 실행하여 원하는 위치에 붙여넣을 수 있습니다. 문서의 특정 내용을 다른 곳에서 동일하게 사용할 때 주로 사용합니다.</p>
+<h2>따라 하기</h2>
+<ol>
+<li>문서에서 복사하려는 내용을 블록으로 선택합니다.</li>
+<li>&lt;Ctrl+C&gt;를 누릅니다. 선택한 내용이 클립보드에 저장됩니다.</li>
+</ol>
+<h2>참고</h2>
+<h3>단축키 사용</h3>
+<p>일부 웹 환경에서 클립보드에 접근하려면 반드시 단축키를 사용해야 합니다. 따라서 오려 두기, 복사하기, 붙이기 기능을 실행하려면 다음 단축키를 사용하시기 바랍니다. <!--<?rh-cbt_start condition="hwpctrl_only" ?>Internet Explorer에서는 단축키 대신 [편집-복사하기]를 사용할 수 있습니다.<?rh-cbt_end ?>--></p>
+<ul>
+<li><strong>오려 두기</strong>: Ctrl + X</li>
+<li><strong>복사하기</strong>: Ctrl + C</li>
+<li><strong>붙이기</strong>: Ctrl + V</li>
+</ul>
+
+<h3>복사하기와 오려 두기</h3>
+<ul>
+<li><strong>복사하기</strong>: 블록으로 설정된 부분을 클립보드에 저장하는 작업만 수행합니다.</li>
+<li><strong>오려 두기</strong>: 블록으로 설정된 부분을 클립보드에 저장하면서 현재 위치에서는 그 내용을 지웁니다.</li>
+</ul>
+<!--<h3>마우스로 끌어다 놓기</h3>
+<p>블록을 설정한 후에 블록 안에 마우스 포인터를 놓고 &lt;Ctrl&gt;을 누른 채로 마우스 포인터를 끌다가 원하는 위치에서 놓으면 쉽게 블록 영역 내용을 복사하여 붙여 넣을 수 있습니다.</p>-->
+<h3>클립보드</h3>
+<p>클립보드(clipboard)는 윈도우에서 응용 프로그램 사이의 데이터 전송을 위해 사용되는 임시 기억 장소입니다.</p>
+<p>일반적으로 응용 프로그램에서 [복사하기]나 [<a href="cut.htm">오려 두기</a>]를 실행하여 데이터를 클립보드에 임시로 저장하고, [<a href="paste.htm">붙이기</a>]를 실행하여 클립보드에 임시 저장된 데이터를 문서에 삽입합니다.</p>
+
+<h3>표 안에서의 복사하기</h3>
+<p>셀 블록을 설정하고 [복사하기]를 하면 표 안의 내용뿐만 아니라 블록으로 설정한 표의 틀까지 복사됩니다.</p>
+<p>표 안에서 [붙이기]를 하면 [셀 붙이기] 대화 상자가 나타납니다. 여기서 복사한 표를 끼워 넣을 것인지, 덮어 쓸 것인지, 셀 안에 표로 넣을 것인지 붙일 방법을 선택합니다.</p>
+<h2>활용</h2>
+<h3>대화 상자의 입력 상자에서도 사용</h3>
+<p>[복사하기], [<a href="cut.htm">오려 두기</a>], [<a href="paste.htm">붙이기</a>]는 대화 상자에서 [파일 이름]과 같이 사용자가 내용을 직접 입력할 수 있는 대부분의 입력 상자에서도 쓸 수 있습니다.</p>
+
+<!--<h3>쪽 설정 상태 복사하기</h3>
+<p>문서 전체를 [<a href="../edit/select_all.htm">모두 선택</a>]한 다음 [복사하기]나 [<a href="../edit/cut.htm">오려 두기</a>]를 실행하면, 문서 내용뿐만 아니라 [<a href="../format/setting_paper/setting_paper.htm">편집 용지</a>]와 [<a href="../format/pageborder/page_border.htm">쪽 테두리/배경</a>] 설정 상태까지 복사됩니다.</p>
+<p>이제 [<a href="../file/new/new.htm">새 문서</a>]나 [<a href="../file/new_tab.htm">새 탭</a>]을 실행하여 깨끗한 빈 문서를 만든 다음 복사해 둔 내용을 [<a href="../edit/paste.htm">붙이기</a>]하면, 문서의 내용과 쪽 설정 상태까지 그대로 새 문서에 복사됩니다.</p>
+<p>이처럼 내용과 편집 용지를 함께 복사하기 위해서는 문서 전체를 블록으로 설정하여 복사해야 합니다.</p>-->
+<h2>관련 기능</h2>
+<p class="related-link"><a href="cut.htm">오려 두기</a>, <a href="paste.htm">붙이기</a>, <a href="select_all.htm">모두 선택</a></p>
+<p class="footer"><a href="http://www.hancom.com/" target="_blank">www.hancom.com</a></p>
+</body>
+</html>

@@ -10,6 +10,8 @@ claw-hancomdocs "메뉴바 클릭 편집" 스킬(Phase 2)의 **목표 단위(op)
 | `MENU_MAP.md` | 9개 메뉴(파일·편집·보기·입력·서식·쪽·표·검토·도구) 항목 + **CSS 셀렉터** + 우선순위 | 사람 읽기용 op 맵 |
 | `menu-inventory.json` | 라이브 sweep 산출(머신리더블) | 스킬이 런타임에 셀렉터 resolve |
 | `screenshots/` | 조사 증거(메뉴·서브메뉴·우클릭 스샷) | 재생성: `scripts/menu-explore.js --sweep` |
+| `SHORTCUTS.md` | 공식 단축키 일람(Win/macOS) | 출처: 공식 도움말 `shortcut/shortcut.htm` (2026-06-11). ⚠️ 단축키 신뢰불가 원칙 그대로 — 참고/보조용. 단 F5 셀블록·개체선택 P/L/C 등 메뉴에 없는 키는 op 핵심 수단 |
+| `help/` | **공식 도움말 전체 미러**(160페이지, RoboHelp) | `help/INDEX.md`=목차, 재생성: `node ui-map/help/fetch_help.mjs`. 출처: webhwp.hancomdocs.com/cloud-hwp/help/Hwp/ko_kr/ |
 
 ## 핵심 원칙 — 좌표 아닌 셀렉터
 

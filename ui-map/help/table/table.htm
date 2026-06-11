@@ -1,0 +1,148 @@
+<!--
+  Copyright 2023 Hancom Inc. All rights reserved.
+  https://www.hancom.com/
+-->
+<!DOCTYPE HTML>
+<html>
+<head>
+
+
+
+<meta name="keywords" content="입력|표 만들기" />
+<link rel="stylesheet" type="text/css" href="../help.css" />
+<title>표 만들기</title>
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+<script type="text/javascript" language="JavaScript">
+//<![CDATA[
+function reDo() {
+  if (innerWidth != origWidth || innerHeight != origHeight)
+     location.reload();
+}
+if ((parseInt(navigator.appVersion) == 4) && (navigator.appName == "Netscape")) {
+	origWidth = innerWidth;
+	origHeight = innerHeight;
+	onresize = reDo;
+}
+onerror = null; 
+//]]>
+</script>
+<style type="text/css">
+<!--
+div.WebHelpPopupMenu { position:absolute;
+left:0px;
+top:0px;
+z-index:4;
+visibility:hidden; }
+p.WebHelpNavBar { text-align:right; }
+-->
+</style>
+ <meta name="generator" content="Adobe RoboHelp 2015" />
+<script type="text/javascript" src="../template/scripts/rh.min.js"></script>
+<script type="text/javascript" src="../template/scripts/common.min.js"></script>
+<script type="text/javascript" src="../template/scripts/topic.min.js"></script>
+<script type="text/javascript" src="../template/scripts/constants.js"></script>
+<script type="text/javascript" src="../template/scripts/utils.js"></script>
+<script type="text/javascript" src="../template/scripts/mhutils.js"></script>
+<script type="text/javascript" src="../template/scripts/mhlang.js"></script>
+<script type="text/javascript" src="../template/scripts/mhver.js"></script>
+<script type="text/javascript" src="../template/scripts/settings.js"></script>
+<script type="text/javascript" src="../template/scripts/XmlJsReader.js"></script>
+<script type="text/javascript" src="../template/scripts/loadparentdata.js"></script>
+<script type="text/javascript" src="../template/scripts/loadscreen.js"></script>
+<script type="text/javascript" src="../template/scripts/loadprojdata.js"></script>
+<script type="text/javascript" src="../template/scripts/mhtopic.js"></script>
+ <link rel="stylesheet" type="text/css" href="../template/styles/topic.min.css">
+<script type="text/javascript" >
+gRootRelPath = "..";
+gCommonRootRelPath = "..";
+gTopicId = "5.1_2";
+</script>
+ <meta name="brsprev" value="insert/image.htm">
+ <meta name="brsnext" value="insert/chart.htm">
+ <meta name="topic-breadcrumbs" content="입력" />
+</head>
+<body>
+<script type="text/javascript" src="../ehlpdhtm.js"></script>
+
+<h1>표 만들기</h1>
+<!--<p class="ui-path">입력-표-표 만들기 / 표-표 만들기</p>-->
+<p class="intro">문서를 만들면서 복잡한 내용이나 수치 자료를 일목요연하게 정리하고자 할 때에는 표를 이용합니다.</p>
+<p class="intro2">한/글의 [표 만들기]는 표 안에 다른 표를 만들어 넣을 수 있으며, 한 쪽을 넘어가는 표를 자동으로 나누어 주기 때문에 매우 편리합니다.</p>
+<h2>따라 하기</h2>
+<ol>
+<li>[표-표 만들기]를 실행합니다.</li>
+<li>[표 만들기] 대화 상자가 나타나면 줄 수와 칸 수를 지정하고 [만들기] 단추를 누릅니다.</li>
+<li>표가 삽입되며 커서는 표의 첫째 줄 첫째 칸에 놓여 있습니다.</li>
+<li>이 상태에서 마치 본문을 편집하듯이 표 안에 내용을 입력합니다.</li>
+<li>글자판의 &lt;Shift+Esc&gt;를 누르거나 마우스로 표 바깥 부분을 한 번 누르면 표에서 빠져나옵니다.</li>
+</ol>
+
+<h2>자세한 정보</h2>
+<h4>[표 만들기] 대화 상자</h4>
+<h3>줄/칸</h3>
+<p>표의 줄 수와 칸 수를 지정합니다. 표를 만들 때 지정할 수는 있는 최대 줄 수와 칸 수는 128×128입니다.</p>
+<!--<p>하지만 129줄 이상이나 129칸 이상의 표를 만들 수 없다는 것은 아닙니다. 표를 만들 때 최대 16,384개의 셀 개수 안에서 줄 수와 칸 수를 조절할 수 있습니다. 만약 1,600줄을 지정했다면 칸은 최대 10칸까지만 지정할 수 있습니다. 즉, 줄 수와 칸 수를 정할 때 16,384개 이상의 셀을 가진 표를 만들 수는 없습니다.</p>-->
+<h3>크기 지정</h3>
+<p><span class="bullet-list">표의 크기를 직접 입력할 수 있습니다.</span></p>
+<ul>
+<li><strong>너비</strong></li>
+<li style="list-style: none; display: inline">
+<ul>
+<li style="list-style:circle"><strong>단에 맞춤</strong>
+<p>커서가 있는 단의 폭에 꽉 차는 너비로 표를 만듭니다.</p>
+</li>
+<li style="list-style:circle"><strong>문단에 맞춤</strong>
+<p>커서가 있는 문단 폭에 꽉 차는 너비로 표를 만듭니다.</p>
+</li>
+<li style="list-style:circle"><strong>임의 값</strong>
+<p>원하는 너비 값을 직접 입력하여 표를 만듭니다.</p>
+</li>
+</ul>
+</li>
+<li><strong>높이</strong></li>
+<li style="list-style: none; display: inline">
+<ul>
+<li style="list-style:circle"><strong>자동</strong>
+<p>셀의 기본 높이에 줄 수를 곱한 크기로 표를 만듭니다.</p>
+</li>
+<li style="list-style:circle"><strong>임의 값</strong>
+<p>원하는 높이 값을 직접 입력하여 표를 만듭니다.</p>
+</li>
+</ul>
+</li>
+</ul>
+<h3>기타</h3>
+<p>표를 만들 때 표의 위치를 글자처럼 취급할지 여부를 지정합니다.</p>
+<ul>
+<li><strong>글자처럼 취급</strong>
+<p>표를 보통 글자와 같게 취급합니다. 따라서 글을 입력하거나 지우는 대로 표의 위치가 같이 변합니다.</p>
+</li>
+<!--<li><strong>마우스 끌기로 만들기</strong>
+<p>표를 만들 때 무조건 현재 커서 위치에 만들지 않고, 사용자가 마우스 끌기로 지정한 위치에 표를 만듭니다.</p>
+<p>이 항목을 선택하지 않으면 현재 커서 위치에 현재 단의 크기만큼 꽉 차는 표가 만들어집니다.</p>
+</li>-->
+</ul>
+<!--<h3>[표마당] 단추</h3>
+<p>미리 원하는 표 모양을 선택하여 표를 만들거나 이미 만들어진 표의 모양을 쉽고 빠르게 바꿀 수 있도록 [<a href="./tablemadang/tablemadang.htm">표마당</a>] 대화 상자가 나타납니다.</p>
+<h3>[표속성] 단추</h3>
+<p>표의 테두리, 배경의 속성을 미리 지정하여 표를 만들 수 있도록 [<a href="../table/tableattribute/tableattribute.htm">표/셀 속성</a>] 대화 상자가 나타납니다.</p>-->
+<h2>참고</h2>
+<!--<h3>표 도구 상자</h3>
+<p>표를 만든 후 표 안에 커서를 두면 자동으로 표 탭이 나타납니다. 이 도구 상자를 이용해 [표 만들기, 표/셀 속성 바꾸기, 셀 나누기, 셀 합치기, 셀 너비/높이를 같게] 등의 표 편집 작업을 쉽게 수행할 수 있습니다.</p>
+<p>표 도구 상자가 나타났을 때 임의로 도구 상자를 꺼 놓으면, 표 안에 커서를 두더라도 도구 상자가 나타나지 않습니다.</p>
+<h3>표 위치 이동</h3>
+<p>표를 이동하기 위해서&lt;Alt&gt; 글쇠를 누른 상태에서 마우스로 표 내부를 누르면 마우스 포인터가 표 이동 모양(<img src="../images/cursor_move(table).gif" border="0" alt="" />)으로 바뀝니다. 이때 표 내부를 마우스로 잡고 원하는 위치로 옮깁니다. 표의 위치는 쪽 경계선을 넘어서도 이동시킬 수 있습니다.</p>-->
+<h3>표 안에 표 만들기</h3>
+<p>표 안에서 [표-표 만들기]를 실행하여 새로운 표를 만들고 편집할 수 있습니다.</p>
+<p>표 안에 삽입한 표가 현재 표의 셀보다 클 경우 나머지 부분은 가려져 보이지 않습니다. 그러므로 표 안에 삽입한 표의 크기에 맞게 셀 크기를 조정하십시오.</p>
+<h3>최소 표 크기</h3>
+<p>너비/높이를 [임의 값]으로 지정하여 표를 만들면서 줄 수와 칸 수에 비해 너무 작은 값을 지정하면, 최소 셀 너비/높이에 줄 수와 칸 수를 곱한 크기로 표를 만들어 줍니다.</p>
+<!--<h3>마우스 끌기로 삽입할 표의 기준 위치 설정하기</h3>
+<p>마우스 끌기로 본문에 삽입할 [표]가 놓일 위치와 본문과 어떤 방식으로 배치할 것인지는 [<a href="../file/options/options(object).htm">도구-환경 설정-개체</a>]에서 설정합니다.</p>-->
+<h3>표 겹쳐 놓기</h3>
+<p>두 개의 표가 [본문과의 배치-자리 차지]로 설정되어 있을 경우에는 표끼리 겹쳐지지 않습니다. 이때는 표를 선택한 후 [표/셀 속성]의 [기본] 탭에서 [위치-서로 겹침 허용] 항목을 선택해야 표를 겹쳐 놓을 수 있습니다.</p>
+<h2>관련 기능</h2>
+<p class="related-link"><a href="table(divide).htm">셀 나누기</a>, <a href="table(merge).htm">셀 합치기</a>, <a href="table(del).htm">줄/칸 지우기</a>, <a href="table(ins).htm">줄/칸 추가하기</a>, <a href="table(eqheight).htm">셀 높이를 같게</a>, <a href="table(eqwidth).htm">셀 너비를 같게</a>, <a href="tableattribute/tableattribute.htm">표/셀 속성</a>, <a href="cellborder/cellborder.htm">셀 테두리/배경</a></p>
+<p class="footer"><a href="http://www.hancom.com/" target="_blank">www.hancom.com</a></p>
+</body>
+</html>

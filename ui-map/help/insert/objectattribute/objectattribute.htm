@@ -1,0 +1,416 @@
+<!--
+  Copyright 2023 Hancom Inc. All rights reserved.
+  https://www.hancom.com/
+-->
+<!DOCTYPE HTML>
+<html>
+<head>
+
+
+
+<meta name="keywords" content="입력|개체 속성" />
+<link rel="stylesheet" type="text/css" href="../../help.css" />
+<title>개체 속성</title>
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+<script type="text/javascript" language="JavaScript">
+//<![CDATA[
+function reDo() {
+  if (innerWidth != origWidth || innerHeight != origHeight)
+     location.reload();
+}
+if ((parseInt(navigator.appVersion) == 4) && (navigator.appName == "Netscape")) {
+	origWidth = innerWidth;
+	origHeight = innerHeight;
+	onresize = reDo;
+}
+onerror = null; 
+//]]>
+</script>
+<style type="text/css">
+<!--
+div.WebHelpPopupMenu { position:absolute;
+left:0px;
+top:0px;
+z-index:4;
+visibility:hidden; }
+p.WebHelpNavBar { text-align:right; }
+-->
+</style>
+ <meta name="generator" content="Adobe RoboHelp 2015" />
+<script type="text/javascript" src="../../template/scripts/rh.min.js"></script>
+<script type="text/javascript" src="../../template/scripts/common.min.js"></script>
+<script type="text/javascript" src="../../template/scripts/topic.min.js"></script>
+<script type="text/javascript" src="../../template/scripts/constants.js"></script>
+<script type="text/javascript" src="../../template/scripts/utils.js"></script>
+<script type="text/javascript" src="../../template/scripts/mhutils.js"></script>
+<script type="text/javascript" src="../../template/scripts/mhlang.js"></script>
+<script type="text/javascript" src="../../template/scripts/mhver.js"></script>
+<script type="text/javascript" src="../../template/scripts/settings.js"></script>
+<script type="text/javascript" src="../../template/scripts/XmlJsReader.js"></script>
+<script type="text/javascript" src="../../template/scripts/loadparentdata.js"></script>
+<script type="text/javascript" src="../../template/scripts/loadscreen.js"></script>
+<script type="text/javascript" src="../../template/scripts/loadprojdata.js"></script>
+<script type="text/javascript" src="../../template/scripts/mhtopic.js"></script>
+ <link rel="stylesheet" type="text/css" href="../../template/styles/topic.min.css">
+<script type="text/javascript" >
+gRootRelPath = "../..";
+gCommonRootRelPath = "../..";
+gTopicId = "6.5";
+</script>
+ <meta name="brsprev" value="format/style/style(erase).htm">
+ <meta name="brsnext" value="insert/objectattribute/objectattribute(general).htm">
+ <meta name="topic-breadcrumbs" content="서식" />
+</head>
+<body>
+<script type="text/javascript" src="../../ehlpdhtm.js"></script>
+
+<h1>개체 속성</h1>
+<p class="intro">본문에 삽입한 개체의 크기, 위치, 여백 등과 같은 속성을 [개체 속성] 대화 상자의 [기본], [여백/캡션], [선], [채우기] 탭에서 각각 설정할 수 있습니다.</p>
+<h2>따라 하기</h2>
+<ol>
+<li>[<a href="../image.htm">입력-그림</a>]을 실행한 다음 [그림 넣기] 대화 상자가 나타나면 그림 파일의 위치와 파일 이름을 선택하고 [넣기] 단추를 누릅니다.</li>
+<li>편집 화면에 그림이 삽입되면 그림을 선택한 상태에서 &lt;P&gt;를 누르거나 [서식-개체 속성]을 실행합니다.</li>
+<li>[개체 속성] 대화 상자가 나타나면 [기본], [여백/캡션], [선] 탭 중 원하는 탭을 선택합니다.</li>
+<li>원하는 속성을 변경한 다음 [설정] 단추를 누릅니다.</li>
+</ol>
+<h2>참고</h2>
+<h3>[개체 속성] 대화 상자의 탭 종류</h3>
+<p>개체의 종류에 따라 [개체 속성] 대화 상자에 나타나는 탭의 종류가 아래와 같이 달라집니다.</p>
+
+<div class="table02">
+<table border="0" cellspacing="1" cellpadding="5" bgcolor="#CEE2ED">
+<thead>
+<tr>
+<th>종류</th>
+<th><a href="objectattribute(general).htm"><strong>기본</strong></a></th>
+<th><a href="objectattribute(outblank).htm"><strong>여백/캡션</strong></a></th>
+<th><a href="objectattribute(line).htm"><strong>선</strong></a></th>
+<th><a href="objectattribute(face).htm"><strong>채우기</strong></a></th>
+</tr>
+</thead>
+<tbody>
+<tr class="Table_w">
+<td class="table_T_sub">도형</td>
+<td class="table_T_sub">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub">
+<div align="center">○</div>
+</td>
+</tr>
+<tr class="Table_w">
+<td class="table_T_sub">글상자</td>
+<td class="table_T_sub">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub">
+<div align="center">○</div>
+</td>
+</tr>
+<tr class="Table_w">
+<td class="table_T_sub" height="27">그림</td>
+<td class="table_T_sub" height="27">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub" height="27">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub" height="27">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub" height="27">
+<div align="center"></div>
+</td>
+</tr>
+<tr class="Table_w">
+<td class="table_T_sub" height="27">수식</td>
+<td class="table_T_sub" height="27">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub" height="27">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub" height="27">
+<div align="center"></div>
+</td>
+<td class="table_T_sub" height="27">
+<div align="center"></div>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<!--<div class="table02">
+<table border="0" cellspacing="1" cellpadding="5" bgcolor="#CEE2ED">
+<thead>
+<tr>
+<th>종류</th>
+<th><a href="../objectattribute/objectattribute(general).htm"><strong>기본</strong></a></th>
+<th><a href="./objectattribute(outblank).htm"><strong>여백/캡션</strong></a></th>
+<th><a href="../objectattribute/objectattribute(line).htm"><strong>선</strong></a></th>
+<th><a href="../objectattribute/objectattribute(face).htm"><strong>채우기</strong></a></th>
+<th><a href="../objectattribute/objectattribute(textbox).htm"><strong>글상자</strong></a></th>
+<th><a href="../objectattribute/objectattribute(shadow).htm"><strong>그림자</strong></a></th>
+<th><a href="../../format/objectattr/objectattr_shadow.htm">그림자</a></th>
+<th><a href="../../format/objectattr/objectattr_reflect.htm">반사</a></th>
+<th><a href="../../format/objectattr/objectattr_glow.htm">네온</a></th>
+<th><a href="../../format/objectattr/objectattr_softedge.htm">옅은 테두리</a></th>
+<th><a href="../objectattribute/objectattribute(figure).htm"><strong>그림</strong></a></th>
+<th><a href="../objectattribute/objectattribute(equation).htm"><strong>수식</strong></a></th>
+<th><a href="../objectattribute/objectattribute(hmapsi).htm"><strong>글맵시</strong></a></th>
+<th><a href="../objectattribute/objectattribute(ole).htm"><strong>OLE 속성</strong></a></th>
+</tr>
+</thead>
+<tbody>
+<tr class="Table_w">
+<td class="table_T_sub">도형</td>
+<td class="table_T_sub">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub">
+<div align="center"></div>
+</td>
+<td class="table_T_sub">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub">&#160;</td>
+<td class="table_T_sub">&#160;</td>
+<td class="table_T_sub">&#160;</td>
+<td class="table_T_sub">&#160;</td>
+<td class="table_T_sub">
+<div align="center"></div>
+</td>
+<td class="table_T_sub">
+<div align="center"></div>
+</td>
+<td class="table_T_sub">
+<div align="center"></div>
+</td>
+<td class="table_T_sub">
+<div align="center"></div>
+</td>
+</tr>
+<tr class="Table_w">
+<td class="table_T_sub">글상자</td>
+<td class="table_T_sub">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub">&#160;</td>
+<td class="table_T_sub">&#160;</td>
+<td class="table_T_sub">&#160;</td>
+<td class="table_T_sub">&#160;</td>
+<td class="table_T_sub">
+<div align="center"></div>
+</td>
+<td class="table_T_sub">
+<div align="center"></div>
+</td>
+<td class="table_T_sub">
+<div align="center"></div>
+</td>
+<td class="table_T_sub">
+<div align="center"></div>
+</td>
+</tr>
+<tr class="Table_w">
+<td class="table_T_sub" height="27">그림</td>
+<td class="table_T_sub" height="27">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub" height="27">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub" height="27">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub" height="27">
+<div align="center"></div>
+</td>
+<td class="table_T_sub" height="27">
+<div align="center"></div>
+</td>
+<td class="table_T_sub" height="27"></td>
+<td class="table_T_sub" height="27">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub" height="27">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub" height="27">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub" height="27">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub" height="27">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub" height="27">
+<div align="center"></div>
+</td>
+<td class="table_T_sub" height="27">
+<div align="center"></div>
+</td>
+<td class="table_T_sub" height="27">
+<div align="center"></div>
+</td>
+</tr>
+<tr class="Table_w">
+<td class="table_T_sub">수식</td>
+<td class="table_T_sub">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub">
+<div align="center"></div>
+</td>
+<td class="table_T_sub">
+<div align="center"></div>
+</td>
+<td class="table_T_sub">
+<div align="center"></div>
+</td>
+<td class="table_T_sub">
+<div align="center"></div>
+</td>
+<td class="table_T_sub">&#160;</td>
+<td class="table_T_sub">&#160;</td>
+<td class="table_T_sub">&#160;</td>
+<td class="table_T_sub">&#160;</td>
+<td class="table_T_sub">
+<div align="center"></div>
+</td>
+<td class="table_T_sub">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub">
+<div align="center"></div>
+</td>
+<td class="table_T_sub">
+<div align="center"></div>
+</td>
+</tr>
+<tr class="Table_w">
+<td class="table_T_sub">글맵시</td>
+<td class="table_T_sub">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub">
+<div align="center"></div>
+</td>
+<td class="table_T_sub">
+<div align="center"></div>
+</td>
+<td class="table_T_sub">&#160;</td>
+<td class="table_T_sub">&#160;</td>
+<td class="table_T_sub">&#160;</td>
+<td class="table_T_sub">&#160;</td>
+<td class="table_T_sub">
+<div align="center"></div>
+</td>
+<td class="table_T_sub">
+<div align="center"></div>
+</td>
+<td class="table_T_sub">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub">
+<div align="center"></div>
+</td>
+</tr>
+<tr class="Table_w">
+<td class="table_T_sub">OLE 개체</td>
+<td class="table_T_sub">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub">
+<div align="center">○</div>
+</td>
+<td class="table_T_sub">
+<div align="center"></div>
+</td>
+<td class="table_T_sub">
+<div align="center"></div>
+</td>
+<td class="table_T_sub">
+<div align="center"></div>
+</td>
+<td class="table_T_sub">&#160;</td>
+<td class="table_T_sub">&#160;</td>
+<td class="table_T_sub">&#160;</td>
+<td class="table_T_sub">&#160;</td>
+<td class="table_T_sub">
+<div align="center"></div>
+</td>
+<td class="table_T_sub">
+<div align="center"></div>
+</td>
+<td class="table_T_sub">
+<div align="center"></div>
+</td>
+<td class="table_T_sub">
+<div align="center">○</div>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h3>개체 속성</h3>
+<p>한/글에서 개체로 이용되는 '그림, 그림 그리기, 글상자, 글맵시, 수식, 표, 차트'의 위치와 여백, 캡션 등의 기본 속성은 모두 동일한 방식으로 설정할 수 있습니다.</p>
+<p>하지만 선택한 개체의 종류에 따라 달라지는 속성은 [개체 속성] 대화 상자에서 고칠 수 있는 항목들을 각각의 탭으로 다르게 보여 줍니다.</p>-->
+<h2>관련 기능</h2>
+<p class="related-link"><a href="objectattribute(general).htm">개체 속성: 기본</a>, <a href="objectattribute(outblank).htm">개체 속성: 여백/캡션</a>, <a href="objectattribute(line).htm">개체 속성: 선</a>, <a href="objectattribute(face).htm">개체 속성: 채우기</a>, <a href="../../table/tableattribute/tableattribute.htm">표/셀 속성</a></p>
+<p class="footer"><a href="http://www.hancom.com/" target="_blank">www.hancom.com</a></p>
+</body>
+</html>
