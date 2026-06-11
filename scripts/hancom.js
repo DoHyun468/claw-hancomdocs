@@ -2667,6 +2667,8 @@ async function cmdChartData(args) {
 async function cmdDownload(args) {
   if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
   const name = String(args.name).normalize('NFC');
+  const pdf = !!args.pdf;                                  // --pdf: 원본형식 대신 PDF로 내보내기
+  const dlSel = pdf ? '.d_pdf_download' : '.d_download';
   fs.mkdirSync(DLDIR, { recursive: true });
   const browser = await chromium.launch({ headless: !HEADED, slowMo: SLOWMO });
   const ctx = await browser.newContext({ storageState: AUTH, viewport: VIEW, deviceScaleFactor: 1, acceptDownloads: true });
@@ -2684,18 +2686,18 @@ async function cmdDownload(args) {
     });
     if (!fileTab) throw new Error('파일 메뉴 탐색 실패');
     await editor.mouse.click(fileTab.x, fileTab.y); await editor.waitForTimeout(800);
-    // 파일 메뉴의 '다운로드' 항목(.d_download) — 원본 형식 직접 다운로드('준비 중' 토스트만, 형식선택 없음)
-    const dlXY = await editor.evaluate(() => { const el = document.querySelector('.d_download'); if (!el || el.offsetParent === null) return null; const r = el.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; });
-    if (!dlXY) throw new Error('.d_download 탐색 실패(파일 메뉴 안 열림)');
+    // 파일 메뉴의 다운로드 항목(.d_download=원본형식 / .d_pdf_download=PDF). PDF는 변환에 더 걸릴 수 있음.
+    const dlXY = await editor.evaluate((s) => { const el = document.querySelector(s); if (!el || el.offsetParent === null) return null; const r = el.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; }, dlSel);
+    if (!dlXY) throw new Error(dlSel + ' 탐색 실패(파일 메뉴 안 열림)');
     const [download] = await Promise.all([
-      editor.waitForEvent('download', { timeout: 60000 }),
+      editor.waitForEvent('download', { timeout: pdf ? 120000 : 60000 }),
       editor.mouse.click(dlXY.x, dlXY.y),
     ]);
     const suggested = download.suggestedFilename();
     const dest = args.out ? path.resolve(args.out) : path.join(DLDIR, suggested);
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     await download.saveAs(dest);
-    out({ cmd: 'download', name, saved: dest, suggestedFilename: suggested, bytes: fs.statSync(dest).size, docId: editor.__docId || null });
+    out({ cmd: 'download', name, pdf, saved: dest, suggestedFilename: suggested, bytes: fs.statSync(dest).size, docId: editor.__docId || null });
   } finally { await browser.close(); }
 }
 

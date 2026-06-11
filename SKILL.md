@@ -74,7 +74,7 @@ node hancom.js around  --name <문서이름>  --text "<검색어>" [--zoom [--ba
 node hancom.js locate  --name <문서이름>  --clues "a,b,c" [--grid] [--out <png>]
 node hancom.js find    --name <문서이름>  --text "<구절>"
 node hancom.js pinpoint --file <로컬 .hwp/.hwpx> --text "<구절>" [--nth N] [--name <문서이름>] [--replace "<새 텍스트>" [--apply]] [--band N] [--scale N] [--out <png>]
-node hancom.js download --name <문서이름>  [--out <로컬경로>]
+node hancom.js download --name <문서이름>  [--pdf] [--out <로컬경로>]
 node hancom.js upload   --file <로컬경로>
 node hancom.js resize-object --name <문서이름> --at "x,y" [--width <mm>] [--height <mm>] [--apply]
 node hancom.js object-prop   --name <문서이름> --at "x,y" [--pos "x,y"] [--width <mm>] [--height <mm>] [--wrap <배치>] [--fill <색|none>] [--border <색>] [--border-width <mm>] [--apply]
@@ -163,6 +163,7 @@ node hancom.js highlight    --name <문서이름> --text "<구절>" --color yell
 
 - **`download` / `upload`** (로컬 ↔ 드라이브): read.mjs/pinpoint 의 `--file` 은 **로컬 원본**이 필요하다.
   - `node hancom.js download --name <문서이름> [--out <경로>]` → 드라이브 문서의 **현재 상태**를 로컬 `.hwp/.hwpx`로(원본 형식 그대로, 변환 없음). 기본 저장 위치 `scripts/downloads/`. 반환 `{saved, suggestedFilename, bytes, docId}`.
+    - **`--pdf`**: 원본 형식 대신 **PDF로 내보내기**(파일›PDF로 다운로드). 변환이라 조금 더 걸릴 수 있음(반환 `pdf:true`). read.mjs는 PDF를 못 읽으니, 내용 확인용이 아니라 **최종 산출물(공유·인쇄용)** 일 때 쓴다.
   - `node hancom.js upload --file <로컬경로>` → 로컬 파일을 드라이브에 **새 문서**로 올림(같은 이름이어도 교체 아님 → 중복 생성 주의).
   - **루프**: `download` 로 현재 상태를 받아 → `read.mjs` 로 occurrence-맵 → `pinpoint`/편집은 한컴독스 UI(자동저장). 편집 뒤 다시 읽어야 하면 **재 `download`**(로컬은 편집하면 stale). 편집 자체는 UI 에서 하므로 보통 재업로드는 불필요.
 
