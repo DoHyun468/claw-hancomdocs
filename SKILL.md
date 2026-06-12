@@ -202,6 +202,7 @@ node hancom.js highlight    --name <문서이름> --text "<구절>" --color yell
 `insert-row-above` · `insert-row-below` · `insert-col-left` · `insert-col-right` · `delete-row` · `delete-col` · `split` · `merge` · `equal-width` · `equal-height` · `block-calc` · `thousands` · `clear-cell`. dry-run 기본, `--apply`로 실행, **headless 전용**.
 - **단일 셀 op**(줄/칸 추가·삭제, split, clear-cell): `--cell` 한 곳이면 됨.
 - **다중 셀 op**(`merge`·`equal-width`·`equal-height`·`block-calc`): 범위가 필요 → **`--to "<끝 셀 텍스트>"`** 로 시작 셀(`--cell`)부터 끝 셀까지를 잡는다(예: `--cell 가 --to 나`). 직사각형 블록.
+- ⚠️ **셀 텍스트가 본문/다른 셀에도 있으면** `--cell`이 엉뚱한 곳을 잡는다 → **`--nth N`**으로 N번째 매치를 지정(본문 머리글이 1번째, 표 헤더가 2번째인 경우가 흔함). `--to`엔 `--to-nth N`. `cell-style`·`table-cell-prop`도 동일하게 `--nth` 지원.
 - **`split`** (셀 나누기): 한 셀을 여러 칸으로 분할. `--split-rows N --split-cols M` (기본 1×1).
 - **`merge`** (셀 합치기): `--cell`~`--to` 블록을 한 셀로 합침.
 - **`equal-width` / `equal-height`** (셀 너비/높이를 같게): 블록 안 셀들의 너비/높이를 균등하게.
