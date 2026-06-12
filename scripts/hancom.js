@@ -497,6 +497,44 @@ async function enumerateDocOrder(ed, phrase) {
   return order; // [{docRank(문서순 1..), uiNth(다음찾기 클릭수), docY, cx, page}]
 }
 
+// 셀 텍스트가 본문/여러 셀/여러 쪽에 중복돼도 정확히 한 셀을 겨냥한다. enumerateDocOrder 로 occurrence 들을
+// 문서순(docRank)+쪽(page)과 함께 얻고, 고른 occurrence 의 uiNth 로 findText → 그 셀에 캐럿을 둔다.
+// ⚠️ UI '다음 찾기' 순서(uiNth)는 문서순이 아니라 캐럿기준 회전이라, naive findText(text, N) 은 엉뚱한
+// occurrence(다른 쪽 등)에 착지한다 — 그래서 항상 enumerate 로 매핑한다. opts.nth=문서순 N번째(기본 1),
+// opts.page=그 쪽의 매치만. 반환: { found, caret(온스크린), page, docY, cx, occ, occCount, pages }.
+async function anchorCell(ed, text, { nth = 1, page = null } = {}) {
+  const order = await enumerateDocOrder(ed, text);
+  if (!order.length) return { found: false, occCount: 0 };
+  const pool = page ? order.filter((o) => o.page === page) : order;
+  const tgt = pool[Math.max(1, nth) - 1];
+  if (!tgt) return { found: false, occCount: order.length, pages: [...new Set(order.map((o) => o.page))] };
+  const r = await findText(ed, text, tgt.uiNth);
+  if (!r.found || !r.caret) return { found: false, occCount: order.length };
+  return { found: true, caret: r.caret, page: r.page, docY: tgt.docY, cx: tgt.cx, occ: tgt, occCount: order.length };
+}
+
+// 두 셀 A→B 를 '정확히' 드래그 선택(merge/너비높이같게/block-calc 용). A 를 findText 로 캐럿+스크롤시킨 뒤,
+// 현재 scrollTop 기준으로 B 의 온스크린 좌표를 enumerate 의 절대 docY 로 계산한다(=두 번째 findText 로
+// 스크롤이 또 튀어 A 좌표가 stale 되며 표 전체가 과선택되던 버그 회피). B 가 같은 화면에 없으면 ok:false.
+async function dragCellRange(ed, aText, bText, { aNth = 1, aPage = null, bNth = 1, bPage = null } = {}) {
+  const aOrder = await enumerateDocOrder(ed, aText);
+  const a = (aPage ? aOrder.filter((o) => o.page === aPage) : aOrder)[Math.max(1, aNth) - 1];
+  const bOrder = await enumerateDocOrder(ed, bText);
+  const b = (bPage ? bOrder.filter((o) => o.page === bPage) : bOrder)[Math.max(1, bNth) - 1];
+  if (!a || !b) return { ok: false, reason: 'cell_not_found', aFound: !!a, bFound: !!b, aOcc: aOrder.length, bOcc: bOrder.length };
+  const r = await findText(ed, aText, a.uiNth); // 캐럿을 A 에 두고 뷰를 A 쪽으로(스냅백 방지)
+  if (!r.found || !r.caret) return { ok: false, reason: 'anchor_a_failed' };
+  const sTop = await ed.evaluate(() => { const el = document.getElementById('hcwoViewScroll'); return el ? el.scrollTop : 0; });
+  const xA = r.caret.x, yA = r.caret.y;
+  const xB = b.cx, yB = b.docY - sTop; // docY 는 스크롤 절대값 → 현재 scrollTop 빼면 온스크린 y
+  if (yB < 40 || yB > VIEW.height - 40) return { ok: false, reason: 'b_offscreen', yB, hint: 'A·B 가 한 화면에 안 들어옴(너무 멀리 떨어진 셀) — 인접/근접 셀끼리만.' };
+  await focusBody(ed);
+  await ed.mouse.move(xA, yA + 6); await ed.mouse.down(); await ed.waitForTimeout(180);
+  await ed.mouse.move(xB, yB + 6, { steps: 12 }); await ed.waitForTimeout(180);
+  await ed.mouse.up(); await ed.waitForTimeout(400);
+  return { ok: true, a, b, from: { x: xA, y: yA + 6 }, to: { x: xB, y: yB + 6 } };
+}
+
 // 매치의 '절대 문서 위치' docY=scrollTop+caret.y 와 cx 를 **한 번의 evaluate(원자적)**로 읽는다.
 // scrollTop 과 caret 을 따로 읽으면 부드러운 스크롤 도중 값이 어긋나 docY 가 깨지던 버그를 차단.
 // docY 는 스크롤 무관(캐럿은 문서상 고정) → 스크롤 애니메이션이 끝나길 기다릴 필요 없이 캐럿만 자리잡으면 안정.
@@ -576,10 +614,11 @@ async function cmdAround(args) {
   await withEditor(scale, async (ctx, page) => {
     const editor = await openDoc(ctx, page, args.name);
     if (!editor) throw new Error('문서를 못 찾음: ' + args.name);
-    const nth = Math.max(1, Number(args.nth) || 1); // 같은 구절이 여러 번이면 N번째 매치를 본다
-    const r = await findText(editor, String(args.text), nth);
-    if (!r.found) { out({ cmd: 'around', found: false, text: args.text }); return; }
-    if (r.wrapped) { out({ cmd: 'around', found: false, text: args.text, status: 'nth_out_of_range', nth, matchCount: r.matchCount }); return; }
+    // 같은 구절이 여러 번/여러 쪽이면 --nth(문서순 N번째)·--page(그 쪽만)로 정확히. (enumerate 기반 — 셀 op 와 동일 타게팅)
+    const nth = Math.max(1, Number(args.nth) || 1);
+    const cPage = args.page ? Number(args.page) : null;
+    const r = await anchorCell(editor, String(args.text), { nth, page: cPage });
+    if (!r.found || !r.caret) { out({ cmd: 'around', found: false, text: args.text, nth, page: cPage, occCount: r.occCount, ...(r.occCount ? { status: 'nth_out_of_range' } : {}) }); return; }
 
     // --zoom: 격자 읽기 없이 '텍스트 위치로 바로 확대'. 찾기가 이미 매치로 스크롤했으므로
     //   gotoPage 생략하고, 그 스크롤 상태에서 캐럿 줄을 가로 밴드로 잘라낸다.
@@ -1899,15 +1938,16 @@ async function cmdCellStyle(args) {
   const apply = !!args.apply;
   if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용.');
   const cellText = String(args.cell).normalize('NFC');
-  const nth = Math.max(1, Number(args.nth) || 1); // 같은 텍스트가 본문·다른 셀에도 있으면 N번째 매치를 셀로
+  const nth = Math.max(1, Number(args.nth) || 1); // 문서순 N번째 매치(중복 텍스트 구분). --page 로 특정 쪽 한정.
+  const cellPage = args.page ? Number(args.page) : null;
   const tabN = args.tab !== undefined ? Math.max(0, Number(args.tab)) : 0;
   const name = String(args.name).normalize('NFC');
   fs.mkdirSync(CAPDIR, { recursive: true });
   await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
     const editor = await openDoc(ctx, page, name);
     if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
-    const r = await findText(editor, cellText, nth);
-    if (!r.found || !r.caret) { out({ cmd: 'cell-style', status: 'cell_not_found', cell: cellText, nth, docId: editor.__docId || null }); return; }
+    const r = await anchorCell(editor, cellText, { nth, page: cellPage });
+    if (!r.found || !r.caret) { out({ cmd: 'cell-style', status: 'cell_not_found', cell: cellText, nth, page: cellPage, occCount: r.occCount, docId: editor.__docId || null }); return; }
     if (!apply) { out({ cmd: 'cell-style', dryRun: true, cell: cellText, requested: { fill: fillArg, border: borderArg, borderWidth: borderW, diagonal: diagArg }, foundPage: r.page, docId: editor.__docId || null, note: '--apply 시 셀 테두리/배경 적용.' }); return; }
     await focusBody(editor);
     await editor.mouse.click(r.caret.x, r.caret.y + 6); await editor.waitForTimeout(250);
@@ -1988,22 +2028,31 @@ async function cmdTableCellProp(args) {
   if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용.');
   const cellText = String(args.cell).normalize('NFC');
   const nth = Math.max(1, Number(args.nth) || 1);
+  const cellPage = args.page ? Number(args.page) : null;
   const toText = args.to != null && args.to !== true ? String(args.to).normalize('NFC') : null;
   const toNth = Math.max(1, Number(args['to-nth']) || 1);
+  const toPage = args['to-page'] ? Number(args['to-page']) : null;
   const tabN = args.tab !== undefined ? Math.max(0, Number(args.tab)) : 0;
   const name = String(args.name).normalize('NFC');
   fs.mkdirSync(CAPDIR, { recursive: true });
   await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
     const editor = await openDoc(ctx, page, name);
     if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
-    const r = await findText(editor, cellText, nth);
-    if (!r.found || !r.caret) { out({ cmd: 'table-cell-prop', status: 'cell_not_found', cell: cellText, nth, docId: editor.__docId || null }); return; }
-    if (!apply) { out({ cmd: 'table-cell-prop', dryRun: true, cell: cellText, requested: { cellWidth: cw, cellHeight: ch, tableWidth: tw, tableHeight: th, valign, cellMargin, titleCell }, foundPage: r.page, docId: editor.__docId || null, note: '--apply 시 표/셀 속성 적용.' }); return; }
+    let r = null;
+    if (!toText) {
+      r = await anchorCell(editor, cellText, { nth, page: cellPage });
+      if (!r.found || !r.caret) { out({ cmd: 'table-cell-prop', status: 'cell_not_found', cell: cellText, nth, page: cellPage, occCount: r.occCount, docId: editor.__docId || null }); return; }
+    }
+    if (!apply) { out({ cmd: 'table-cell-prop', dryRun: true, cell: cellText, ...(toText ? { to: toText } : {}), requested: { cellWidth: cw, cellHeight: ch, tableWidth: tw, tableHeight: th, valign, cellMargin, titleCell }, ...(r ? { foundPage: r.page } : {}), docId: editor.__docId || null, note: '--apply 시 표/셀 속성 적용.' }); return; }
     await focusBody(editor);
-    await editor.mouse.click(r.caret.x, r.caret.y + 6); await editor.waitForTimeout(250);
-    for (let i = 0; i < tabN; i++) { await editor.keyboard.press('Tab'); await editor.waitForTimeout(160); }
-    if (toText) { const r2 = await findText(editor, toText, toNth); if (!r2.found || !r2.caret) throw new Error('--to 셀 못 찾음: ' + toText); await selectCellBlock(editor, { x: r.caret.x, y: r.caret.y + 6 }, { x: r2.caret.x, y: r2.caret.y + 6 }); }
-    else { await editor.keyboard.press('F5'); await editor.waitForTimeout(450); }
+    if (toText) {
+      const dr = await dragCellRange(editor, cellText, toText, { aNth: nth, aPage: cellPage, bNth: toNth, bPage: toPage });
+      if (!dr.ok) { out({ cmd: 'table-cell-prop', status: 'range_select_failed', cell: cellText, to: toText, reason: dr.reason, ...(dr.hint ? { hint: dr.hint } : {}), docId: editor.__docId || null }); return; }
+    } else {
+      await editor.mouse.click(r.caret.x, r.caret.y + 6); await editor.waitForTimeout(250);
+      for (let i = 0; i < tabN; i++) { await editor.keyboard.press('Tab'); await editor.waitForTimeout(160); }
+      await editor.keyboard.press('F5'); await editor.waitForTimeout(450);
+    }
     await openMenu(editor, '표');
     const p = await menuItemXY(editor, '표/셀 속성...') || await menuItemXY(editor, '표/셀 속성…');
     if (!p) { out({ cmd: 'table-cell-prop', status: 'menu_not_active', cell: cellText, docId: editor.__docId || null, note: '셀 선택 안 됨(캐럿/선택 실패).' }); return; }
@@ -2080,8 +2129,10 @@ async function cmdTableOp(args) {
   if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용.');
   const cellText = String(args.cell).normalize('NFC');
   const nth = Math.max(1, Number(args.nth) || 1);
+  const cellPage = args.page ? Number(args.page) : null;
   const toText = args.to != null && args.to !== true ? String(args.to).normalize('NFC') : null;
   const toNth = Math.max(1, Number(args['to-nth']) || 1);
+  const toPage = args['to-page'] ? Number(args['to-page']) : null;
   if (needsRange.has(op) && !toText) throw new Error("--op " + op + " 는 다중 셀 선택 필요 → --to <끝 셀 텍스트> 지정 (예: --cell 가 --to 나).");
   const tabN = args.tab !== undefined ? Math.max(0, Number(args.tab)) : 0;
   const name = String(args.name).normalize('NFC');
@@ -2089,14 +2140,22 @@ async function cmdTableOp(args) {
   await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
     const editor = await openDoc(ctx, page, name);
     if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
-    const r = await findText(editor, cellText, nth);
-    if (!r.found || !r.caret) { out({ cmd: 'table-op', status: 'cell_not_found', cell: cellText, nth, docId: editor.__docId || null }); return; }
-    if (!apply) { out({ cmd: 'table-op', dryRun: true, cell: cellText, tab: tabN, op, ...(toText ? { to: toText } : {}), foundPage: r.page, docId: editor.__docId || null, note: '--apply 시 표 op 실행.' }); return; }
+    // 범위 op(--to)은 dragCellRange 가 타게팅+선택 전부 처리 → 사전 anchorCell 안 함(중복 find 사이클이
+    // 드래그 선택을 깨 merge 무효화됨, 실측). 단일 op만 여기서 anchorCell.
+    let r = null;
+    if (!toText) {
+      r = await anchorCell(editor, cellText, { nth, page: cellPage });
+      if (!r.found || !r.caret) { out({ cmd: 'table-op', status: 'cell_not_found', cell: cellText, nth, page: cellPage, occCount: r.occCount, docId: editor.__docId || null }); return; }
+    }
+    if (!apply) { out({ cmd: 'table-op', dryRun: true, cell: cellText, tab: tabN, op, ...(toText ? { to: toText } : {}), ...(r ? { foundPage: r.page } : {}), docId: editor.__docId || null, note: '--apply 시 표 op 실행.' }); return; }
     await focusBody(editor);
-    await editor.mouse.click(r.caret.x, r.caret.y + 6); await editor.waitForTimeout(250); // 셀에 캐럿
-    for (let i = 0; i < tabN; i++) { await editor.keyboard.press('Tab'); await editor.waitForTimeout(160); }
-    // 다중 셀 선택(--to 있으면 드래그). 없으면 단일 셀 F5(필요한 op만).
-    if (toText) { const r2 = await findText(editor, toText, toNth); if (!r2.found || !r2.caret) throw new Error('--to 셀 못 찾음: ' + toText); await selectCellBlock(editor, { x: r.caret.x, y: r.caret.y + 6 }, { x: r2.caret.x, y: r2.caret.y + 6 }); }
+    if (toText) {
+      const dr = await dragCellRange(editor, cellText, toText, { aNth: nth, aPage: cellPage, bNth: toNth, bPage: toPage });
+      if (!dr.ok) { out({ cmd: 'table-op', status: 'range_select_failed', cell: cellText, to: toText, reason: dr.reason, ...(dr.hint ? { hint: dr.hint } : {}), docId: editor.__docId || null }); return; }
+    } else {
+      await editor.mouse.click(r.caret.x, r.caret.y + 6); await editor.waitForTimeout(250); // 셀에 캐럿
+      for (let i = 0; i < tabN; i++) { await editor.keyboard.press('Tab'); await editor.waitForTimeout(160); }
+    }
     const syncP = watchSave(editor); // 표 구조 변경 전에 무장(메뉴/다이얼로그 처리 중 동기화 놓치지 않게)
     if (op === 'clear-cell') {
       // 셀 지우기 = 셀 내용 비우기(우클릭 전용 항목 → F5 선택 후 Delete 로 동등 처리).
@@ -2707,14 +2766,6 @@ async function pickNearestSwatch(ed, target) {
   for (const c of cells) { const d = (c.r - target[0]) ** 2 + (c.g - target[1]) ** 2 + (c.b - target[2]) ** 2; if (d < bd) { bd = d; best = c; } }
   await ed.mouse.click(best.x, best.y); await ed.waitForTimeout(400);
   return { r: best.r, g: best.g, b: best.b };
-}
-
-// 표 셀 다중 선택 = 본문 canvas 드래그(시작 셀 캐럿 → 끝 셀 캐럿). F5+Shift/화살표는 webhwp에서 셀 블록 확장 안 됨(실측).
-// 단일 셀이면 F5 만으로 충분. 합치기/너비·높이 같게 등 다중셀 op·여러 셀 속성에 필요.
-async function selectCellBlock(ed, fromCaret, toCaret) {
-  await ed.mouse.move(fromCaret.x, fromCaret.y); await ed.mouse.down(); await ed.waitForTimeout(180);
-  await ed.mouse.move(toCaret.x, toCaret.y, { steps: 10 }); await ed.waitForTimeout(180);
-  await ed.mouse.up(); await ed.waitForTimeout(350);
 }
 
 // 다이얼로그 탭(.btn_tab) 정확 텍스트로 클릭(메뉴바 동명 탭과 충돌 방지 — .btn_tab 한정).

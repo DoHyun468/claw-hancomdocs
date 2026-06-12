@@ -82,9 +82,9 @@ node hancom.js chart-data    --name <문서이름> --at "x,y" --set "B2=9.9,C3=4
 node hancom.js insert-table  --name <문서이름> --rows R --cols C [--anchor "<텍스트>"] [--apply]
 node hancom.js insert-image  --name <문서이름> --file <이미지경로> [--anchor "<텍스트>"] [--apply]
 node hancom.js insert-chart  --name <문서이름> [--type N] [--anchor "<텍스트>"] [--apply]
-node hancom.js table-op      --name <문서이름> --cell "<셀 텍스트>" [--to "<끝 셀>"] [--tab N] --op <op> [--apply]
-node hancom.js cell-style    --name <문서이름> --cell "<셀 텍스트>" [--fill <색|none>] [--border <색> --border-where <위치>] [--diagonal <방향>] [--apply]
-node hancom.js table-cell-prop --name <문서이름> --cell "<셀 텍스트>" [--cell-width <mm>] [--cell-height <mm>] [--valign top|middle|bottom] [--cell-margin "왼,오,위,아래"] [--apply]
+node hancom.js table-op      --name <문서이름> --cell "<셀 텍스트>" [--page N] [--nth N] [--to "<끝 셀>" --to-page N] --op <op> [--apply]
+node hancom.js cell-style    --name <문서이름> --cell "<셀 텍스트>" [--page N] [--nth N] [--fill <색|none>] [--border <색> --border-where <위치>] [--diagonal <방향>] [--apply]
+node hancom.js table-cell-prop --name <문서이름> --cell "<셀 텍스트>" [--page N] [--nth N] [--cell-width <mm>] [--cell-height <mm>] [--valign top|middle|bottom] [--apply]
 node hancom.js page-number   --name <문서이름> --where header|footer --align left|center|right [--apply]
 node hancom.js page-setup    --name <문서이름> [--orientation portrait|landscape] [--width <mm>] [--height <mm>] [--top/--bottom/--left/--right/--header/--footer <mm>] [--apply]
 node hancom.js page-break    --name <문서이름> --anchor "<단락 안 텍스트>" [--apply]
@@ -202,7 +202,7 @@ node hancom.js highlight    --name <문서이름> --text "<구절>" --color yell
 `insert-row-above` · `insert-row-below` · `insert-col-left` · `insert-col-right` · `delete-row` · `delete-col` · `split` · `merge` · `equal-width` · `equal-height` · `block-calc` · `thousands` · `clear-cell`. dry-run 기본, `--apply`로 실행, **headless 전용**.
 - **단일 셀 op**(줄/칸 추가·삭제, split, clear-cell): `--cell` 한 곳이면 됨.
 - **다중 셀 op**(`merge`·`equal-width`·`equal-height`·`block-calc`): 범위가 필요 → **`--to "<끝 셀 텍스트>"`** 로 시작 셀(`--cell`)부터 끝 셀까지를 잡는다(예: `--cell 가 --to 나`). 직사각형 블록.
-- ⚠️ **셀 텍스트가 본문/다른 셀에도 있으면** `--cell`이 엉뚱한 곳을 잡는다 → **`--nth N`**으로 N번째 매치를 지정(본문 머리글이 1번째, 표 헤더가 2번째인 경우가 흔함). `--to`엔 `--to-nth N`. `cell-style`·`table-cell-prop`도 동일하게 `--nth` 지원.
+- ⚠️ **중복 텍스트 셀 정확히 겨냥**(`cell-style`·`table-cell-prop`·`table-op` 공통): 셀 텍스트가 본문/다른 셀/다른 쪽에도 있으면 `--cell`이 엉뚱한 곳을 잡는다. **`--nth N`**(문서순 N번째 매치, 기본 1)·**`--page N`**(그 쪽의 매치만)으로 정확히 지정. `--to`엔 `--to-nth`·`--to-page`. 예: 머리말과 표 헤더에 "직장전화"가 둘 다 있고 셋째 쪽에도 또 있으면 → `--cell "직장전화" --page 1 --nth 1`. (내부적으로 모든 occurrence 를 문서순+쪽으로 열거해 정확한 매치에 착지 — 복잡한 병합셀·다중쪽 표에서도 신뢰.)
 - **`split`** (셀 나누기): 한 셀을 여러 칸으로 분할. `--split-rows N --split-cols M` (기본 1×1).
 - **`merge`** (셀 합치기): `--cell`~`--to` 블록을 한 셀로 합침.
 - **`equal-width` / `equal-height`** (셀 너비/높이를 같게): 블록 안 셀들의 너비/높이를 균등하게.
@@ -221,7 +221,7 @@ node hancom.js table-op --name <문서이름> --cell "1" --to "2" --op equal-wid
 `--cell "<셀 텍스트>"`로 셀을 잡아 **셀 테두리/배경** 다이얼로그를 적용. dry-run 기본, `--apply`, **headless 전용**.
 - **`--fill <색|none>`**: 셀 배경 면 색(`none`=색 없음). 색은 이름(`red`·`blue`…) 또는 `#RRGGBB`.
 - **`--border <색>`** + **`--border-where <위치>`**: 테두리 색과 적용 위치. 위치는 `outer`(전체 바깥=상하좌우, 기본) · `top` · `bottom` · `left` · `right`, **콤마 조합 가능**(예: `top,left` · `top,bottom,right`). `--border-width <mm>`로 굵기.
-- **`--diagonal <backslash|slash|x|center-h|center-v|cross|none>`** (+`--diagonal-color <색>`): 셀 대각선(`\`·`/`·`X`·가로중심선·세로중심선·십자). ⚠️ 대각선은 **파일엔 저장되지만 webhwp 화면엔 안 그려진다**(시각으로는 확인 불가 — 다른 뷰어/데스크톱 한글에서 보임).
+- **`--diagonal <backslash|slash|x|center-h|center-v|cross|none>`** (+`--diagonal-color <색>`): 셀 대각선(`\`·`/`·`X`·가로중심선·세로중심선·십자). ⚠️ 대각선은 **파일(.hwp/.hwpx)엔 저장되지만 webhwp 화면엔 안 그려진다** → `capture`로는 안 보임(적용 실패 아님). 데스크톱 한글로 열거나 `.hwpx` XML(`<hh:backSlash type="CENTER">`)로 확인. 방향·색 전체는 **`references/diagonal-styles.md`**.
 ```bash
 node hancom.js cell-style --name <문서이름> --cell "<셀 텍스트>" --fill yellow --apply
 node hancom.js cell-style --name <문서이름> --cell "<셀 텍스트>" --border red --border-where "top,left" --apply
