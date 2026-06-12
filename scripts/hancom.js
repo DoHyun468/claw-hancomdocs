@@ -1874,24 +1874,28 @@ async function cmdInsertImage(args) {
   });
 }
 
-// table-op: 표 줄/칸 추가·삭제. 대상 셀에 캐럿(--cell 텍스트로 찾기 [+--tab N])을 두면 표 메뉴가 활성 →
-// 줄/칸 추가하기/지우기 서브메뉴 항목 클릭. op = insert-row-above|insert-row-below|insert-col-left|
-// insert-col-right|delete-row|delete-col. (셀 합치기=블록 선택 필요라 별도, 셀 나누기=다이얼로그 별도.)
-async function cmdTableOp(args) {
+// cell-style: 표 셀 배경/테두리/대각선. --cell 셀 선택(F5) → 표›셀 테두리/배경›각 셀마다 적용 다이얼로그.
+// --fill <색|none>(배경 면 색) · --border <색>(테두리 색) · --border-width <mm> · --border-where <outer|top,left…>(적용 위치 조합)
+// · --diagonal <backslash|slash|x|center-h|center-v|cross|none> · --diagonal-color <색>. 색은 object-prop 헬퍼 재사용.
+async function cmdCellStyle(args) {
   if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
   if (!args.cell || args.cell === true) throw new Error('--cell 필요 (대상 셀 텍스트)');
-  const op = String(args.op || '');
-  const OPS = {
-    'insert-row-above': { menu: '줄/칸 추가하기', item: '위쪽에 줄 추가하기' },
-    'insert-row-below': { menu: '줄/칸 추가하기', item: '아래쪽에 줄 추가하기' },
-    'insert-col-left': { menu: '줄/칸 추가하기', item: '왼쪽에 칸 추가하기' },
-    'insert-col-right': { menu: '줄/칸 추가하기', item: '오른쪽에 칸 추가하기' },
-    'delete-row': { menu: '줄/칸 지우기', item: '줄 지우기' },
-    'delete-col': { menu: '줄/칸 지우기', item: '칸 지우기' },
-  };
-  // split = 셀 나누기 다이얼로그(--split-rows/--split-cols), merge = 인접 셀 블록 선택 후 합치기
-  const valid = [...Object.keys(OPS), 'split', 'merge'];
-  if (!valid.includes(op)) throw new Error('--op 는 ' + valid.join(' | '));
+  const fillArg = args.fill != null && args.fill !== true ? String(args.fill).trim() : null;
+  const fillNone = !!fillArg && ['none', '없음'].includes(fillArg.toLowerCase());
+  const fillRGB = fillArg && !fillNone ? parseColor(fillArg) : null;
+  if (fillArg && !fillNone && !fillRGB) throw new Error('--fill 색 인식 실패: ' + fillArg);
+  const borderArg = args.border != null && args.border !== true ? String(args.border).trim() : null;
+  const borderRGB = borderArg ? parseColor(borderArg) : null;
+  if (borderArg && !borderRGB) throw new Error('--border 색 인식 실패: ' + borderArg);
+  const borderW = args['border-width'] !== undefined ? Number(args['border-width']) : null;
+  // 대각선(diagonal): backslash(\) / slash(/) / x(둘 다) / center-h / center-v / cross / none. --diagonal-color 색 옵션.
+  const DIAG = { backslash: ['.bdr_backslash1'], '\\': ['.bdr_backslash1'], slash: ['.bdr_slash1'], '/': ['.bdr_slash1'], x: ['.bdr_backslash1', '.bdr_slash1'], both: ['.bdr_backslash1', '.bdr_slash1'], 'center-h': ['.bdr_centerline1'], 'center-v': ['.bdr_centerline2'], cross: ['.bdr_centerline3'], none: ['.bdr_backslash0'] };
+  const diagArg = args.diagonal != null && args.diagonal !== true ? String(args.diagonal).trim().toLowerCase() : null;
+  if (diagArg && !DIAG[diagArg]) throw new Error('--diagonal 인식 실패: ' + diagArg + ' (backslash/slash/x/center-h/center-v/cross/none)');
+  const diagColorArg = args['diagonal-color'] != null && args['diagonal-color'] !== true ? String(args['diagonal-color']).trim() : null;
+  const diagRGB = diagColorArg ? parseColor(diagColorArg) : null;
+  if (diagColorArg && !diagRGB) throw new Error('--diagonal-color 색 인식 실패: ' + diagColorArg);
+  if (!fillArg && !borderArg && borderW === null && !diagArg) throw new Error('--fill / --border / --border-width / --diagonal 중 하나 이상');
   const apply = !!args.apply;
   if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용.');
   const cellText = String(args.cell).normalize('NFC');
@@ -1902,13 +1906,198 @@ async function cmdTableOp(args) {
     const editor = await openDoc(ctx, page, name);
     if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
     const r = await findText(editor, cellText);
+    if (!r.found || !r.caret) { out({ cmd: 'cell-style', status: 'cell_not_found', cell: cellText, docId: editor.__docId || null }); return; }
+    if (!apply) { out({ cmd: 'cell-style', dryRun: true, cell: cellText, requested: { fill: fillArg, border: borderArg, borderWidth: borderW, diagonal: diagArg }, foundPage: r.page, docId: editor.__docId || null, note: '--apply 시 셀 테두리/배경 적용.' }); return; }
+    await focusBody(editor);
+    await editor.mouse.click(r.caret.x, r.caret.y + 6); await editor.waitForTimeout(250);
+    for (let i = 0; i < tabN; i++) { await editor.keyboard.press('Tab'); await editor.waitForTimeout(160); }
+    await editor.keyboard.press('F5'); await editor.waitForTimeout(450); // 셀 블록 선택
+    await openMenu(editor, '표');
+    const it = await menuItemXY(editor, '셀 테두리/배경');
+    if (!it) { out({ cmd: 'cell-style', status: 'menu_not_active', cell: cellText, docId: editor.__docId || null, note: '셀 선택 안 됨(셀에 캐럿/F5 블록 실패).' }); return; }
+    await editor.mouse.move(it.x, it.y); await editor.waitForTimeout(900);
+    let entered = false;
+    for (const t of ['각 셀마다 적용...', '각 셀마다 적용…']) { const s = await menuItemXY(editor, t); if (s) { await editor.mouse.click(s.x, s.y); entered = true; break; } }
+    if (!entered) throw new Error("'각 셀마다 적용...' 탐색 실패");
+    await editor.waitForTimeout(1100);
+    const styled = {};
+    if (fillArg) {
+      if (!await dlgClickText(editor, '배경')) throw new Error("'배경' 탭 탐색 실패");
+      if (fillNone) { if (!await dlgClickText(editor, '색 채우기 없음')) throw new Error("'색 채우기 없음' 실패"); styled.fill = 'none'; }
+      else { await dlgClickText(editor, '색'); if (!await openComboNearLabel(editor, '면 색')) throw new Error('면 색 콤보 실패'); const p = await pickNearestSwatch(editor, fillRGB); if (!p) throw new Error('면 색 스와치 실패'); styled.fill = p; }
+    }
+    if (borderArg || borderW !== null) {
+      if (!await dlgClickText(editor, '테두리')) throw new Error("'테두리' 탭 탐색 실패");
+      if (borderW !== null) { try { await setLabeledInput(editor, '굵기', borderW); } catch (e) {} }
+      if (borderArg) { if (!await openComboNearLabel(editor, '색')) throw new Error('테두리 색 콤보 실패'); const p = await pickNearestSwatch(editor, borderRGB); if (!p) throw new Error('테두리 색 스와치 실패'); styled.border = p; }
+      // 적용 위치 아이콘(색/굵기 설정 '후' 클릭해야 그 위치에 반영). 단일 셀에선 좌→우로 2,4,5,6,7번만 활성:
+      // outer(전체 바깥=상하좌우) / top(상) / bottom(하) / left(좌) / right(우). all(안쪽 포함)·inside 는 단일 셀 비활성.
+      // --border-where 는 콤마조합 가능: outer | top,left | top,bottom,right ... 각 아이콘을 순차 토글 클릭.
+      const BPOS = { outer: '.c_border_outer', all: '.c_border_all', inside: '.c_border_inside', top: '.c_border_top', bottom: '.c_border_bottom', left: '.c_border_left', right: '.c_border_right' };
+      const ALIAS = { 상하좌우: 'outer', 전체: 'outer', 상: 'top', 위: 'top', 하: 'bottom', 아래: 'bottom', 좌: 'left', 왼쪽: 'left', 우: 'right', 오른쪽: 'right' };
+      const bwRaw = args['border-where'] != null && args['border-where'] !== true ? String(args['border-where']).toLowerCase() : 'outer';
+      const wheres = bwRaw.split(/[,+]/).map(s => s.trim()).filter(Boolean).map(s => ALIAS[s] || s);
+      const applied = [];
+      for (const w of wheres) {
+        const bSel = BPOS[w];
+        if (!bSel) throw new Error('--border-where 인식 실패: ' + w + ' (outer/top/bottom/left/right 조합)');
+        try { await clickSel(editor, bSel); await editor.waitForTimeout(250); applied.push(w); } catch (e) { throw new Error('테두리 적용 위치 아이콘 탐색 실패: ' + bSel); }
+      }
+      styled.borderWhere = applied;
+    }
+    if (diagArg) {
+      if (!await dlgClickText(editor, '대각선')) throw new Error("'대각선' 탭 탐색 실패");
+      await editor.waitForTimeout(300);
+      if (diagRGB) { if (!await openComboNearLabel(editor, '색')) throw new Error('대각선 색 콤보 실패'); const p = await pickNearestSwatch(editor, diagRGB); if (p) styled.diagonalColor = p; }
+      for (const sel of DIAG[diagArg]) { try { await clickSel(editor, sel); await editor.waitForTimeout(250); } catch (e) { throw new Error('대각선 아이콘 탐색 실패: ' + sel); } }
+      styled.diagonal = diagArg;
+    }
+    await editor.waitForTimeout(200);
+    const syncP = watchSave(editor);
+    // ⚠️ 셀 테두리/배경은 '적용' 버튼을 눌러 반영한 뒤 '확인'으로 닫아야 실제 적용된다(확인만으론 안 됨).
+    await clickDialogBtn(editor, '적용'); await editor.waitForTimeout(500);
+    if (!await clickDialogBtn(editor, '확인')) throw new Error('셀 테두리/배경 확인 버튼 탐색 실패');
+    const saved = await confirmSaved(editor, syncP);
+    const n = (await readCurrentPage(editor)) || 1; await gotoPage(editor, n);
+    const rect = await detectPageRect(editor); await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_cellstyle_${stamp()}.png`);
+    await editor.screenshot(rect ? { path: shot, clip: rect } : { path: shot });
+    // ⚠️ 대각선은 파일(hwpx borderFill backSlash/slash)에는 저장되지만 webhwp 캔버스엔 안 그려진다 → 시각검증으로는 안 보임(.hwp 차트 과소렌더와 동류).
+    out({ cmd: 'cell-style', applied: true, cell: cellText, ...(Object.keys(styled).length ? { styled } : {}), page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), ...(diagArg ? { diagonalNote: 'webhwp는 대각선을 캔버스에 렌더 안 함(파일엔 저장됨) — 시각검증 불가, XML로 확인.' } : {}), docId: editor.__docId || null, shot });
+  });
+}
+
+// table-cell-prop: 표/셀 속성 다이얼로그(우클릭 '표/셀 속성...'). --cell 대상 셀(+--to 드래그 범위, 셀 크기/정렬에).
+//  셀 탭: --cell-width/--cell-height mm · --valign top|middle|bottom · --cell-margin "왼,오,위,아래" mm · --title-cell.
+//  기본 탭: --table-width/--table-height mm. (크기 입력칸은 '셀 크기 적용'/'크기 고정' 체크가 켜져야 활성 → 자동 처리.)
+async function cmdTableCellProp(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (!args.cell || args.cell === true) throw new Error('--cell 필요 (대상 셀 텍스트)');
+  const cw = args['cell-width'] !== undefined ? Number(args['cell-width']) : null;
+  const ch = args['cell-height'] !== undefined ? Number(args['cell-height']) : null;
+  const tw = args['table-width'] !== undefined ? Number(args['table-width']) : null;
+  const th = args['table-height'] !== undefined ? Number(args['table-height']) : null;
+  const valign = args.valign != null && args.valign !== true ? String(args.valign).toLowerCase() : null;
+  if (valign && !['top', 'middle', 'bottom'].includes(valign)) throw new Error('--valign 는 top|middle|bottom');
+  const cellMargin = args['cell-margin'] != null && args['cell-margin'] !== true ? String(args['cell-margin']).split(',').map((s) => Number(s.trim())) : null;
+  if (cellMargin && (cellMargin.length !== 4 || cellMargin.some(Number.isNaN))) throw new Error('--cell-margin 형식: "왼,오,위,아래" mm');
+  const titleCell = !!args['title-cell'];
+  if (cw === null && ch === null && tw === null && th === null && !valign && !cellMargin && !titleCell) throw new Error('--cell-width/--cell-height/--table-width/--table-height/--valign/--cell-margin/--title-cell 중 하나 이상');
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용.');
+  const cellText = String(args.cell).normalize('NFC');
+  const toText = args.to != null && args.to !== true ? String(args.to).normalize('NFC') : null;
+  const tabN = args.tab !== undefined ? Math.max(0, Number(args.tab)) : 0;
+  const name = String(args.name).normalize('NFC');
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    const r = await findText(editor, cellText);
+    if (!r.found || !r.caret) { out({ cmd: 'table-cell-prop', status: 'cell_not_found', cell: cellText, docId: editor.__docId || null }); return; }
+    if (!apply) { out({ cmd: 'table-cell-prop', dryRun: true, cell: cellText, requested: { cellWidth: cw, cellHeight: ch, tableWidth: tw, tableHeight: th, valign, cellMargin, titleCell }, foundPage: r.page, docId: editor.__docId || null, note: '--apply 시 표/셀 속성 적용.' }); return; }
+    await focusBody(editor);
+    await editor.mouse.click(r.caret.x, r.caret.y + 6); await editor.waitForTimeout(250);
+    for (let i = 0; i < tabN; i++) { await editor.keyboard.press('Tab'); await editor.waitForTimeout(160); }
+    if (toText) { const r2 = await findText(editor, toText); if (!r2.found || !r2.caret) throw new Error('--to 셀 못 찾음: ' + toText); await selectCellBlock(editor, { x: r.caret.x, y: r.caret.y + 6 }, { x: r2.caret.x, y: r2.caret.y + 6 }); }
+    else { await editor.keyboard.press('F5'); await editor.waitForTimeout(450); }
+    await openMenu(editor, '표');
+    const p = await menuItemXY(editor, '표/셀 속성...') || await menuItemXY(editor, '표/셀 속성…');
+    if (!p) { out({ cmd: 'table-cell-prop', status: 'menu_not_active', cell: cellText, docId: editor.__docId || null, note: '셀 선택 안 됨(캐럿/선택 실패).' }); return; }
+    await editor.mouse.click(p.x, p.y); await editor.waitForTimeout(1200);
+    const set = {};
+    if (tw !== null || th !== null) {
+      await clickDialogTab(editor, '기본'); await editor.waitForTimeout(300);
+      await ensureDialogCheckOn(editor, '크기 고정', '너비');
+      if (tw !== null) { try { await setDialogField(editor, '너비', tw); set.tableWidth = tw; } catch (e) {} }
+      if (th !== null) { try { await setDialogField(editor, '높이', th); set.tableHeight = th; } catch (e) {} }
+    }
+    if (cw !== null || ch !== null || cellMargin || valign || titleCell) {
+      if (!await clickDialogTab(editor, '셀')) throw new Error("'셀' 탭 탐색 실패");
+      await editor.waitForTimeout(300);
+      if (cw !== null || ch !== null) {
+        await ensureDialogCheckOn(editor, '셀 크기 적용', '너비');
+        if (cw !== null) { try { await setDialogField(editor, '너비', cw); set.cellWidth = cw; } catch (e) {} }
+        if (ch !== null) { try { await setDialogField(editor, '높이', ch); set.cellHeight = ch; } catch (e) {} }
+      }
+      if (cellMargin) {
+        await ensureDialogCheckOn(editor, '안 여백 지정', '왼쪽');
+        const [L, R2, T, B] = cellMargin;
+        try { await setDialogField(editor, '왼쪽', L); } catch (e) {}
+        try { await setDialogField(editor, '오른쪽', R2); } catch (e) {}
+        try { await setDialogField(editor, '위쪽', T); } catch (e) {}
+        try { await setDialogField(editor, '아래쪽', B); } catch (e) {}
+        set.cellMargin = cellMargin;
+      }
+      if (valign) { const VAL = { top: '.valign_top', middle: '.valign_middle', bottom: '.valign_bottom' }; try { await clickSel(editor, VAL[valign]); set.valign = valign; } catch (e) { throw new Error('세로 정렬 아이콘 탐색 실패: ' + valign); } }
+      if (titleCell) { await dlgClickText(editor, '제목 셀'); set.titleCell = true; }
+    }
+    await editor.waitForTimeout(150);
+    const syncP = watchSave(editor);
+    if (!await clickDialogBtn(editor, '확인')) throw new Error('표/셀 속성 확인 버튼 탐색 실패');
+    const saved = await confirmSaved(editor, syncP);
+    const n = (await readCurrentPage(editor)) || 1; await gotoPage(editor, n);
+    const rect = await detectPageRect(editor); await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_cellprop_${stamp()}.png`);
+    await editor.screenshot(rect ? { path: shot, clip: rect } : { path: shot });
+    out({ cmd: 'table-cell-prop', applied: true, cell: cellText, ...(toText ? { to: toText } : {}), ...(Object.keys(set).length ? { set } : {}), page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), docId: editor.__docId || null, shot });
+  });
+}
+
+// table-op: 표 줄/칸 추가·삭제·나누기·합치기·셀크기 같게·블록 계산식·자릿점·셀 지우기. 대상 셀에 캐럿(--cell)을 두면
+// 표 메뉴가 활성. 다중셀 op(merge·equal-width·equal-height·block-calc)는 --to <끝셀 텍스트> 로 드래그 범위 선택(필수).
+// op = insert-row-above|insert-row-below|insert-col-left|insert-col-right|delete-row|delete-col|split|merge|
+//      equal-width|equal-height|block-calc(--calc sum|avg|product)|thousands(--comma on|off)|clear-cell.
+async function cmdTableOp(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (!args.cell || args.cell === true) throw new Error('--cell 필요 (대상 셀 텍스트)');
+  const op = String(args.op || '');
+  // 서브메뉴 항목(부모 호버 → 자식 클릭)
+  const SUB = {
+    'insert-row-above': { menu: '줄/칸 추가하기', item: '위쪽에 줄 추가하기' },
+    'insert-row-below': { menu: '줄/칸 추가하기', item: '아래쪽에 줄 추가하기' },
+    'insert-col-left': { menu: '줄/칸 추가하기', item: '왼쪽에 칸 추가하기' },
+    'insert-col-right': { menu: '줄/칸 추가하기', item: '오른쪽에 칸 추가하기' },
+    'delete-row': { menu: '줄/칸 지우기', item: '줄 지우기' },
+    'delete-col': { menu: '줄/칸 지우기', item: '칸 지우기' },
+  };
+  // 단일 메뉴 항목(클릭 한 번) — 다중셀 선택 필요한 것은 needsRange 로 표시.
+  const DIRECT = { merge: '셀 합치기', 'equal-width': '셀 너비를 같게', 'equal-height': '셀 높이를 같게' };
+  const needsRange = new Set(['merge', 'equal-width', 'equal-height', 'block-calc']);
+  const valid = [...Object.keys(SUB), ...Object.keys(DIRECT), 'split', 'block-calc', 'thousands', 'clear-cell'];
+  if (!valid.includes(op)) throw new Error('--op 는 ' + valid.join(' | '));
+  // 블록 계산식 종류
+  const CALC = { sum: '블록 합계', avg: '블록 평균', average: '블록 평균', product: '블록 곱', mul: '블록 곱' };
+  const calc = args.calc != null && args.calc !== true ? String(args.calc).toLowerCase() : 'sum';
+  if (op === 'block-calc' && !CALC[calc]) throw new Error('--calc 는 sum|avg|product');
+  // 자릿점 넣기/빼기
+  const comma = args.comma != null && args.comma !== true ? String(args.comma).toLowerCase() : 'on';
+  const commaItem = ['off', 'remove', '빼기'].includes(comma) ? '자릿점 빼기' : '자릿점 넣기';
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용.');
+  const cellText = String(args.cell).normalize('NFC');
+  const toText = args.to != null && args.to !== true ? String(args.to).normalize('NFC') : null;
+  if (needsRange.has(op) && !toText) throw new Error("--op " + op + " 는 다중 셀 선택 필요 → --to <끝 셀 텍스트> 지정 (예: --cell 가 --to 나).");
+  const tabN = args.tab !== undefined ? Math.max(0, Number(args.tab)) : 0;
+  const name = String(args.name).normalize('NFC');
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    const r = await findText(editor, cellText);
     if (!r.found || !r.caret) { out({ cmd: 'table-op', status: 'cell_not_found', cell: cellText, docId: editor.__docId || null }); return; }
-    if (!apply) { out({ cmd: 'table-op', dryRun: true, cell: cellText, tab: tabN, op, foundPage: r.page, docId: editor.__docId || null, note: '--apply 시 표 op 실행.' }); return; }
+    if (!apply) { out({ cmd: 'table-op', dryRun: true, cell: cellText, tab: tabN, op, ...(toText ? { to: toText } : {}), foundPage: r.page, docId: editor.__docId || null, note: '--apply 시 표 op 실행.' }); return; }
     await focusBody(editor);
     await editor.mouse.click(r.caret.x, r.caret.y + 6); await editor.waitForTimeout(250); // 셀에 캐럿
     for (let i = 0; i < tabN; i++) { await editor.keyboard.press('Tab'); await editor.waitForTimeout(160); }
+    // 다중 셀 선택(--to 있으면 드래그). 없으면 단일 셀 F5(필요한 op만).
+    if (toText) { const r2 = await findText(editor, toText); if (!r2.found || !r2.caret) throw new Error('--to 셀 못 찾음: ' + toText); await selectCellBlock(editor, { x: r.caret.x, y: r.caret.y + 6 }, { x: r2.caret.x, y: r2.caret.y + 6 }); }
     const syncP = watchSave(editor); // 표 구조 변경 전에 무장(메뉴/다이얼로그 처리 중 동기화 놓치지 않게)
-    if (op === 'split') {
+    if (op === 'clear-cell') {
+      // 셀 지우기 = 셀 내용 비우기(우클릭 전용 항목 → F5 선택 후 Delete 로 동등 처리).
+      if (!toText) { await editor.keyboard.press('F5'); await editor.waitForTimeout(400); }
+      await editor.keyboard.press('Delete'); await editor.waitForTimeout(500);
+    } else if (op === 'split') {
       // 셀 나누기 다이얼로그: 줄/칸 개수로 현재 셀을 분할
       const sr = Math.max(1, Number(args['split-rows']) || 1), sc = Math.max(1, Number(args['split-cols']) || 1);
       await openMenu(editor, '표');
@@ -1923,19 +2112,33 @@ async function cmdTableOp(args) {
       await editor.waitForTimeout(200);
       if (!await clickDialogBtn(editor, '나누기')) throw new Error("'나누기' 버튼 탐색 실패");
       await editor.waitForTimeout(1300);
-    } else if (op === 'merge') {
-      // 인접 셀 블록 선택(현재 셀 + 오른쪽 N칸) 후 셀 합치기.
-      // 본문 canvas 에선 Shift+→/드래그로는 셀 블록이 안 잡힌다(드래그는 표를 객체로 잡아버림).
-      // 정석은 F5(셀 선택 = 블록 모드) → Shift+→ 로 칸 단위 확장 → 셀 합치기.
-      const span = Math.max(1, Number(args.span) || 1); // 오른쪽으로 확장할 칸 수(1=다음 칸까지)
-      await editor.keyboard.press('F5'); await editor.waitForTimeout(450); // 현재 셀을 블록 선택
-      for (let i = 0; i < span; i++) { await editor.keyboard.press('Shift+ArrowRight'); await editor.waitForTimeout(300); }
+    } else if (DIRECT[op]) {
+      // 단일 항목(셀 합치기·너비/높이 같게). 다중셀 선택은 위 드래그로 끝.
       await openMenu(editor, '표');
-      const mg = await menuItemXY(editor, '셀 합치기');
-      if (!mg) throw new Error('셀 합치기 탐색 실패 (블록 선택 안 됨? 셀에 캐럿 없음?)');
-      await editor.mouse.click(mg.x, mg.y); await editor.waitForTimeout(1300);
+      const it = await menuItemXY(editor, DIRECT[op]);
+      if (!it) throw new Error(DIRECT[op] + ' 탐색 실패 (셀 선택 안 됨?)');
+      await editor.mouse.click(it.x, it.y); await editor.waitForTimeout(1300);
+    } else if (op === 'block-calc') {
+      // 블록 계산식 → 합계/평균/곱 (드래그로 다중 숫자셀 선택 후)
+      await openMenu(editor, '표');
+      const parent = await menuItemXY(editor, '블록 계산식');
+      if (!parent) throw new Error('블록 계산식 탐색 실패 (셀 선택 안 됨?)');
+      await editor.mouse.move(parent.x, parent.y); await editor.waitForTimeout(800);
+      const item = await menuItemXY(editor, CALC[calc]);
+      if (!item) throw new Error('블록 계산식 항목 탐색 실패: ' + CALC[calc]);
+      await editor.mouse.click(item.x, item.y); await editor.waitForTimeout(1200);
+    } else if (op === 'thousands') {
+      // 1,000 단위 구분 쉼표 → 자릿점 넣기/빼기 (--to 없으면 F5 단일 셀)
+      if (!toText) { await editor.keyboard.press('F5'); await editor.waitForTimeout(400); }
+      await openMenu(editor, '표');
+      const parent = await menuItemXY(editor, '1,000 단위 구분 쉼표');
+      if (!parent) throw new Error('1,000 단위 구분 쉼표 탐색 실패 (셀 선택 안 됨?)');
+      await editor.mouse.move(parent.x, parent.y); await editor.waitForTimeout(800);
+      const item = await menuItemXY(editor, commaItem);
+      if (!item) throw new Error('자릿점 항목 탐색 실패: ' + commaItem);
+      await editor.mouse.click(item.x, item.y); await editor.waitForTimeout(1200);
     } else {
-      const spec = OPS[op];
+      const spec = SUB[op];
       await openMenu(editor, '표');
       const parent = await menuItemXY(editor, spec.menu);
       if (!parent) throw new Error('표 메뉴 항목 탐색 실패: ' + spec.menu + ' (셀에 캐럿 없음?)');
@@ -1949,7 +2152,7 @@ async function cmdTableOp(args) {
     const rect = await detectPageRect(editor); await hideOverlays(editor);
     const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_tableop_${stamp()}.png`);
     await editor.screenshot(rect ? { path: shot, clip: rect } : { path: shot });
-    out({ cmd: 'table-op', applied: true, cell: cellText, tab: tabN, op, page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), shot, docId: editor.__docId || null });
+    out({ cmd: 'table-op', applied: true, cell: cellText, ...(toText ? { to: toText } : {}), tab: tabN, op, ...(op === 'block-calc' ? { calc } : {}), ...(op === 'thousands' ? { comma } : {}), page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), shot, docId: editor.__docId || null });
   });
 }
 
@@ -2499,6 +2702,35 @@ async function pickNearestSwatch(ed, target) {
   for (const c of cells) { const d = (c.r - target[0]) ** 2 + (c.g - target[1]) ** 2 + (c.b - target[2]) ** 2; if (d < bd) { bd = d; best = c; } }
   await ed.mouse.click(best.x, best.y); await ed.waitForTimeout(400);
   return { r: best.r, g: best.g, b: best.b };
+}
+
+// 표 셀 다중 선택 = 본문 canvas 드래그(시작 셀 캐럿 → 끝 셀 캐럿). F5+Shift/화살표는 webhwp에서 셀 블록 확장 안 됨(실측).
+// 단일 셀이면 F5 만으로 충분. 합치기/너비·높이 같게 등 다중셀 op·여러 셀 속성에 필요.
+async function selectCellBlock(ed, fromCaret, toCaret) {
+  await ed.mouse.move(fromCaret.x, fromCaret.y); await ed.mouse.down(); await ed.waitForTimeout(180);
+  await ed.mouse.move(toCaret.x, toCaret.y, { steps: 10 }); await ed.waitForTimeout(180);
+  await ed.mouse.up(); await ed.waitForTimeout(350);
+}
+
+// 다이얼로그 탭(.btn_tab) 정확 텍스트로 클릭(메뉴바 동명 탭과 충돌 방지 — .btn_tab 한정).
+async function clickDialogTab(ed, text) {
+  const xy = await ed.evaluate((t) => { for (const el of document.querySelectorAll('.btn_tab')) { if ((el.textContent || '').trim() === t && el.offsetParent !== null) { const r = el.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; } } return null; }, text);
+  if (!xy) return false;
+  await ed.mouse.click(xy.x, xy.y); await ed.waitForTimeout(500); return true;
+}
+
+// aria-label 입력칸의 비활성(disabled/readonly/pointer-events none) 여부.
+async function dlgInputDisabled(ed, aria) {
+  return ed.evaluate((a) => { for (const el of document.querySelectorAll('input')) { if ((el.getAttribute('aria-label') || '') === a && el.offsetParent !== null) { const cs = getComputedStyle(el); return !!(el.disabled || el.readOnly) || cs.pointerEvents === 'none'; } } return null; }, aria);
+}
+
+// 체크박스(라벨 텍스트) 를 켜 의존 입력칸(probeAria)이 활성이 되게 한다. 이미 켜져 있으면 no-op(끄지 않음).
+async function ensureDialogCheckOn(ed, checkboxText, probeAria) {
+  for (let i = 0; i < 2; i++) {
+    if (await dlgInputDisabled(ed, probeAria) === false) return true; // 활성이면 끝
+    await dlgClickText(ed, checkboxText); await ed.waitForTimeout(350);
+  }
+  return await dlgInputDisabled(ed, probeAria) === false;
 }
 
 async function cmdObjectProp(args) {
@@ -3141,6 +3373,8 @@ async function cmdFind(args) {
     else if (args._ === 'insert-table') await cmdInsertTable(args);
     else if (args._ === 'insert-image') await cmdInsertImage(args);
     else if (args._ === 'table-op') await cmdTableOp(args);
+    else if (args._ === 'cell-style') await cmdCellStyle(args);
+    else if (args._ === 'table-cell-prop') await cmdTableCellProp(args);
     else if (args._ === 'page-number') await cmdPageNumber(args);
     else if (args._ === 'page-setup') await cmdPageSetup(args);
     else if (args._ === 'page-break') await cmdPageBreak(args);

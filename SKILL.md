@@ -82,7 +82,9 @@ node hancom.js chart-data    --name <문서이름> --at "x,y" --set "B2=9.9,C3=4
 node hancom.js insert-table  --name <문서이름> --rows R --cols C [--anchor "<텍스트>"] [--apply]
 node hancom.js insert-image  --name <문서이름> --file <이미지경로> [--anchor "<텍스트>"] [--apply]
 node hancom.js insert-chart  --name <문서이름> [--type N] [--anchor "<텍스트>"] [--apply]
-node hancom.js table-op      --name <문서이름> --cell "<셀 텍스트>" [--tab N] --op <op> [--apply]
+node hancom.js table-op      --name <문서이름> --cell "<셀 텍스트>" [--to "<끝 셀>"] [--tab N] --op <op> [--apply]
+node hancom.js cell-style    --name <문서이름> --cell "<셀 텍스트>" [--fill <색|none>] [--border <색> --border-where <위치>] [--diagonal <방향>] [--apply]
+node hancom.js table-cell-prop --name <문서이름> --cell "<셀 텍스트>" [--cell-width <mm>] [--cell-height <mm>] [--valign top|middle|bottom] [--cell-margin "왼,오,위,아래"] [--apply]
 node hancom.js page-number   --name <문서이름> --where header|footer --align left|center|right [--apply]
 node hancom.js page-setup    --name <문서이름> [--orientation portrait|landscape] [--width <mm>] [--height <mm>] [--top/--bottom/--left/--right/--header/--footer <mm>] [--apply]
 node hancom.js page-break    --name <문서이름> --anchor "<단락 안 텍스트>" [--apply]
@@ -195,17 +197,44 @@ node hancom.js highlight    --name <문서이름> --text "<구절>" --color yell
   - 0 세로 막대형 · 1 누적 세로 막대형 · 2 꺾은선형 · 3 가로 막대형 · 4 누적 가로 막대형 · 5 분산형 · 6 원형 · 7 쪼개진 원형 · 8 도넛형 · 9 영역형 · 10 누적 영역형 · 11 방사형 · 12~19 3차원(세로막대/누적세로막대/가로막대/누적가로막대/원형/쪼개진원형/영역/누적영역)
 - ⚠️ 편집 **headless 전용**. 떠다니는 객체가 많은 문서는 삽입 위치가 본문 흐름 기준이라 시각적 최상단과 다를 수 있음(`--anchor`로 위치 지정 권장).
 
-### ▦ 표 줄/칸 추가·삭제·나누기·합치기 — `table-op`
-대상 셀에 캐럿(`--cell` 텍스트로 찾기, 필요시 `--tab N`으로 인접 셀)을 두면 **표 메뉴**가 활성 → 줄/칸 편집. `--op`:
-`insert-row-above` · `insert-row-below` · `insert-col-left` · `insert-col-right` · `delete-row` · `delete-col` · `split` · `merge`.
-- 캐럿이 있는 셀의 행/열 기준으로 동작. dry-run 기본, `--apply`로 실행, **headless 전용**.
+### ▦ 표 줄/칸·나누기·합치기·셀크기·계산 — `table-op`
+대상 셀에 캐럿(`--cell` 텍스트로 찾기, 필요시 `--tab N`으로 인접 셀)을 두면 **표 메뉴**가 활성. `--op`:
+`insert-row-above` · `insert-row-below` · `insert-col-left` · `insert-col-right` · `delete-row` · `delete-col` · `split` · `merge` · `equal-width` · `equal-height` · `block-calc` · `thousands` · `clear-cell`. dry-run 기본, `--apply`로 실행, **headless 전용**.
+- **단일 셀 op**(줄/칸 추가·삭제, split, clear-cell): `--cell` 한 곳이면 됨.
+- **다중 셀 op**(`merge`·`equal-width`·`equal-height`·`block-calc`): 범위가 필요 → **`--to "<끝 셀 텍스트>"`** 로 시작 셀(`--cell`)부터 끝 셀까지를 잡는다(예: `--cell 가 --to 나`). 직사각형 블록.
 - **`split`** (셀 나누기): 한 셀을 여러 칸으로 분할. `--split-rows N --split-cols M` (기본 1×1).
-- **`merge`** (셀 합치기): 캐럿 셀부터 **오른쪽으로 `--span N`칸**을 한 셀로 합침(기본 1 = 다음 칸까지). 같은 행 안에서 동작.
+- **`merge`** (셀 합치기): `--cell`~`--to` 블록을 한 셀로 합침.
+- **`equal-width` / `equal-height`** (셀 너비/높이를 같게): 블록 안 셀들의 너비/높이를 균등하게.
+- **`clear-cell`** (셀 지우기): 셀 **내용**을 비움(셀 자체는 유지).
+- **`block-calc --calc sum|avg|product`** (블록 계산식): 선택한 숫자 셀들의 합계/평균/곱. 결과를 넣을 빈 셀을 블록에 포함해야 함.
+- **`thousands --comma on|off`** (1,000 단위 구분 쉼표): 숫자에 자릿점 넣기(`on`)/빼기(`off`). 단일 셀이면 `--to` 없이도 됨.
 - 셀 값 채우기는 `set-cell-text`.
 
 ```bash
 node hancom.js table-op --name <문서이름> --cell "<셀 텍스트>" --op split --split-rows 2 --split-cols 2 --apply
-node hancom.js table-op --name <문서이름> --cell "<셀 텍스트>" --op merge --span 1 --apply
+node hancom.js table-op --name <문서이름> --cell "가" --to "나" --op merge --apply
+node hancom.js table-op --name <문서이름> --cell "1" --to "2" --op equal-width --apply
+```
+
+### ▦ 표 셀 배경·테두리·대각선 — `cell-style`
+`--cell "<셀 텍스트>"`로 셀을 잡아 **셀 테두리/배경** 다이얼로그를 적용. dry-run 기본, `--apply`, **headless 전용**.
+- **`--fill <색|none>`**: 셀 배경 면 색(`none`=색 없음). 색은 이름(`red`·`blue`…) 또는 `#RRGGBB`.
+- **`--border <색>`** + **`--border-where <위치>`**: 테두리 색과 적용 위치. 위치는 `outer`(전체 바깥=상하좌우, 기본) · `top` · `bottom` · `left` · `right`, **콤마 조합 가능**(예: `top,left` · `top,bottom,right`). `--border-width <mm>`로 굵기.
+- **`--diagonal <backslash|slash|x|center-h|center-v|cross|none>`** (+`--diagonal-color <색>`): 셀 대각선(`\`·`/`·`X`·가로중심선·세로중심선·십자). ⚠️ 대각선은 **파일엔 저장되지만 webhwp 화면엔 안 그려진다**(시각으로는 확인 불가 — 다른 뷰어/데스크톱 한글에서 보임).
+```bash
+node hancom.js cell-style --name <문서이름> --cell "<셀 텍스트>" --fill yellow --apply
+node hancom.js cell-style --name <문서이름> --cell "<셀 텍스트>" --border red --border-where "top,left" --apply
+```
+
+### ▦ 표/셀 속성 — `table-cell-prop`
+우클릭 **표/셀 속성** 다이얼로그. `--cell`(+`--to`로 여러 셀)로 잡아 적용. dry-run 기본, `--apply`, **headless 전용**.
+- **셀 크기**: `--cell-width <mm>` · `--cell-height <mm>`('셀 크기 적용' 자동 체크 후 설정).
+- **세로 정렬**: `--valign top|middle|bottom` (셀 안 글의 위/가운데/아래).
+- **셀 안 여백**: `--cell-margin "왼,오,위,아래"` (mm).
+- **제목 셀**: `--title-cell` (쪽 넘어갈 때 자동 반복되는 머리 셀).
+- **표 전체 크기**: `--table-width <mm>` · `--table-height <mm>`.
+```bash
+node hancom.js table-cell-prop --name <문서이름> --cell "<셀 텍스트>" --cell-height 30 --valign bottom --apply
 ```
 
 ### 🔢 쪽 번호 · 쪽 나누기 — `page-number` / `page-break`
