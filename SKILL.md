@@ -221,7 +221,7 @@ node hancom.js table-op --name <문서이름> --cell "1" --to "2" --op equal-wid
 `--cell "<셀 텍스트>"`로 셀을 잡아 **셀 테두리/배경** 다이얼로그를 적용. dry-run 기본, `--apply`, **headless 전용**.
 - **`--fill <색|none>`**: 셀 배경 면 색(`none`=색 없음). 색은 이름(`red`·`blue`…) 또는 `#RRGGBB`.
 - **`--border <색>`** + **`--border-where <위치>`**: 테두리 색과 적용 위치. 위치는 `outer`(전체 바깥=상하좌우, 기본) · `top` · `bottom` · `left` · `right`, **콤마 조합 가능**(예: `top,left` · `top,bottom,right`). `--border-width <mm>`로 굵기.
-- **`--diagonal <backslash|slash|x|center-h|center-v|cross|none>`** (+`--diagonal-color <색>`): 셀 대각선(`\`·`/`·`X`·가로중심선·세로중심선·십자). ⚠️ 대각선은 **파일(.hwp/.hwpx)엔 저장되지만 webhwp 화면엔 안 그려진다** → `capture`로는 안 보임(적용 실패 아님). 데스크톱 한글로 열거나 `.hwpx` XML(`<hh:backSlash type="CENTER">`)로 확인. 방향·색 전체는 **`references/diagonal-styles.md`**.
+- **`--diagonal <backslash|slash|x|center-h|center-v|cross|none>`** (+`--diagonal-color <색>`): 셀 대각선(`\`·`/`·`X`·가로중심선·세로중심선·십자). ⚠️ **webhwp 는 대각선을 화면에 안 그리고, 저장도 방향만 한다**(선 색·굵기 미반영 가능) → `capture`로 검증 불가. **실제 렌더는 데스크톱 한글에서 직접 확인** 필요. 상세·주의는 **`references/diagonal-styles.md`**.
 ```bash
 node hancom.js cell-style --name <문서이름> --cell "<셀 텍스트>" --fill yellow --apply
 node hancom.js cell-style --name <문서이름> --cell "<셀 텍스트>" --border red --border-where "top,left" --apply
