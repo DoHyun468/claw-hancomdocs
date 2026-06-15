@@ -83,7 +83,7 @@ node hancom.js insert-table  --name <문서이름> --rows R --cols C [--anchor "
 node hancom.js insert-image  --name <문서이름> --file <이미지경로> [--anchor "<텍스트>"] [--apply]
 node hancom.js insert-chart  --name <문서이름> [--type N] [--anchor "<텍스트>"] [--apply]
 node hancom.js table-op      --name <문서이름> --cell "<셀 텍스트>" [--page N] [--nth N] [--to "<끝 셀>" --to-page N] --op <op> [--apply]
-node hancom.js cell-style    --name <문서이름> --cell "<셀 텍스트>" [--page N] [--nth N] [--fill <색|none>] [--border <색> --border-where <위치>] [--diagonal <방향>] [--apply]
+node hancom.js cell-style    --name <문서이름> --cell "<셀 텍스트>" [--page N] [--nth N] [--fill <색|none>] [--border <색> --border-type <종류> --border-width <mm> --border-where <위치>] [--diagonal <방향> --diagonal-type/--diagonal-width/--diagonal-color] [--apply]
 node hancom.js table-cell-prop --name <문서이름> --cell "<셀 텍스트>" [--page N] [--nth N] [--cell-width <mm>] [--cell-height <mm>] [--valign top|middle|bottom] [--apply]
 node hancom.js page-number   --name <문서이름> --where header|footer --align left|center|right [--apply]
 node hancom.js page-setup    --name <문서이름> [--orientation portrait|landscape] [--width <mm>] [--height <mm>] [--top/--bottom/--left/--right/--header/--footer <mm>] [--apply]
@@ -220,11 +220,13 @@ node hancom.js table-op --name <문서이름> --cell "1" --to "2" --op equal-wid
 ### ▦ 표 셀 배경·테두리·대각선 — `cell-style`
 `--cell "<셀 텍스트>"`로 셀을 잡아 **셀 테두리/배경** 다이얼로그를 적용. dry-run 기본, `--apply`, **headless 전용**.
 - **`--fill <색|none>`**: 셀 배경 면 색(`none`=색 없음). 색은 이름(`red`·`blue`…) 또는 `#RRGGBB`.
-- **`--border <색>`** + **`--border-where <위치>`**: 테두리 색과 적용 위치. 위치는 `outer`(전체 바깥=상하좌우, 기본) · `top` · `bottom` · `left` · `right`, **콤마 조합 가능**(예: `top,left` · `top,bottom,right`). `--border-width <mm>`로 굵기.
-- **`--diagonal <backslash|slash|x|center-h|center-v|cross|none>`** (+`--diagonal-color <색>`): 셀 대각선(`\`·`/`·`X`·가로중심선·세로중심선·십자). ⚠️ **webhwp 는 대각선을 화면에 안 그리고, 저장도 방향만 한다**(선 색·굵기 미반영 가능) → `capture`로 검증 불가. **실제 렌더는 데스크톱 한글에서 직접 확인** 필요. 상세·주의는 **`references/diagonal-styles.md`**.
+- **`--border <색>`** + **`--border-where <위치>`**: 테두리 색과 적용 위치. 위치는 `outer`(전체 바깥=상하좌우, 기본) · `top` · `bottom` · `left` · `right`, **콤마 조합 가능**(예: `top,left` · `top,bottom,right`).
+- **`--border-type <종류>`** · **`--border-width <mm>`**: 테두리 선 종류(`solid|dashed|dotted|double|long-dash|circle|slim-thick|thick-slim|slim-thick-slim`)와 굵기(프리셋: `0.1 0.12 0.15 0.2 0.25 0.3 0.4 0.5 0.6 0.7 1 1.5 2 3 4 5`).
+- **`--diagonal <backslash|slash|x|center-h|center-v|cross|none>`**: 셀 대각선(`\`·`/`·`X`·가로중심선·세로중심선·십자) — 화면에 그려지고 파일에도 저장됨. 선 종류/굵기/색은 `--diagonal-type`/`--diagonal-width`/`--diagonal-color`(테두리와 같은 값), 모양 변형은 `--diagonal-style N`. 전체 옵션은 **`references/diagonal-styles.md`**.
 ```bash
 node hancom.js cell-style --name <문서이름> --cell "<셀 텍스트>" --fill yellow --apply
-node hancom.js cell-style --name <문서이름> --cell "<셀 텍스트>" --border red --border-where "top,left" --apply
+node hancom.js cell-style --name <문서이름> --cell "<셀 텍스트>" --border red --border-type double --border-width 0.5 --border-where "top,left" --apply
+node hancom.js cell-style --name <문서이름> --cell "<셀 텍스트>" --diagonal x --diagonal-color red --apply
 ```
 
 ### ▦ 표/셀 속성 — `table-cell-prop`

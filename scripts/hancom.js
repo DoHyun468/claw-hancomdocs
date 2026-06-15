@@ -42,6 +42,29 @@ const log = (...x) => console.log(...x);
 // RESULT_JSON은 기계 판독용 — 비ASCII를 \uXXXX로 이스케이프해 어떤 콘솔 코드페이지(Win CP949 등)서도
 // 깨지지 않게 한다. 여전히 유효한 JSON이라 파싱하면 한글이 그대로 복원됨. (OS 무관)
 const asciiSafe = (s) => Array.from(s).map((c) => c.charCodeAt(0) > 126 ? '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0') : c).join('');
+
+// 캡처 PNG 가 비전 API 한 변 한계(~2000px, 실측: 1983 OK·2250 거부)를 넘으면 클로드가 못 읽는다 →
+// 긴 변을 SHOT_MAXPX 이하로 '넘칠 때만' 줄인다(축소 전용·비율 유지·가능한 최대 크기로 디테일 보존).
+// 브라우저 캔버스로 리샘플(외부 의존성·OS 분기 없음). PNG 헤더(IHDR)로 크기 읽음.
+const SHOT_MAXPX = 1900;
+async function clampImage(ed, filePath, maxPx = SHOT_MAXPX) {
+  let buf; try { buf = fs.readFileSync(filePath); } catch (e) { return null; }
+  if (buf.length < 24 || buf.toString('ascii', 12, 16) !== 'IHDR') return null;
+  const w = buf.readUInt32BE(16), h = buf.readUInt32BE(20);
+  if (Math.max(w, h) <= maxPx) return { w, h, scaled: false };
+  const ratio = maxPx / Math.max(w, h), nw = Math.round(w * ratio), nh = Math.round(h * ratio);
+  try {
+    const dataUrl = await ed.evaluate(async (a) => {
+      const img = new Image();
+      await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = 'data:image/png;base64,' + a.b64; });
+      const c = document.createElement('canvas'); c.width = a.nw; c.height = a.nh;
+      c.getContext('2d').drawImage(img, 0, 0, a.nw, a.nh);
+      return c.toDataURL('image/png');
+    }, { b64: buf.toString('base64'), nw, nh });
+    fs.writeFileSync(filePath, Buffer.from(dataUrl.split(',')[1], 'base64'));
+    return { w: nw, h: nh, scaled: true, from: { w, h } };
+  } catch (e) { return { w, h, scaled: false }; }
+}
 const out = (o) => log('RESULT_JSON=' + asciiSafe(JSON.stringify(o)));
 
 async function ensureLoggedIn(page, url) {
@@ -313,6 +336,7 @@ async function cmdCapture(args) {
     const suffix = args.grid ? 'grid' : 'full';
     const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_${pTag}${suffix}_${stamp()}.png`);
     await editor.screenshot({ path: shot, clip: rect });
+    const cl = await clampImage(editor, shot); // 비전 한계 넘으면 자동 축소(가능한 최대 크기로)
     // 총 쪽수는 상태바 표시(정확) 우선, 없으면 스크롤 추정 폴백.
     // (상태바의 '현재 쪽'은 캐럿 기준이라 — 스크롤만 하면 page1 고정 — 캡처한 쪽과 무관해서 노출하지 않음.
     //  페이지 점프는 페이지 높이 균일(A4 100%) 가정. 비표준 문서는 --page-height로 보정.)
@@ -320,7 +344,8 @@ async function cmdCapture(args) {
     out({ cmd: 'capture', shot, docName: name, docId: editor.__docId || null, page: n,
           totalPages: pc ? pc.total : null,
           estTotalPages: pc ? pc.total : pageInfo.estTotal,
-          pageWidth: rect.width, pageHeight: rect.height, scale, grid: !!args.grid });
+          pageWidth: rect.width, pageHeight: rect.height, scale, grid: !!args.grid,
+          ...(cl && cl.scaled ? { imgPx: [cl.w, cl.h], downscaledFrom: [cl.from.w, cl.from.h] } : (cl ? { imgPx: [cl.w, cl.h] } : {})) });
   });
 }
 
@@ -347,7 +372,8 @@ async function cmdZoom(args) {
     };
     const shot = args.out || path.join(CAPDIR, `${String(args.name).replace(/\.[^.]+$/, '')}_p${n}_zoom_${stamp()}.png`);
     await editor.screenshot({ path: shot, clip });
-    out({ cmd: 'zoom', shot, docName: args.name, docId: editor.__docId || null, page: n, clipLocal: { x: lx, y: ly, width: w, height: h }, scale });
+    const cl = await clampImage(editor, shot);
+    out({ cmd: 'zoom', shot, docName: args.name, docId: editor.__docId || null, page: n, clipLocal: { x: lx, y: ly, width: w, height: h }, scale, ...(cl && cl.scaled ? { imgPx: [cl.w, cl.h], downscaledFrom: [cl.from.w, cl.from.h] } : (cl ? { imgPx: [cl.w, cl.h] } : {})) });
   });
 }
 
@@ -603,7 +629,8 @@ async function zoomBandShot(ed, caret, band, outPath) {
   const top = Math.max(vTop, caret.y - Math.round(band / 2));
   const clip = { x: rect.x, y: top, width: rect.width, height: Math.max(40, Math.min(band, vBot - top)) };
   await ed.screenshot({ path: outPath, clip });
-  return { rect, clip };
+  const cl = await clampImage(ed, outPath); // 밴드가 넓으면(페이지폭×고배율) 2000px 초과 → 자동 축소
+  return { rect, clip, cl };
 }
 
 async function cmdAround(args) {
@@ -625,8 +652,8 @@ async function cmdAround(args) {
     if (args.zoom && r.caret) {
       const band = Number(args.band) || 180;               // 매치 줄 위아래 포함 높이(페이지 px)
       const shot = args.out || path.join(CAPDIR, `${String(args.name).replace(/\.[^.]+$/, '')}_findzoom_${stamp()}.png`);
-      const { rect } = await zoomBandShot(editor, r.caret, band, shot);
-      out({ cmd: 'around', found: true, zoom: true, text: args.text, docId: editor.__docId || null, page: r.page, shot, pageWidth: rect.width, band, scale });
+      const { rect, cl } = await zoomBandShot(editor, r.caret, band, shot);
+      out({ cmd: 'around', found: true, zoom: true, text: args.text, docId: editor.__docId || null, page: r.page, shot, pageWidth: rect.width, band, scale, ...(cl && cl.scaled ? { imgPx: [cl.w, cl.h], downscaledFrom: [cl.from.w, cl.from.h] } : (cl ? { imgPx: [cl.w, cl.h] } : {})) });
       return;
     }
 
@@ -638,7 +665,8 @@ async function cmdAround(args) {
     if (args.grid) await injectGrid(editor, rect);
     const shot = args.out || path.join(CAPDIR, `${String(args.name).replace(/\.[^.]+$/, '')}_find_${stamp()}.png`);
     await editor.screenshot({ path: shot, clip: rect });
-    out({ cmd: 'around', found: true, text: args.text, docId: editor.__docId || null, page: r.page, shot, pageWidth: rect.width, pageHeight: rect.height, scale, grid: !!args.grid });
+    const cl = await clampImage(editor, shot);
+    out({ cmd: 'around', found: true, text: args.text, docId: editor.__docId || null, page: r.page, shot, pageWidth: rect.width, pageHeight: rect.height, scale, grid: !!args.grid, ...(cl && cl.scaled ? { imgPx: [cl.w, cl.h], downscaledFrom: [cl.from.w, cl.from.h] } : (cl ? { imgPx: [cl.w, cl.h] } : {})) });
   });
 }
 
@@ -1914,8 +1942,10 @@ async function cmdInsertImage(args) {
 }
 
 // cell-style: 표 셀 배경/테두리/대각선. --cell 셀 선택(F5) → 표›셀 테두리/배경›각 셀마다 적용 다이얼로그.
-// --fill <색|none>(배경 면 색) · --border <색>(테두리 색) · --border-width <mm> · --border-where <outer|top,left…>(적용 위치 조합)
-// · --diagonal <backslash|slash|x|center-h|center-v|cross|none> · --diagonal-color <색>. 색은 object-prop 헬퍼 재사용.
+// 테두리: --border <색> · --border-type <solid|dashed|dotted|double|long-dash|circle|slim-thick|…>(선 종류 콤보)
+//   · --border-width <mm>(굵기 콤보: 0.1~5 프리셋) · --border-where <outer|top,left…>(적용 위치 조합)
+// 대각선: --diagonal <backslash|slash|x|center-h|center-v|cross|none> · --diagonal-style N(방향별 변형: \·/=1~8, 중심선=1~3)
+//   · --diagonal-type/--diagonal-width/--diagonal-color(선 종류/굵기/색 — 방향 아이콘 클릭 '전에' 설정). 색은 object-prop 헬퍼 재사용.
 async function cmdCellStyle(args) {
   if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
   if (!args.cell || args.cell === true) throw new Error('--cell 필요 (대상 셀 텍스트)');
@@ -1927,14 +1957,31 @@ async function cmdCellStyle(args) {
   const borderRGB = borderArg ? parseColor(borderArg) : null;
   if (borderArg && !borderRGB) throw new Error('--border 색 인식 실패: ' + borderArg);
   const borderW = args['border-width'] !== undefined ? Number(args['border-width']) : null;
-  // 대각선(diagonal): backslash(\) / slash(/) / x(둘 다) / center-h / center-v / cross / none. --diagonal-color 색 옵션.
-  const DIAG = { backslash: ['.bdr_backslash1'], '\\': ['.bdr_backslash1'], slash: ['.bdr_slash1'], '/': ['.bdr_slash1'], x: ['.bdr_backslash1', '.bdr_slash1'], both: ['.bdr_backslash1', '.bdr_slash1'], 'center-h': ['.bdr_centerline1'], 'center-v': ['.bdr_centerline2'], cross: ['.bdr_centerline3'], none: ['.bdr_backslash0'] };
+  const borderType = args['border-type'] != null && args['border-type'] !== true ? String(args['border-type']).trim().toLowerCase() : null;
+  if (borderType && !LINE_TYPE[borderType]) throw new Error('--border-type 인식 실패: ' + borderType + ' (' + Object.keys(LINE_TYPE).join('/') + ')');
+  // 대각선(diagonal): 방향 backslash(\)/slash(/)/x(둘다)/center-h/center-v/cross/none. --diagonal-style N(변형 1~8, 중심선 1~3).
+  // --diagonal-type(선 종류) · --diagonal-width(mm) · --diagonal-color. 각 방향은 아이콘 .bdr_{base}{N}.
   const diagArg = args.diagonal != null && args.diagonal !== true ? String(args.diagonal).trim().toLowerCase() : null;
-  if (diagArg && !DIAG[diagArg]) throw new Error('--diagonal 인식 실패: ' + diagArg + ' (backslash/slash/x/center-h/center-v/cross/none)');
+  const diagStyle = args['diagonal-style'] !== undefined ? Math.max(0, Number(args['diagonal-style'])) : null;
+  const diagIcons = (dir, st) => {
+    const s = st != null ? st : null;
+    if (dir === 'none') return ['.bdr_backslash0', '.bdr_slash0'];
+    if (dir === 'x' || dir === 'both') return ['.bdr_backslash' + (s || 1), '.bdr_slash' + (s || 1)];
+    if (dir === 'backslash' || dir === '\\') return ['.bdr_backslash' + (s || 1)];
+    if (dir === 'slash' || dir === '/') return ['.bdr_slash' + (s || 1)];
+    if (dir === 'center-h') return ['.bdr_centerline' + (s || 1)];
+    if (dir === 'center-v') return ['.bdr_centerline' + (s || 2)];
+    if (dir === 'cross') return ['.bdr_centerline' + (s || 3)];
+    return null;
+  };
+  if (diagArg && !diagIcons(diagArg)) throw new Error('--diagonal 인식 실패: ' + diagArg + ' (backslash/slash/x/center-h/center-v/cross/none)');
+  const diagType = args['diagonal-type'] != null && args['diagonal-type'] !== true ? String(args['diagonal-type']).trim().toLowerCase() : null;
+  if (diagType && !LINE_TYPE[diagType]) throw new Error('--diagonal-type 인식 실패: ' + diagType);
+  const diagW = args['diagonal-width'] !== undefined ? Number(args['diagonal-width']) : null;
   const diagColorArg = args['diagonal-color'] != null && args['diagonal-color'] !== true ? String(args['diagonal-color']).trim() : null;
   const diagRGB = diagColorArg ? parseColor(diagColorArg) : null;
   if (diagColorArg && !diagRGB) throw new Error('--diagonal-color 색 인식 실패: ' + diagColorArg);
-  if (!fillArg && !borderArg && borderW === null && !diagArg) throw new Error('--fill / --border / --border-width / --diagonal 중 하나 이상');
+  if (!fillArg && !borderArg && borderW === null && !borderType && !diagArg) throw new Error('--fill / --border / --border-width / --border-type / --diagonal 중 하나 이상');
   const apply = !!args.apply;
   if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용.');
   const cellText = String(args.cell).normalize('NFC');
@@ -1948,7 +1995,7 @@ async function cmdCellStyle(args) {
     if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
     const r = await anchorCell(editor, cellText, { nth, page: cellPage });
     if (!r.found || !r.caret) { out({ cmd: 'cell-style', status: 'cell_not_found', cell: cellText, nth, page: cellPage, occCount: r.occCount, docId: editor.__docId || null }); return; }
-    if (!apply) { out({ cmd: 'cell-style', dryRun: true, cell: cellText, requested: { fill: fillArg, border: borderArg, borderWidth: borderW, diagonal: diagArg }, foundPage: r.page, docId: editor.__docId || null, note: '--apply 시 셀 테두리/배경 적용.' }); return; }
+    if (!apply) { out({ cmd: 'cell-style', dryRun: true, cell: cellText, requested: { fill: fillArg, border: borderArg, borderType, borderWidth: borderW, diagonal: diagArg, diagonalStyle: diagStyle, diagonalType: diagType, diagonalWidth: diagW, diagonalColor: diagColorArg }, foundPage: r.page, docId: editor.__docId || null, note: '--apply 시 셀 테두리/배경 적용.' }); return; }
     await focusBody(editor);
     await editor.mouse.click(r.caret.x, r.caret.y + 6); await editor.waitForTimeout(250);
     for (let i = 0; i < tabN; i++) { await editor.keyboard.press('Tab'); await editor.waitForTimeout(160); }
@@ -1967,9 +2014,11 @@ async function cmdCellStyle(args) {
       if (fillNone) { if (!await dlgClickText(editor, '색 채우기 없음')) throw new Error("'색 채우기 없음' 실패"); styled.fill = 'none'; }
       else { await dlgClickText(editor, '색'); if (!await openComboNearLabel(editor, '면 색')) throw new Error('면 색 콤보 실패'); const p = await pickNearestSwatch(editor, fillRGB); if (!p) throw new Error('면 색 스와치 실패'); styled.fill = p; }
     }
-    if (borderArg || borderW !== null) {
+    if (borderArg || borderW !== null || borderType) {
       if (!await dlgClickText(editor, '테두리')) throw new Error("'테두리' 탭 탐색 실패");
-      if (borderW !== null) { try { await setLabeledInput(editor, '굵기', borderW); } catch (e) {} }
+      // 종류/굵기는 입력칸이 아니라 '콤보'(드롭다운 아이콘) — 옵션 클래스로 클릭(setLabeledInput 타이핑은 안 먹음).
+      if (borderType) { if (await pickComboOption(editor, '종류', LINE_TYPE[borderType])) styled.borderType = borderType; else styled.borderType = 'unavailable'; }
+      if (borderW !== null) { if (await pickComboOption(editor, '굵기', widthClass(borderW))) styled.borderWidth = borderW; else styled.borderWidth = 'unavailable(0.1/0.12/0.15/0.2/0.25/0.3/0.4/0.5/0.6/0.7/1/1.5/2/3/4/5 mm 중에서)'; }
       if (borderArg) { if (!await openComboNearLabel(editor, '색')) throw new Error('테두리 색 콤보 실패'); const p = await pickNearestSwatch(editor, borderRGB); if (!p) throw new Error('테두리 색 스와치 실패'); styled.border = p; }
       // 적용 위치 아이콘(색/굵기 설정 '후' 클릭해야 그 위치에 반영). 단일 셀에선 좌→우로 2,4,5,6,7번만 활성:
       // outer(전체 바깥=상하좌우) / top(상) / bottom(하) / left(좌) / right(우). all(안쪽 포함)·inside 는 단일 셀 비활성.
@@ -1989,9 +2038,15 @@ async function cmdCellStyle(args) {
     if (diagArg) {
       if (!await dlgClickText(editor, '대각선')) throw new Error("'대각선' 탭 탐색 실패");
       await editor.waitForTimeout(300);
+      // 선 속성(종류/굵기/색)을 먼저 정하고 → 방향 아이콘 클릭(테두리 탭과 같은 '설정 후 위치' 순서).
+      // ⚠️ 종류는 명시 안 해도 항상 설정(기본 solid) — 콤보를 한 번 '커밋'해야 파일에 대각선 선 정의(<hh:diagonal>)가
+      // 완전 저장되고 화면에도 그려진다. 방향 아이콘만 클릭하면 방향만 기록돼 아무 데서도 안 그려지는 함정(실측).
+      const effDiagType = diagType || (diagArg === 'none' ? null : 'solid');
+      if (effDiagType) { if (await pickComboOption(editor, '종류', LINE_TYPE[effDiagType])) styled.diagonalType = effDiagType; else styled.diagonalType = 'unavailable'; }
+      if (diagW !== null) { if (await pickComboOption(editor, '굵기', widthClass(diagW))) styled.diagonalWidth = diagW; else styled.diagonalWidth = 'unavailable(0.1/0.12/0.15/0.2/0.25/0.3/0.4/0.5/0.6/0.7/1/1.5/2/3/4/5 mm 중에서)'; }
       if (diagRGB) { if (!await openComboNearLabel(editor, '색')) throw new Error('대각선 색 콤보 실패'); const p = await pickNearestSwatch(editor, diagRGB); if (p) styled.diagonalColor = p; }
-      for (const sel of DIAG[diagArg]) { try { await clickSel(editor, sel); await editor.waitForTimeout(250); } catch (e) { throw new Error('대각선 아이콘 탐색 실패: ' + sel); } }
-      styled.diagonal = diagArg;
+      for (const sel of diagIcons(diagArg, diagStyle)) { try { await clickSel(editor, sel); await editor.waitForTimeout(250); } catch (e) { throw new Error('대각선 아이콘 탐색 실패: ' + sel + ' (--diagonal-style 범위 확인: \\·/=1~8, 중심선=1~3)'); } }
+      styled.diagonal = diagArg + (diagStyle != null ? ('#' + diagStyle) : '');
     }
     await editor.waitForTimeout(200);
     const syncP = watchSave(editor);
@@ -2003,8 +2058,8 @@ async function cmdCellStyle(args) {
     const rect = await detectPageRect(editor); await hideOverlays(editor);
     const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_cellstyle_${stamp()}.png`);
     await editor.screenshot(rect ? { path: shot, clip: rect } : { path: shot });
-    // ⚠️ 대각선은 파일(hwpx borderFill backSlash/slash)에는 저장되지만 webhwp 캔버스엔 안 그려진다 → 시각검증으로는 안 보임(.hwp 차트 과소렌더와 동류).
-    out({ cmd: 'cell-style', applied: true, cell: cellText, ...(Object.keys(styled).length ? { styled } : {}), page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), ...(diagArg ? { diagonalNote: 'webhwp는 대각선을 캔버스에 렌더 안 함(파일엔 저장됨) — 시각검증 불가, XML로 확인.' } : {}), docId: editor.__docId || null, shot });
+    // 대각선은 선 종류(종류 콤보)를 먼저 커밋했으므로 화면에 그려지고 파일에도 저장된다 → around --zoom 으로 시각검증 가능.
+    out({ cmd: 'cell-style', applied: true, cell: cellText, ...(Object.keys(styled).length ? { styled } : {}), page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), ...(diagArg ? { diagonalNote: 'around --zoom 으로 셀을 확대하면 대각선이 보인다(렌더·저장 모두 됨).' } : {}), docId: editor.__docId || null, shot });
   });
 }
 
@@ -2766,6 +2821,20 @@ async function pickNearestSwatch(ed, target) {
   for (const c of cells) { const d = (c.r - target[0]) ** 2 + (c.g - target[1]) ** 2 + (c.b - target[2]) ** 2; if (d < bd) { bd = d; best = c; } }
   await ed.mouse.click(best.x, best.y); await ed.waitForTimeout(400);
   return { r: best.r, g: best.g, b: best.b };
+}
+
+// 셀 테두리/배경·대각선 탭의 선 '종류'(line type) 값 → 옵션 클래스. (각 셀마다 적용 다이얼로그에서 전부 활성)
+const LINE_TYPE = { solid: 'bdr_style_solid', dashed: 'bdr_style_dashed', dotted: 'bdr_style_dotted', double: 'bdr_style_double', 'long-dash': 'bdr_style_long_dash', circle: 'bdr_style_circle', 'slim-thick': 'bdr_style_slim_thick', 'thick-slim': 'bdr_style_thick_slim', 'slim-thick-slim': 'bdr_style_slimthickslim', none: 'bdr_style_none' };
+// '굵기'(line weight) mm → 옵션 클래스. 가능값: 0.1 0.12 0.15 0.2 0.25 0.3 0.4 0.5 0.6 0.7 1 1.5 2 3 4 5
+const widthClass = (mm) => 'line_weight_' + String(mm).replace(/\./g, '_');
+// 콤보(종류/굵기) 를 라벨로 열고 옵션(클래스)을 클릭. 옵션은 .dropdown_data 가 클릭대상(안쪽 아이콘 말고).
+async function pickComboOption(ed, label, optClass) {
+  if (!await openComboNearLabel(ed, label)) return false;
+  await ed.waitForTimeout(400);
+  const xy = await ed.evaluate((c) => { for (const el of document.querySelectorAll('.dropdown_data.' + c + ', .' + c + '.dropdown_data')) { if (el.offsetParent !== null) { const r = el.getBoundingClientRect(); if (r.width > 40) return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; } } return null; }, optClass);
+  if (!xy) { await ed.keyboard.press('Escape').catch(() => {}); return false; }
+  await ed.mouse.click(xy.x, xy.y); await ed.waitForTimeout(400);
+  return true;
 }
 
 // 다이얼로그 탭(.btn_tab) 정확 텍스트로 클릭(메뉴바 동명 탭과 충돌 방지 — .btn_tab 한정).
