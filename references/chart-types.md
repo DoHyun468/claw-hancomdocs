@@ -41,7 +41,11 @@
 
 ## chart-data — 데이터 채우기 · 격자 관리
 
-`--at "x,y"`(차트 안 한 점) 필수. ⚠️ **좌표 찾기 팁**: `capture --grid` 이미지는 1.5배 확대라 클릭점을 눈대중하면 빗나가기 쉬움(`chart_not_found`) → **`--read-grid`(읽기전용)로 그 좌표에 차트가 잡히는지 먼저 확인**(`cat/series` 반환되면 명중)한 뒤 `--apply`. 세 가지 방식:
+`--at "x,y"`(차트 안 한 점) 필수. ⚠️ **좌표 찾기**: `capture --grid` **기본은 scale 1.5**라 격자 라벨이 실제 `--at`(CSS px)와 안 맞아 눈대중이 잘 빗나간다(`chart_not_found`). 두 가지 신뢰 방법:
+- **`capture --page N --grid --scale 1`** 로 찍으면 **격자 라벨 = `--at` 좌표가 1:1**로 맞는다 → 차트 한가운데 숫자를 그대로 `--at`에 쓰면 됨. (차트는 제목 위가 아니라 **막대/플롯 영역 한가운데**를 짚을 것 — 제목 위를 짚으면 빗나감.)
+- 또는 **`--read-grid`(읽기전용)** 로 그 좌표에 차트가 잡히는지 먼저 확인(`cat/series` 반환되면 명중)한 뒤 `--apply`.
+
+세 가지 방식:
 
 1. **`--set "A2=1월,B1=매출,B2=120"`** — 개별 셀 값(엑셀식 열문자+행번호=값). **이미 있는 셀만**(없으면 `cell_not_located`).
 2. **`--del-col "C,D"` / `--del-row "5"`** — 계열(열)·항목(행) 삭제. 기본 차트의 남는 계열/항목을 정리.
@@ -68,3 +72,5 @@ node hancom.js object-prop --name <문서> --at "x,y" --wrap topbottom --apply  
 ## 배치(wrap)
 
 차트 기본 배치는 **어울림**(square, 옆에 글이 흐름) → 보고서용 전체폭은 `object-prop --at "x,y" --wrap topbottom`(자리 차지). 배치 모드: `inline`(글자처럼)·`square`·`topbottom`·`front`·`behind`.
+
+`object-prop --at` 의 좌표도 위 **좌표 찾기**와 동일 — `capture --grid --scale 1` 로 차트 한가운데 좌표를 읽어 짚는다(틀리면 `object_not_found`). 도형·글상자(`shape`/`textbox`)는 anchor 기반이라 삽입할 때 `--wrap` 을 바로 줘서 이 좌표 과정이 없다.
