@@ -109,12 +109,23 @@ async function gotoPage(ed, n, pageH = PAGE_H) {
 // webhwp 상태바의 '현재 / 총' 쪽수 표시를 읽는다 → 추정(scrollHeight/PAGE_H) 대신 정확값.
 // 페이지1에서도 읽히고 off-by-one이 없다. 표시가 없으면(UI 변경 등) null → 호출부가 추정으로 폴백.
 async function readPageCount(ed) {
+  // 상태바 'x / Y쪽'을 읽는다. 특정 셀렉터 하나만 보면 일부 문서에서 stale 1/1 을 잡아(생성 HWPX 등)
+  // 총쪽수를 1로 오판한다 → 가시 요소 전체에서 'current/total' 후보를 긁어 total 최대값을 채택(codex 발견 픽스).
   try {
     return await ed.evaluate(() => {
-      const el = document.querySelector('.status_page .section.text_wrap.fit_size')
-              || document.querySelector('#status_bar .section.text_wrap.fit_size');
-      const m = el && (el.textContent || '').match(/(\d{1,5})\s*\/\s*(\d{1,5})/);
-      return m ? { current: Number(m[1]), total: Number(m[2]) } : null;
+      const candidates = [];
+      for (const el of document.querySelectorAll('*')) {
+        if (el.offsetParent === null) continue;
+        const t = (el.textContent || '').replace(/\s+/g, ' ').trim();
+        if (!t || t.length > 80) continue;
+        const m = t.match(/(\d{1,5})\s*\/\s*(\d{1,5})(?:\s*쪽)?/);
+        if (!m) continue;
+        const current = Number(m[1]), total = Number(m[2]);
+        if (current > 0 && total > 0 && current <= total) candidates.push({ current, total });
+      }
+      if (!candidates.length) return null;
+      candidates.sort((a, b) => (b.total - a.total) || (b.current - a.current));
+      return candidates[0];
     });
   } catch { return null; }
 }
