@@ -92,6 +92,7 @@ node hancom.js trash    [--name <문서이름> | --names "a.hwpx,b.hwpx" | --mat
 node hancom.js prune-captures [--days N] [--apply]
 node hancom.js session-status                # 다른 한컴 세션이 활성인지 확인(병렬 실행 금지 — 동시 로그인=계정 잠금)
 node hancom.js resize-object --name <문서이름> --at "x,y" [--width <mm>] [--height <mm>] [--apply]
+node hancom.js find-objects  --name <문서이름> [--page N | --pages "1,2,3"] [--step <px>]
 node hancom.js object-prop   --name <문서이름> --at "x,y" [--pos "x,y"] [--width <mm>] [--height <mm>] [--wrap <배치>] [--margin <mm> | --margin-top/-bottom/-left/-right <mm>] [--fill <색|none>] [--border <색>] [--border-width <mm>] [--apply]
 node hancom.js chart-data    --name <문서이름> --at "x,y" [--data @data.json | --set "B2=9.9,C3=4" | --del-col "C,D" | --del-row "5" | --read-grid] [--apply]
 node hancom.js insert-table  --name <문서이름> --rows R --cols C [--anchor "<텍스트>"] [--apply]
@@ -194,8 +195,10 @@ node hancom.js highlight    --name <문서이름> --text "<구절>" --color yell
 
 - **`prune-captures`** (로컬 캡처 청소): `scripts/captures/`(gitignore 로컬 스크래치)에 쌓인 검증 캡처를 **기본 3일보다 오래된 것만** 삭제. `--days N` 으로 보존 기간 조절. **기본 드라이런**(지울 개수·샘플), `--apply` 로 실제 삭제(캡처는 언제든 재생성 가능). **남기고 싶은 캡처**는 파일명에 `keep` 을 넣거나 `captures/keep/` 하위로 옮기면 보호된다(절대 안 지움). 즉시 삭제보다 **롤링 3일 + 보호**가 권장 — 같은 작업 중 캡처를 다시 참조/비교하는 흐름을 깨지 않으면서 무한정 쌓이는 것만 막는다.
 
-### 🖼 그림·차트 객체 — `resize-object` · `object-prop` · `chart-data`
-객체(그림/차트)는 본문 **canvas에 픽셀로** 그려져 DOM으로 못 짚는다 → **페이지 좌표 `--at "x,y"`** 로 클릭(객체 안 한 점이면 됨, `capture --grid`로 좌표 확인). 위치 자동탐색은 안 됨.
+### 🖼 그림·차트 객체 — `find-objects` · `resize-object` · `object-prop` · `chart-data`
+객체(그림/차트)는 본문 **canvas에 픽셀로** 그려져 DOM으로 못 짚는다 → **페이지 좌표 `--at "x,y"`** 로 클릭(객체 안 한 점이면 됨).
+- **`find-objects`** (좌표 자동 탐지 — 눈대중 불필요): 페이지를 우클릭 격자로 훑어 **그림·차트 객체의 중앙 좌표**를 찾아준다. 반환 `{count, objects:[{page, at:"x,y", bbox, hits}]}` — 그 **`at` 을 `object-prop`/`chart-data`/`resize-object` 의 `--at` 에 그대로** 넣으면 된다. `--page N`(기본 1)·`--pages "1,2,3"`·`--step <px>`(기본 80, 작을수록 정밀·느림). 표·본문은 안 잡히고 그림/차트만. (한 페이지 스캔에 ~30–60초 — 좌표 눈대중·재시도 대신 한 방.)
+- 수동으로 짚을 땐 **`capture --grid --scale 1`** 로 객체 한가운데 좌표를 읽는다(기본 1.5배는 격자 라벨이 `--at`과 안 맞음).
 - **`resize-object`**: 객체 크기를 **개체 속성 다이얼로그의 너비/높이(mm 숫자)** 로 설정 — 드래그보다 정밀.
   - `--apply` 없으면 현재 크기만 읽음(`currentSize`). `--width`/`--height` 중 하나만도 가능. 그 좌표에 객체 없으면 `object_not_found`.
 - **`object-prop`** (통합 — 크기+위치+배치+도형 스타일을 한 번에): `--pos "x,y"`(mm, **종이 왼쪽/위쪽 기준** 절대 위치) · `--width`/`--height`(mm) · `--wrap`(배치, textbox와 동일 모드) · **`--fill <색|none>`**(도형 채우기 면 색, `none`=채우기 없음) · **`--border <색>`**(선/테두리 색) · **`--border-width <mm>`**(선 굵기).

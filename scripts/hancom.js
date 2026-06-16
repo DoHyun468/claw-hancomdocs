@@ -3250,6 +3250,59 @@ async function ensureDialogCheckOn(ed, checkboxText, probeAria) {
   return await dlgInputDisabled(ed, probeAria) === false;
 }
 
+// find-objects: 페이지의 그림/차트 객체 위치를 자동 탐지(좌표 눈대중 제거). 본문은 canvas라 객체에 DOM이
+// 없지만, 한 점을 좌클릭하면 그 점에 객체가 있을 때만 툴바의 '개체 속성 수정'(.modify_object_properties)이
+// 활성(aria-disabled 해제)된다 — 이 신호로 페이지를 좌클릭 격자 스캔해 객체 영역을 찾고, 근접 점을 묶어
+// 객체별 '중앙 좌표(at)'를 돌려준다. 그 at 를 object-prop/chart-data/resize-object 의 --at 에 그대로 쓴다.
+async function cmdFindObjects(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  const name = String(args.name).normalize('NFC');
+  const pageList = args.pages !== undefined && args.pages !== true ? String(args.pages).split(',').map((s) => Number(s.trim())).filter((n) => n > 0) : [Number(args.page) || 1];
+  const step = Math.max(40, Number(args.step) || 80); // 우클릭 격자 간격(px) — 작을수록 정밀·느림(객체는 크니 80이 기본)
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    // 한 점에 '진짜 객체'가 있는지 = 우클릭 메뉴에 '개체 속성...'이 있는지(차트/그림만 가짐 — 표/본문은 없음).
+    const objHere = async (vx, vy) => {
+      await editor.mouse.click(vx, vy, { button: 'right' }); await editor.waitForTimeout(300);
+      const has = await editor.evaluate(() => { for (const el of document.querySelectorAll('a,div,span,li,button')) { const t = (el.textContent || '').trim(); if (/^개체 속성/.test(t) && t.length < 12 && el.offsetParent !== null && el.childElementCount === 0) return true; } return false; });
+      await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(60);
+      return has;
+    };
+    // 객체 선택은 sticky — 우클릭으로 잡힌 객체는 Escape 로 안 풀려, 이후 우클릭이 계속 '개체 속성'을 보인다.
+    // hit 뒤엔 페이지 밖 회색 여백을 클릭해 deselect 하고, 툴바 버튼이 비활성될 때까지 확인(안 풀면 오탐 번짐).
+    const objBtnDisabled = () => editor.evaluate(() => { const el = document.querySelector('.modify_object_properties'); return !el || el.getAttribute('aria-disabled') === 'true' || /\bdisabled\b/.test(el.className || ''); });
+    const objects = [];
+    for (const pg of pageList) {
+      await gotoPage(editor, pg);
+      const rect = await detectPageRect(editor);
+      if (!rect || rect.width < 100) continue;
+      const mx = rect.x > 60 ? rect.x - 28 : Math.min(1270, rect.x + rect.width + 28);
+      const deselect = async () => { for (let t = 0; t < 3; t++) { await editor.mouse.click(mx, rect.y + Math.round(rect.height / 2)); for (let i = 0; i < 8; i++) { await editor.waitForTimeout(40); if (await objBtnDisabled()) return true; } } return false; };
+      await deselect();
+      const hits = [];
+      for (let py = 18; py < rect.height - 18; py += step) {
+        for (let px = 18; px < rect.width - 18; px += step) {
+          if (await objHere(rect.x + px, rect.y + py)) { hits.push({ x: px, y: py }); await deselect(); }
+        }
+      }
+      // 격자-인접(한 칸 이내) 점끼리 한 객체로 묶기(union-find) — 폭 넓은 차트가 여러 점에 걸려도 하나로.
+      const adj = step * 1.6;
+      const par = hits.map((_, i) => i);
+      const find = (i) => { while (par[i] !== i) { par[i] = par[par[i]]; i = par[i]; } return i; };
+      for (let i = 0; i < hits.length; i++) for (let j = i + 1; j < hits.length; j++) { if (Math.abs(hits[i].x - hits[j].x) <= adj && Math.abs(hits[i].y - hits[j].y) <= adj) par[find(i)] = find(j); }
+      const groups = {};
+      hits.forEach((h, i) => { const r = find(i); (groups[r] = groups[r] || []).push(h); });
+      for (const g of Object.values(groups)) {
+        const xs = g.map((p) => p.x), ys = g.map((p) => p.y);
+        objects.push({ page: pg, at: `${Math.round(g.reduce((s, p) => s + p.x, 0) / g.length)},${Math.round(g.reduce((s, p) => s + p.y, 0) / g.length)}`, bbox: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)], hits: g.length });
+      }
+    }
+    out({ cmd: 'find-objects', count: objects.length, pages: pageList, objects, docId: editor.__docId || null, note: '각 객체 중앙 좌표 at 를 object-prop/chart-data/resize-object 의 --at 에 그대로 사용. 0개면 --step 줄이거나 --page 확인.' });
+  });
+}
+
 async function cmdObjectProp(args) {
   if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
   if (!args.at) throw new Error('--at "x,y" 필요 (객체 안의 한 점, 페이지 좌표 — capture --grid 로 확인)');
@@ -4147,6 +4200,7 @@ function printHelp() {
   insert-chart  --name <문서> [--type N(0~19)] [--anchor "<텍스트>"] [--apply]
   chart-data    --name <문서> --at "x,y" [--data @data.json | --set "B2=9.9" | --del-col "C,D" | --del-row "5" | --read-grid] [--apply]
   resize-object --name <문서> --at "x,y" [--width <mm>] [--height <mm>] [--apply]
+  find-objects  --name <문서> [--page N | --pages "1,2"] [--step <px>]   (그림/차트 위치 자동 탐지 → 각 객체 중앙 at)
   object-prop   --name <문서> --at "x,y" [--pos "x,y"] [--width/--height <mm>] [--wrap <배치>] [--margin <mm> | --margin-top/-bottom/-left/-right <mm>] [--fill <색|none>] [--border <색>] [--border-width <mm>] [--apply]
 
 로컬 파서(파일 직접 읽기, 업로드 불필요):
@@ -4178,6 +4232,7 @@ function printHelp() {
     else if (args._ === 'prune-captures') await cmdPruneCaptures(args);
     else if (args._ === 'resize-object') await cmdResizeObject(args);
     else if (args._ === 'object-prop') await cmdObjectProp(args);
+    else if (args._ === 'find-objects') await cmdFindObjects(args);
     else if (args._ === 'chart-data') await cmdChartData(args);
     else if (args._ === 'insert-table') await cmdInsertTable(args);
     else if (args._ === 'insert-image') await cmdInsertImage(args);
