@@ -2700,12 +2700,18 @@ async function cmdPageBreak(args) {
     await editor.mouse.click(r.caret.x, r.caret.y + Math.round((r.caret.h || 12) / 2)); await editor.waitForTimeout(300);
     await editor.keyboard.press('End'); await editor.waitForTimeout(150); // 줄 끝
     const syncP = watchSave(editor);
-    // 쪽 메뉴 › 쪽 나누기(.p_page_break). 키보드 단축키보다 메뉴 셀렉터가 견고.
-    await openMenu(editor, '쪽');
-    let clicked = false;
-    try { await clickSel(editor, '.p_page_break'); clicked = true; } catch (e) { /* 메뉴 항목 텍스트로 폴백 */ }
-    if (!clicked) { const it = await menuItemXY(editor, '쪽 나누기'); if (!it) throw new Error('쪽 나누기 항목 탐색 실패'); await editor.mouse.click(it.x, it.y); }
-    await editor.waitForTimeout(800);
+    // 단축키 우선: Control+Enter 로 쪽 나누기(캐럿 쪽이 다음 쪽으로 전진하면 성공 — 캐럿쪽은 정확).
+    // 전진 안 했으면(단축키 무시) 쪽 메뉴 › 쪽 나누기(.p_page_break)로 폴백(이중 나누기 방지 위해 성공 시 메뉴 안 탐).
+    const beforeP = await readCurrentPage(editor);
+    await editor.keyboard.press('Control+Enter'); await editor.waitForTimeout(800);
+    const afterP = await readCurrentPage(editor);
+    if (!(beforeP && afterP && afterP > beforeP)) {
+      await openMenu(editor, '쪽');
+      let clicked = false;
+      try { await clickSel(editor, '.p_page_break'); clicked = true; } catch (e) { /* 메뉴 항목 텍스트로 폴백 */ }
+      if (!clicked) { const it = await menuItemXY(editor, '쪽 나누기'); if (!it) throw new Error('쪽 나누기 항목 탐색 실패'); await editor.mouse.click(it.x, it.y); }
+      await editor.waitForTimeout(800);
+    }
     const saved = await confirmSaved(editor, syncP);
     const pc = await readPageCount(editor);
     const n2 = (await readCurrentPage(editor)) || n; await gotoPage(editor, n2);
