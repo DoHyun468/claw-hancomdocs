@@ -2837,22 +2837,41 @@ async function cmdHyperlink(args) {
     const editor = await openDoc(ctx, page, name);
     if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
     if (!apply) { out({ cmd: 'hyperlink', dryRun: true, text: phrase, url, docId: editor.__docId || null, note: '--apply 시 구절에 링크.' }); return; }
-    let sel = await dragSelectPhrase(editor, phrase);
-    if (!sel.found) { out({ cmd: 'hyperlink', status: 'text_not_found', text: phrase, docId: editor.__docId || null }); return; }
-    for (let i = 0; i < 2 && !sel.selChars; i++) sel = await dragSelectPhrase(editor, phrase);
-    if (!sel.selChars) { out({ cmd: 'hyperlink', status: 'selection_failed', text: phrase, docId: editor.__docId || null }); return; }
+    // findSelect 로 구절을 선택하고 글자수를 검증(dragSelect 보다 정밀 — 비유일/근접 매치 오선택 방지).
+    let sel = null;
+    for (let i = 0; i < 3; i++) { sel = await findSelect(editor, phrase); if (sel.found && sel.selChars >= phrase.length) break; }
+    if (!sel || !sel.found) { out({ cmd: 'hyperlink', status: 'text_not_found', text: phrase, docId: editor.__docId || null }); return; }
+    if (sel.selChars < phrase.length) { out({ cmd: 'hyperlink', status: 'selection_failed', text: phrase, selChars: sel.selChars, expected: phrase.length, docId: editor.__docId || null }); return; }
     const n = sel.page || 1;
-    // 하이퍼링크 = 입력 › 하이퍼링크... (툴바 .hyperlink 는 숨김). 메뉴 항목 텍스트에 말줄임표 포함.
+    // ⚠️ URL 중복 버그 회피: webhwp 메뉴 경로는 선택 블록을 유지하지 못해, 원문 뒤에 링크 텍스트가
+    // 새 필드로 중복 삽입된다(예 "...com...com"). → 선택 원문을 먼저 지우고, 같은 자리에 표시텍스트+URL을
+    // 새 하이퍼링크로 삽입한다. (입력 › 하이퍼링크... — 툴바 .hyperlink 는 숨김, 메뉴 텍스트에 말줄임표)
+    await editor.keyboard.press('Backspace'); await editor.waitForTimeout(500);
     await openMenu(editor, '입력');
     const hl = await menuItemXY(editor, '하이퍼링크...');
     if (!hl) throw new Error('입력 › 하이퍼링크... 메뉴 탐색 실패');
     await editor.mouse.click(hl.x, hl.y);
     await editor.waitForTimeout(1200); // 다이얼로그
+    // 표시할 텍스트 = 원래 구절(라벨 우선, 못 찾으면 첫 입력칸에 직접)
+    let displayOk = false;
+    for (const lbl of ['표시할 텍스트', '표시할 문자열']) { try { await setDialogField(editor, lbl, phrase); displayOk = true; break; } catch (e) {} }
+    if (!displayOk) {
+      const ins = await dialogInputs(editor); const displayBox = ins[0];
+      if (!displayBox) throw new Error('하이퍼링크 표시 텍스트 입력칸 탐색 실패');
+      await editor.mouse.click(displayBox.x + Math.min(displayBox.w / 2, 40), displayBox.y + displayBox.h / 2);
+      await editor.keyboard.press('ControlOrMeta+A'); await editor.keyboard.press('Delete');
+      await editor.keyboard.type(phrase, { delay: 30 });
+    }
+    // URL = 주소칸(라벨 우선, 못 찾으면 마지막 입력칸)
     let fieldOk = false;
     for (const lbl of ['웹 주소', '주소', 'URL', '연결 대상', '파일 이름', '경로']) { try { await setDialogField(editor, lbl, url); fieldOk = true; break; } catch (e) {} }
-    if (!fieldOk) { const ins = await dialogInputs(editor); process.stderr.write('[hlk] inputs=' + JSON.stringify(ins.map((i) => i.al)) + '\n'); throw new Error('하이퍼링크 주소 입력칸 탐색 실패'); }
-    // 표시할 텍스트가 비면(메뉴 열며 선택 풀림) '넣기'가 안 먹는다 → 구절로 채워 링크가 걸리게.
-    try { await setDialogField(editor, '표시할 텍스트', phrase); } catch (e) {}
+    if (!fieldOk) {
+      const ins = await dialogInputs(editor); const urlBox = ins[ins.length - 1];
+      if (!urlBox) { process.stderr.write('[hlk] inputs=' + JSON.stringify(ins.map((i) => i.al)) + '\n'); throw new Error('하이퍼링크 주소 입력칸 탐색 실패'); }
+      await editor.mouse.click(urlBox.x + Math.min(urlBox.w / 2, 40), urlBox.y + urlBox.h / 2);
+      await editor.keyboard.press('ControlOrMeta+A'); await editor.keyboard.press('Delete');
+      await editor.keyboard.type(url, { delay: 30 });
+    }
     await editor.waitForTimeout(200);
     const syncP = watchSave(editor);
     let btnOk = false;
