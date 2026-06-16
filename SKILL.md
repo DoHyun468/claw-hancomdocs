@@ -78,7 +78,7 @@ node hancom.js download --name <문서이름>  [--pdf] [--out <로컬경로>]
 node hancom.js upload   --file <로컬경로>
 node hancom.js resize-object --name <문서이름> --at "x,y" [--width <mm>] [--height <mm>] [--apply]
 node hancom.js object-prop   --name <문서이름> --at "x,y" [--pos "x,y"] [--width <mm>] [--height <mm>] [--wrap <배치>] [--fill <색|none>] [--border <색>] [--border-width <mm>] [--apply]
-node hancom.js chart-data    --name <문서이름> --at "x,y" --set "B2=9.9,C3=4" [--apply]
+node hancom.js chart-data    --name <문서이름> --at "x,y" [--data @data.json | --set "B2=9.9,C3=4" | --del-col "C,D" | --del-row "5"] [--apply]
 node hancom.js insert-table  --name <문서이름> --rows R --cols C [--anchor "<텍스트>"] [--apply]
 node hancom.js insert-image  --name <문서이름> --file <이미지경로> [--anchor "<텍스트>"] [--apply]
 node hancom.js insert-chart  --name <문서이름> [--type N] [--anchor "<텍스트>"] [--apply]
@@ -180,12 +180,12 @@ node hancom.js highlight    --name <문서이름> --text "<구절>" --color yell
   - **도형(사각형·타원 등)에 채우기/테두리** — 그림·차트엔 채우기 개념이 없을 수 있다. 선 객체(직선·호)는 `--fill`이 `fill_unavailable`(채우기 탭 없음) → `--border`만 가능.
   - 위치는 **떠 있는 객체만** 가능 — 글자처럼 취급(인라인) 객체면 `pos_unavailable`(그땐 `--wrap square`를 같이 줘서 떠 있는 배치로 바꾸면서 위치 지정).
   - 선(직선·호) 객체는 획이 가늘어 `--at`이 빗나가기 쉬움 — 획 위의 한 점을 줄 것(빗나가면 `object_not_found`).
-- **`chart-data`**: 차트의 **데이터 편집 그리드** 셀 값을 바꿔 차트를 갱신. `--set "B2=9.9,C3=4"`(엑셀식 열문자+행번호=값). 셀=열헤더∩행헤더 교차 → 더블클릭 입력. 그 좌표에 차트 없으면 `chart_not_found`.
-  - ⚠️ **그리드 구조는 차트 종류마다 다르다**(어느 셀이 무슨 뜻인지 먼저 알아야 함). 세 갈래:
-    - **표준(항목×계열)** — 막대·꺾은선·영역·방사형 등 대부분: **A열 = 항목(범주) 이름**, **1행 = 계열 이름**, 그 교차셀(B2~)= 값. 예: 첫 계열 둘째 항목 값 = `B3`.
-    - **원형 계열(단일 계열)** — 원형·쪼개진 원형·도넛형·3차원 원형/쪼개진 원형: **A열 = 항목 이름**, **B열 = 값 한 줄**(계열 하나). 예: 셋째 항목 값 = `B4`.
-    - **분산형** — **A열 = X값**, **B·C…열 = 각 계열의 Y값**(A1 헤더는 비어 있음). 예: 둘째 점의 X = `A3`, 그 Y1 = `B3`.
-  - 기본 그리드는 4항목(막대류는 3계열×4항목). `chart-data`는 **이미 있는 셀만** 짚는다(없는 셀은 `cell_not_located`) — 종류를 모르면 먼저 `--at` 좌표의 차트를 캡처해 그리드를 확인하고 값을 바꿀 것.
+- **`chart-data --at "x,y"`**: 차트의 **데이터 편집 그리드**를 바꿔 차트를 갱신. 세 방식:
+  - **`--data @data.json` (자동맞춤, 권장)** — 데이터만 주면 격자를 그 크기로 맞추고(항목 행·계열 열 자동 추가/삭제) 채운다. 기본 더미(4항목×3계열) 잔재 없이 깔끔. 형식 `{"cat":["1월",..],"series":[{"name":"매출","values":[120,..]}]}`.
+  - **`--set "A2=1월,B1=매출,B2=120"`** — 개별 셀 값(엑셀식). **이미 있는 셀만**(없으면 `cell_not_located`).
+  - **`--del-col "C,D"` / `--del-row "5"`** — 계열(열)·항목(행) 삭제.
+  - ⚠️ **그리드 구조는 차트 종류마다 3갈래**(표준=항목×계열 / 원형=단일계열 / 분산형=X·Y). 종류 인덱스(0~19)·패밀리·그리드 상세·자동맞춤 흐름은 **`references/chart-types.md`**.
+  - ⚠️ 편집 직후 캡처는 라벨 재렌더 지연으로 **stale**할 수 있음 → 다시 열어(`around`/`capture`) 검증. 그 좌표에 차트 없으면 `chart_not_found`.
 - **`caption --at "x,y" --text "<캡션>" [--position below|above|left|right]`**: 그 좌표의 **객체(그림/표/차트/도형)에 캡션**을 단다(예: "그림 1. …"). `--position` 기본 `below`(아래). 그 좌표에 객체 없으면 `object_not_selected`. 한글 위치(`"오른쪽 위"` 등)도 그대로 받음.
 - ⚠️ 편집은 **headless 전용**. 표 셀은 작아 좌표클릭이 빗나가니 셀은 `set-cell-text`(셀 텍스트로 찾기)가 정확.
 
