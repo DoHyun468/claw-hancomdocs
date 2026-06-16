@@ -403,7 +403,20 @@ async function cmdZoom(args) {
 // 찾기 다이얼로그 열기 — 툴바 '찾기' 버튼을 DOM 셀렉터(title)로, 드롭다운의 '찾기...' 항목은
 // 실제 위치를 DOM에서 읽어 클릭. (기존 하드코딩 좌표 click(309,95)/(335,167)는 창크기·UI버전·
 // 배율에 따라 어긋나 다이얼로그가 안 열려 실패 → 셀렉터/DOM-위치로 견고화. OS 무관.)
+// 찾기 검색칸이 화면에 떴는지 탐지(단축키 성공 판정용). 가시 input 중 본문 아래(y>300) 가장 넓은 것.
+// ⚠️ '문서 편집 영역' input 은 제외 — 단축키 실패 시 거기에 블라인드 입력하면 문서가 망가진다(DEBUG 안전교훈).
+async function findSearchInputBox(ed) {
+  return await ed.evaluate(() => {
+    const ins = Array.from(document.querySelectorAll('input')).map((el) => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, vis: r.width > 60 && r.height > 10 && getComputedStyle(el).visibility !== 'hidden' && el.getAttribute('aria-label') !== '문서 편집 영역' }; });
+    const cand = ins.filter((i) => i.vis && i.y > 300).sort((a, b) => b.w - a.w)[0];
+    return cand ? { x: Math.round(cand.x), y: Math.round(cand.y), w: Math.round(cand.w), h: Math.round(cand.h) } : null;
+  });
+}
 async function openFindDialog(ed) {
+  // 단축키 우선: ControlOrMeta+F 로 찾기칸이 뜨면 메뉴 탐색을 건너뛴다. 안 뜨면(webhwp 가 무시) 기존 메뉴로 폴백.
+  await ed.keyboard.press('ControlOrMeta+F').catch(() => {});
+  await ed.waitForTimeout(550);
+  if (await findSearchInputBox(ed)) return; // 실제로 떴을 때만 빠른경로 종료(블라인드 입력 안 함)
   await ed.locator('a[title="찾기"]').first().click(); // 메인 찾기 버튼(title 고정 = 좌표 무관)
   await ed.waitForTimeout(900);
   // 드롭다운에서 '보이는' 찾기... 메뉴 항목의 실제 중심좌표를 읽어 클릭(좌표 드리프트 무관).
