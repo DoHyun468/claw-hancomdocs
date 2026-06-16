@@ -561,6 +561,51 @@ async function dragCellRange(ed, aText, bText, { aNth = 1, aPage = null, bNth = 
   return { ok: true, a, b, from: { x: xA, y: yA + 6 }, to: { x: xB, y: yB + 6 } };
 }
 
+// 그리드 좌표 기반 셀 범위 드래그 — 텍스트 없이 빈 셀도 선택(스크래치 작성의 핵심: 빈 셀끼리 병합 가능).
+// @start(문서 맨 앞 표 첫 셀)에서 Tab 으로 캐럿을 옮기며 readCaretRect 로 온스크린 좌표를 읽어 A→B 드래그.
+// cols=표 칸수, aIdx/bIdx=선형 인덱스(row*cols+col). 같은 화면(스크롤 없는 작은 표)에서만 신뢰 — 큰 표·병합 섞인
+// 표는 텍스트 기반 dragCellRange 가 정확(Tab 산술은 병합 셀에서 어긋남). 작성 중인 균등 격자엔 정확.
+async function dragCellRangeByGrid(ed, cols, aIdx, bIdx) {
+  if (bIdx < aIdx) { const t = aIdx; aIdx = bIdx; bIdx = t; }
+  await goDocStart(ed);
+  await ed.keyboard.press('ArrowDown'); await ed.waitForTimeout(250); // 표 앞 빈 문단 → 첫 셀(0,0)
+  for (let i = 0; i < aIdx; i++) { await ed.keyboard.press('Tab'); await ed.waitForTimeout(70); }
+  await ed.waitForTimeout(150);
+  const posA = await readCaretRect(ed);
+  if (!posA) return { ok: false, reason: 'caret_a_unreadable' };
+  for (let i = 0; i < (bIdx - aIdx); i++) { await ed.keyboard.press('Tab'); await ed.waitForTimeout(70); }
+  await ed.waitForTimeout(150);
+  const posB = await readCaretRect(ed);
+  if (!posB) return { ok: false, reason: 'caret_b_unreadable' };
+  const xA = posA.x, yA = posA.y + Math.round((posA.h || 12) / 2);
+  const xB = posB.x, yB = posB.y + Math.round((posB.h || 12) / 2);
+  if ([yA, yB].some((y) => y < 30 || y > VIEW.height - 30)) return { ok: false, reason: 'offscreen', yA, yB, hint: 'A·B 가 한 화면에 안 들어옴 — 작은 표에서만.' };
+  await focusBody(ed);
+  await ed.mouse.move(xA, yA); await ed.mouse.down(); await ed.waitForTimeout(180);
+  await ed.mouse.move(xB, yB, { steps: 14 }); await ed.waitForTimeout(180);
+  await ed.mouse.up(); await ed.waitForTimeout(400);
+  return { ok: true, aIdx, bIdx, from: { x: xA, y: yA }, to: { x: xB, y: yB } };
+}
+
+// "r,c" → {r,c} (0-기준 행,칸). 인식 실패 시 null.
+function parseRC(v) {
+  if (v == null || v === true) return null;
+  const m = String(v).split(/[,x]/).map((s) => Number(s.trim()));
+  if (m.length !== 2 || m.some((n) => !Number.isInteger(n) || n < 0)) return null;
+  return { r: m[0], c: m[1] };
+}
+
+// "r,c>r,c r,c>r,c ..." (공백/세미콜론 구분) → [{a:{r,c}, b:{r,c}}]. 배치 병합용. 잘못된 토큰은 건너뜀.
+function parseMergeRanges(v, cols) {
+  if (v == null || v === true) return [];
+  return String(v).split(/[;\s]+/).map((s) => s.trim()).filter(Boolean).map((tok) => {
+    const [aS, bS] = tok.split('>');
+    const a = parseRC(aS), b = parseRC(bS);
+    if (!a || !b) return null;
+    return { a, b, aIdx: a.r * cols + a.c, bIdx: b.r * cols + b.c, label: aS + '>' + bS };
+  }).filter(Boolean);
+}
+
 // 매치의 '절대 문서 위치' docY=scrollTop+caret.y 와 cx 를 **한 번의 evaluate(원자적)**로 읽는다.
 // scrollTop 과 caret 을 따로 읽으면 부드러운 스크롤 도중 값이 어긋나 docY 가 깨지던 버그를 차단.
 // docY 는 스크롤 무관(캐럿은 문서상 고정) → 스크롤 애니메이션이 끝나길 기다릴 필요 없이 캐럿만 자리잡으면 안정.
@@ -1143,9 +1188,120 @@ async function cmdReplaceText(args) {
 
 // set-cell-text: 표 셀 채우기. 본문 canvas라 셀 위치를 셀렉터로 못 짚으므로, 기준 셀의 기존
 // 텍스트(--cell)를 찾기로 찾아 캐럿을 그 셀에 두고 → Tab 으로 대상 셀 이동 → 입력.
+// ⚠️ 텍스트가 하나도 없는 빈 표(스크래치 작성 시작)는 앵커가 없어 막힘 → --cell "@start" 로
+//   문서 맨 앞 표의 첫 셀(문서 시작)부터 Tab 으로 도달(--tab N=첫 셀에서 N칸). 첫 셀 시딩 후엔
+//   그 텍스트를 앵커로 일반 --cell 채우기 가능.
 // 안전: 찾기(읽기전용)로만 캐럿 이동, 캐럿이 본문 영역 밖이면 중단, dry-run 기본, headless 전용.
+// 배치 채우기: 빈 표를 한 세션에서 여러 셀 채움 — 셀당 세션 1개의 비효율 제거(스크래치 작성 필수).
+// --cells-file <json>. 두 지정 방식: ① {r,c,text}(0-기준 행/칸)+--grid-cols=표 칸수 → idx=r*칸수+c (균등 격자).
+// ② {tab,text} → @start 첫 셀에서 Tab N칸(병합된 구조도 가능 — 병합 후 reading-order 인덱스 직접 지정).
+// @start 첫 셀에서 Tab 순회하며 입력. ⚠️ {r,c}는 병합 전 균등 격자에서만 정확. 병합된 표는 {tab} 사용.
+// 권장 흐름: 빈 표 → table-op --merges(빈 셀 병합, 안정적) → fill-grid {tab}(병합 후 구조 채우기).
+async function cmdFillGrid(args) {
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용.');
+  const gridCols = Math.max(0, Number(args['grid-cols']) || 0);
+  let spec;
+  try { spec = JSON.parse(fs.readFileSync(args['cells-file'], 'utf8')); } catch (e) { throw new Error('--cells-file 읽기/파싱 실패: ' + e.message); }
+  if (!Array.isArray(spec)) throw new Error('--cells-file 은 [{r,c,text} 또는 {tab,text}, ...] 배열이어야 함');
+  const byTab = spec.some((s) => s.tab != null);
+  if (!byTab && !gridCols) throw new Error('--grid-cols <표 칸수> 필요 ({r,c} 방식), 또는 셀에 {tab} 지정');
+  const cells = spec.map((s) => {
+    const idx = s.tab != null ? Number(s.tab) : (Number(s.r) * gridCols + Number(s.c));
+    return { idx, text: String(s.text == null ? '' : s.text).normalize('NFC'), r: s.r, c: s.c, tab: s.tab };
+  }).filter((s) => Number.isInteger(s.idx) && s.idx >= 0).sort((a, b) => a.idx - b.idx);
+  if (!cells.length) throw new Error('--cells-file 에 유효한 셀이 없음');
+  const name = String(args.name).normalize('NFC');
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  if (!apply) { out({ cmd: 'set-cell-text', dryRun: true, batch: true, mode: byTab ? 'tab' : 'grid', ...(gridCols ? { gridCols } : {}), count: cells.length, cells: cells.map((c) => ({ idx: c.idx, text: c.text })), note: '--apply 시 한 세션에서 @start→Tab 순회로 채움.' }); return; }
+  await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    // ⚠️ 방금 편집(병합 등)한 문서를 곧바로 reopen 하면 서버 커밋/렌더가 끝나기 전이라 Ctrl+Home 이 안 먹어 캐럿이
+    // 표 첫 셀에 안 들어가고 본문에 입력되는 사고가 있어(실측). 진입을 '확정'하는 게 핵심:
+    //   ① goDocStart 후 캐럿이 문서 최상단인지(Ctrl+Home 먹었는지) ② ArrowDown 으로 한 줄 내려간 뒤
+    //   ③ **Tab 을 눌렀을 때 캐럿이 '다음 열'로 크게(>60px) 점프하는지** = 표 셀 안에 있다는 결정적 신호
+    //   (본문 문단이면 Tab 은 탭문자라 소폭만 이동 → 구분됨). Shift+Tab 으로 첫 셀 복귀. 안 되면 page.reload() 로
+    //   다시 로드(그땐 커밋 완료라 성공). 끝내 실패하면 본문 오염 막으려 중단.
+    const inFirstCell = async () => { // 현재 캐럿이 표 셀인지 Tab 점프로 확인(확인 후 첫 셀로 복귀)
+      const a = await readCaretRect(editor);
+      if (!a) return false;
+      await editor.keyboard.press('Tab'); await editor.waitForTimeout(300);
+      const b = await readCaretRect(editor);
+      await editor.keyboard.press('Shift+Tab'); await editor.waitForTimeout(300);
+      return !!(b && (b.x - a.x) > 60); // 다음 칸으로 우측 점프 = 표 안
+    };
+    const tryEnter = async (pr) => {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await goDocStart(editor); await editor.waitForTimeout(450);
+        const before = await readCaretRect(editor);
+        if (!(before && pr && before.y < pr.y + 160)) { await editor.waitForTimeout(800); continue; } // Ctrl+Home 최상단 확인
+        await editor.keyboard.press('ArrowDown'); await editor.waitForTimeout(500); // 빈 문단 → 표 첫 셀(0,0)
+        if (await inFirstCell()) return true; // 표 셀 진입 확정(좌측 col0=제목셀은 모든 행을 걸쳐 첫 셀로 안정)
+        await editor.waitForTimeout(700);
+      }
+      return false;
+    };
+    // ⚠️ 방금 병합한 문서는 서버 커밋·렌더가 끝나기 전이면 진입 성공해도 'fill 내내 굼떠' 입력이 간헐적으로 씹혀
+    // 후반 셀이 빈다(실측, 중단 지점 매번 다름). 2차 명령(완전 정착된 문서)은 100% 완주 → 그 상태를 강제로 만든다:
+    // 서버 커밋 대기(3.5s) → reload(커밋된 문서 새로 페치) → ready 대기 → 추가 정착(2.5s) → 그 다음 진입.
+    await editor.waitForTimeout(3500);
+    await editor.reload({ waitUntil: 'networkidle' }).catch(() => {});
+    await waitForReady(editor); await editor.waitForTimeout(2500);
+    let pr0 = await detectPageRect(editor); await readCurrentPage(editor);
+    let entered = await tryEnter(pr0);
+    for (let r = 0; r < 3 && !entered; r++) { // 그래도 안 되면 한 번 더 리로드+정착
+      await editor.reload({ waitUntil: 'networkidle' }).catch(() => {});
+      await waitForReady(editor); await editor.waitForTimeout(2500);
+      pr0 = await detectPageRect(editor);
+      entered = await tryEnter(pr0);
+    }
+    if (!entered) { out({ cmd: 'set-cell-text', status: 'table_entry_failed', batch: true, note: '표 첫 셀 진입 실패(문서 미정착?) — 잠시 후 다시 실행. 본문 오염 방지로 중단함.', docId: editor.__docId || null }); return; }
+    // ⚠️ Tab 누락 방지(검증된 tab-step): 리로드 직후 등 문서가 굼뜨면 Tab 키가 일부 씹혀 캐럿이 뒤처지고
+    // 후반 셀에 도달 못 해 빈 칸이 됨(실측). Tab 후 캐럿이 실제로 움직였는지 확인하고 안 움직였으면 다시 누른다.
+    const moved = (a, b) => !a || (b && (Math.abs(b.x - a.x) > 3 || Math.abs(b.y - a.y) > 3));
+    const tabStep = async () => {
+      const a = await readCaretRect(editor);
+      for (let k = 0; k < 4; k++) {
+        await editor.keyboard.press('Tab'); await editor.waitForTimeout(120);
+        const b = await readCaretRect(editor);
+        if (moved(a, b)) return; // 이동 확인되면 끝(안 움직였으면 씹힌 것 → 재시도)
+      }
+    };
+    // 셀 입력(씹힘 방지): 빈 셀에 입력 후 캐럿이 '입력 글자만큼 우측 전진'했는지 확인 — 안 됐으면 입력이 씹힌 것이라
+    // 줄을 비우고 재시도. 빈 셀에서 재입력이라 중복 안 생김(굼뜬 문서에서 후반 셀이 비던 문제 해결).
+    const typeCell = async (text) => {
+      for (let k = 0; k < 3; k++) {
+        await editor.keyboard.press('Home');
+        await editor.keyboard.down('Shift'); await editor.keyboard.press('End'); await editor.keyboard.up('Shift');
+        await editor.waitForTimeout(70);
+        const before = await readCaretRect(editor);
+        await editor.keyboard.type(text, { delay: 30 });
+        await editor.waitForTimeout(140);
+        const after = await readCaretRect(editor);
+        if (!before || !after || after.x > before.x + 4) return; // 캐럿 전진 = 입력됨
+      }
+    };
+    let cur = 0;
+    for (const cell of cells) {
+      for (; cur < cell.idx; cur++) await tabStep();
+      if (cell.text) await typeCell(cell.text);
+    }
+    // ⚠️ 저장 무장은 '마지막 입력 직후'에 — webhwp 는 입력이 멎은 뒤 디바운스 sync 1회를 보내므로, 루프 전에
+    // 무장하면 6초 타임아웃이 루프 중에 끝나 마지막 sync 를 놓치고 브라우저가 닫혀 전부 유실됨(실측).
+    await editor.waitForTimeout(400);
+    const saved = await confirmSaved(editor);
+    const n = (await readCurrentPage(editor)) || 1; await gotoPage(editor, n);
+    const rect = await detectPageRect(editor); await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_fillgrid_${stamp()}.png`);
+    await editor.screenshot(rect ? { path: shot, clip: rect } : { path: shot });
+    out({ cmd: 'set-cell-text', applied: true, batch: true, mode: byTab ? 'tab' : 'grid', filled: cells.length, page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), docId: editor.__docId || null, shot });
+  });
+}
+
 async function cmdSetCellText(args) {
   if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (args['cells-file']) return await cmdFillGrid(args); // 배치 채우기(여러 셀 한 세션)
   if (args.text == null || args.text === true) throw new Error('--text 필요 (채울 값)');
   const apply = !!args.apply;
   if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
@@ -1158,9 +1314,11 @@ async function cmdSetCellText(args) {
     if (!nav.found) { out({ cmd: 'set-cell-text', status: 'cellnav_failed', why: nav.why, note: '표에 텍스트 셀이 없거나 colCnt 미상 → --cell 로 직접 지정. (병합 표는 어긋날 수 있음)' }); return; }
     cellText = String(nav.anchorText).normalize('NFC'); tabN = nav.tabSteps;
   } else {
-    if (args.cell == null || args.cell === true) throw new Error('--cell 필요 (기준 셀 텍스트) 또는 --file --table --row --col');
+    if (args.cell == null || args.cell === true) throw new Error('--cell 필요 (기준 셀 텍스트, 또는 빈 표 첫 셀 시딩은 "@start") 또는 --file --table --row --col');
     cellText = String(args.cell).normalize('NFC');
-    tabN = args.tab !== undefined ? Math.max(0, Number(args.tab)) : 1; // 기준 셀에서 Tab 횟수(1=다음 셀)
+    // @start = 문서 시작(=문서 맨 앞 표의 첫 셀)부터 Tab — 텍스트가 하나도 없는 빈 표를 채우기 시작할 때
+    // (findText 앵커가 없어 부트스트랩 불가한 경우). 기본 Tab 0 = 첫 셀 자체.
+    tabN = args.tab !== undefined ? Math.max(0, Number(args.tab)) : (cellText === '@start' ? 0 : 1); // 기준 셀에서 Tab 횟수(1=다음 셀)
   }
   const value = String(args.text).normalize('NFC');
   const scale = Number(args.scale) || 1.5;
@@ -1169,23 +1327,33 @@ async function cmdSetCellText(args) {
     const name = String(args.name).normalize('NFC');
     const editor = await openDoc(ctx, page, name);
     if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
-    const r = await findText(editor, cellText);
-    if (!r.found) { out({ cmd: 'set-cell-text', status: 'cell_not_found', cell: cellText, docId: editor.__docId || null }); return; }
-    const n = r.page || 1;
-    const rect = await detectPageRect(editor);
-    const caret = r.caret;
-    if (!caret) { out({ cmd: 'set-cell-text', status: 'caret_not_found', cell: cellText, docId: editor.__docId || null }); return; }
-    const inBody = !!rect && caret.x >= rect.x - 5 && caret.x <= rect.x + rect.width + 5 && caret.y >= rect.y - 5 && caret.y <= rect.y + rect.height + 300;
-    if (!inBody) { out({ cmd: 'set-cell-text', status: 'caret_out_of_body', cell: cellText, caret, pageRect: rect }); return; }
+    const seedStart = cellText === '@start'; // 빈 표 첫 셀 시딩(앵커 텍스트 없이 문서 시작에서 출발)
+    let n, rect, caret = null;
+    if (seedStart) {
+      // Ctrl+Home → 문서 맨 앞. insert-table 는 표 앞에 빈 문단을 한 줄 남기므로(실측) 문서 시작 캐럿은
+      // 표 위 문단 → ArrowDown 한 번으로 표의 첫 셀(0,0)에 진입. (표가 문단 없이 맨 앞이면 --tab 으로 보정.)
+      await goDocStart(editor);
+      await editor.keyboard.press('ArrowDown'); await editor.waitForTimeout(200);
+      rect = await detectPageRect(editor);
+      n = (await readCurrentPage(editor)) || 1;
+    } else {
+      const r = await findText(editor, cellText);
+      if (!r.found) { out({ cmd: 'set-cell-text', status: 'cell_not_found', cell: cellText, docId: editor.__docId || null }); return; }
+      n = r.page || 1;
+      rect = await detectPageRect(editor);
+      caret = r.caret;
+      if (!caret) { out({ cmd: 'set-cell-text', status: 'caret_not_found', cell: cellText, docId: editor.__docId || null }); return; }
+      const inBody = !!rect && caret.x >= rect.x - 5 && caret.x <= rect.x + rect.width + 5 && caret.y >= rect.y - 5 && caret.y <= rect.y + rect.height + 300;
+      if (!inBody) { out({ cmd: 'set-cell-text', status: 'caret_out_of_body', cell: cellText, caret, pageRect: rect }); return; }
+    }
     if (!apply) {
-      out({ cmd: 'set-cell-text', dryRun: true, cell: cellText, tab: tabN, text: value, foundPage: n, caret,
+      out({ cmd: 'set-cell-text', dryRun: true, cell: cellText, tab: tabN, text: value, foundPage: n, ...(caret ? { caret } : {}),
             ...(nav ? { target: { table: nav.tableIdx, row: nav.targetRow, col: nav.targetCol }, colCnt: nav.colCnt } : {}),
-            docId: editor.__docId || null, note: '--apply 없으면 read-only. 적용 시: 앵커 "' + cellText + '" 에서 ' + (tabN < 0 ? 'Shift+Tab×' + Math.abs(tabN) : 'Tab×' + tabN) + ' 이동 후 입력.' });
+            docId: editor.__docId || null, note: '--apply 없으면 read-only. 적용 시: ' + (seedStart ? '문서 시작(첫 셀)' : '앵커 "' + cellText + '"') + ' 에서 ' + (tabN < 0 ? 'Shift+Tab×' + Math.abs(tabN) : 'Tab×' + tabN) + ' 이동 후 입력.' });
       return;
     }
-    // 기준(앵커) 셀에 캐럿 → Tab×N 으로 대상 셀 이동 (음수면 Shift+Tab 으로 역방향)
-    await editor.mouse.click(caret.x, caret.y + Math.round((caret.h || 12) / 2));
-    await editor.waitForTimeout(350);
+    // 기준(앵커) 셀에 캐럿 → Tab×N 으로 대상 셀 이동 (음수면 Shift+Tab 으로 역방향). 시딩(@start)은 이미 캐럿이 첫 셀.
+    if (!seedStart) { await editor.mouse.click(caret.x, caret.y + Math.round((caret.h || 12) / 2)); await editor.waitForTimeout(350); }
     const steps = Math.abs(tabN), tabKey = tabN < 0 ? 'Shift+Tab' : 'Tab';
     for (let i = 0; i < steps; i++) { await editor.keyboard.press(tabKey); await editor.waitForTimeout(180); }
     // 대상 셀의 기존 내용을 선택해 교체 — webhwp Tab 은 셀 내용을 자동 선택하지 않으므로(캐럿만 셀 시작
@@ -2153,11 +2321,14 @@ async function cmdTableCellProp(args) {
 
 // table-op: 표 줄/칸 추가·삭제·나누기·합치기·셀크기 같게·블록 계산식·자릿점·셀 지우기. 대상 셀에 캐럿(--cell)을 두면
 // 표 메뉴가 활성. 다중셀 op(merge·equal-width·equal-height·block-calc)는 --to <끝셀 텍스트> 로 드래그 범위 선택(필수).
+// ⚠️ 빈 셀(텍스트 없음)은 텍스트로 못 짚음 → 위치 좌표 모드: --grid-cols <표 칸수> --rc "행,칸"[ --to-rc "행,칸"]
+//   (0-기준). 스크래치 작성 시 빈 셀끼리 병합(마커·정리 불필요)·빈 셀 지정에 필수. 병합 안 섞인 균등 격자에서 정확.
 // op = insert-row-above|insert-row-below|insert-col-left|insert-col-right|delete-row|delete-col|split|merge|
 //      equal-width|equal-height|block-calc(--calc sum|avg|product)|thousands(--comma on|off)|clear-cell.
 async function cmdTableOp(args) {
   if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
-  if (!args.cell || args.cell === true) throw new Error('--cell 필요 (대상 셀 텍스트)');
+  const hasMerges = args.merges != null && args.merges !== true;
+  if ((!args.cell || args.cell === true) && (args.rc == null || args.rc === true) && !hasMerges) throw new Error('--cell <셀 텍스트> 또는 --rc "r,c"(+--grid-cols) 또는 --merges "r,c>r,c ..." 필요');
   const op = String(args.op || '');
   // 서브메뉴 항목(부모 호버 → 자식 클릭)
   const SUB = {
@@ -2182,29 +2353,94 @@ async function cmdTableOp(args) {
   const commaItem = ['off', 'remove', '빼기'].includes(comma) ? '자릿점 빼기' : '자릿점 넣기';
   const apply = !!args.apply;
   if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용.');
-  const cellText = String(args.cell).normalize('NFC');
+  const cellText = args.cell != null && args.cell !== true ? String(args.cell).normalize('NFC') : null;
   const nth = Math.max(1, Number(args.nth) || 1);
   const cellPage = args.page ? Number(args.page) : null;
   const toText = args.to != null && args.to !== true ? String(args.to).normalize('NFC') : null;
   const toNth = Math.max(1, Number(args['to-nth']) || 1);
   const toPage = args['to-page'] ? Number(args['to-page']) : null;
-  if (needsRange.has(op) && !toText) throw new Error("--op " + op + " 는 다중 셀 선택 필요 → --to <끝 셀 텍스트> 지정 (예: --cell 가 --to 나).");
+  // 그리드(위치) 좌표 타게팅 — 텍스트 없는 빈 셀도 행/칸으로 지정(빈 셀 병합의 핵심). --grid-cols=표 칸수 필수.
+  // --rc "r,c"(시작) [--to-rc "r,c"(범위 끝)]. 작성 중 균등 격자에서 정확(병합 섞이면 텍스트 타게팅 쓸 것).
+  const gridCols = args['grid-cols'] !== undefined ? Math.max(1, Number(args['grid-cols'])) : null;
+  const rcA = parseRC(args.rc);
+  const rcB = parseRC(args['to-rc']);
+  if (args.rc != null && args.rc !== true && !rcA) throw new Error('--rc 형식 오류: "행,칸" (0-기준 정수)');
+  if (rcA && !gridCols) throw new Error('--rc 사용 시 --grid-cols <표 칸수> 필요');
+  const gridMode = !!(gridCols && rcA);
+  if (needsRange.has(op) && !toText && !(gridMode && rcB) && !hasMerges) throw new Error("--op " + op + " 는 다중 셀 선택 필요 → --to <끝 셀 텍스트> / --to-rc \"행,칸\" / --merges \"...\" 지정.");
   const tabN = args.tab !== undefined ? Math.max(0, Number(args.tab)) : 0;
   const name = String(args.name).normalize('NFC');
   fs.mkdirSync(CAPDIR, { recursive: true });
   await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
     const editor = await openDoc(ctx, page, name);
     if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    // 배치 병합(--merges): 한 세션에서 여러 범위 병합. 균등 격자일 때 모든 셀 좌표를 먼저 읽어두고(Tab 순회)
+    // 캐시 좌표로 차례차례 드래그+합치기 → 병합으로 Tab 인덱스가 깨지는 문제 회피(좌표는 화면상 고정).
+    if (hasMerges) {
+      if (op !== 'merge') throw new Error('--merges 는 --op merge 와 함께');
+      if (!gridCols) throw new Error('--merges 사용 시 --grid-cols <표 칸수> 필요');
+      const ranges = parseMergeRanges(args.merges, gridCols);
+      if (!ranges.length) throw new Error('--merges 파싱 실패: "행,칸>행,칸 행,칸>행,칸 ..." 형식');
+      // ⚠️ 아래행부터 병합(bottom-up). 병합으로 줄바꿈이 줄면 그 행 높이가 줄어 '아래' 행들이 위로 밀리는데,
+      // 캐시해둔 좌표가 어긋나 엉뚱한 셀을 병합하게 됨(실측: 위→아래 순서면 내용 유실). 아래행부터 하면
+      // 아직 처리 안 한 위 행 좌표는 영향 없음. 정렬 키 = 범위의 가장 아래 행(내림차순).
+      ranges.sort((p, q) => Math.max(q.a.r, q.b.r) - Math.max(p.a.r, p.b.r));
+      if (!apply) { out({ cmd: 'table-op', dryRun: true, op: 'merge', batch: true, gridCols, ranges: ranges.map((r) => r.label), docId: editor.__docId || null, note: '--apply 시 한 세션에서 모든 범위 병합.' }); return; }
+      await goDocStart(editor);
+      await editor.keyboard.press('ArrowDown'); await editor.waitForTimeout(250); // 첫 셀(0,0)
+      const need = [...new Set(ranges.flatMap((r) => [r.aIdx, r.bIdx]))].sort((a, b) => a - b);
+      const coords = {}; let cur = 0;
+      for (const t of need) {
+        for (; cur < t; cur++) { await editor.keyboard.press('Tab'); await editor.waitForTimeout(70); }
+        await editor.waitForTimeout(110);
+        const c = await readCaretRect(editor);
+        if (c) coords[t] = { x: c.x, y: c.y + Math.round((c.h || 12) / 2) };
+      }
+      const results = [];
+      for (const rg of ranges) {
+        const pa = coords[rg.aIdx], pb = coords[rg.bIdx];
+        if (!pa || !pb) { results.push({ range: rg.label, ok: false, reason: 'coord_unread' }); continue; }
+        await focusBody(editor);
+        await editor.mouse.move(pa.x, pa.y); await editor.mouse.down(); await editor.waitForTimeout(160);
+        await editor.mouse.move(pb.x, pb.y, { steps: 14 }); await editor.waitForTimeout(160);
+        await editor.mouse.up(); await editor.waitForTimeout(300);
+        await openMenu(editor, '표');
+        const it = await menuItemXY(editor, '셀 합치기');
+        if (!it) { results.push({ range: rg.label, ok: false, reason: 'merge_menu_inactive' }); await editor.keyboard.press('Escape').catch(() => {}); continue; }
+        await editor.mouse.click(it.x, it.y); await editor.waitForTimeout(900);
+        results.push({ range: rg.label, ok: true });
+      }
+      await editor.waitForTimeout(400);
+      const saved = await confirmSaved(editor); // 마지막 병합 직후 새로 무장(루프 전 무장은 타임아웃됨)
+      await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(200); // 열린 표 메뉴 닫고 캡처
+      const n = (await readCurrentPage(editor)) || 1; await gotoPage(editor, n);
+      const rect = await detectPageRect(editor); await hideOverlays(editor);
+      const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_merge_${stamp()}.png`);
+      await editor.screenshot(rect ? { path: shot, clip: rect } : { path: shot });
+      out({ cmd: 'table-op', applied: true, op: 'merge', batch: true, gridCols, merged: results.filter((r) => r.ok).length, total: results.length, results, page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), docId: editor.__docId || null, shot });
+      return;
+    }
     // 범위 op(--to)은 dragCellRange 가 타게팅+선택 전부 처리 → 사전 anchorCell 안 함(중복 find 사이클이
     // 드래그 선택을 깨 merge 무효화됨, 실측). 단일 op만 여기서 anchorCell.
+    const rangeSelected = !!toText || (gridMode && !!rcB); // 다중 셀이 이미 드래그 선택됨(F5 단일선택 금지 신호)
     let r = null;
-    if (!toText) {
+    if (!gridMode && !toText) {
       r = await anchorCell(editor, cellText, { nth, page: cellPage });
       if (!r.found || !r.caret) { out({ cmd: 'table-op', status: 'cell_not_found', cell: cellText, nth, page: cellPage, occCount: r.occCount, docId: editor.__docId || null }); return; }
     }
-    if (!apply) { out({ cmd: 'table-op', dryRun: true, cell: cellText, tab: tabN, op, ...(toText ? { to: toText } : {}), ...(r ? { foundPage: r.page } : {}), docId: editor.__docId || null, note: '--apply 시 표 op 실행.' }); return; }
+    if (!apply) { out({ cmd: 'table-op', dryRun: true, ...(gridMode ? { rc: rcA, ...(rcB ? { toRc: rcB } : {}), gridCols } : { cell: cellText, tab: tabN, ...(toText ? { to: toText } : {}) }), op, ...(r ? { foundPage: r.page } : {}), docId: editor.__docId || null, note: '--apply 시 표 op 실행.' }); return; }
     await focusBody(editor);
-    if (toText) {
+    if (gridMode) {
+      // 위치 좌표로 캐럿(단일) 또는 드래그 범위(rcB) 선택 — 빈 셀도 가능.
+      if (rcB) {
+        const dr = await dragCellRangeByGrid(editor, gridCols, rcA.r * gridCols + rcA.c, rcB.r * gridCols + rcB.c);
+        if (!dr.ok) { out({ cmd: 'table-op', status: 'range_select_failed', rc: rcA, toRc: rcB, reason: dr.reason, ...(dr.hint ? { hint: dr.hint } : {}), docId: editor.__docId || null }); return; }
+      } else {
+        await goDocStart(editor); await editor.keyboard.press('ArrowDown'); await editor.waitForTimeout(250);
+        const idx = rcA.r * gridCols + rcA.c;
+        for (let i = 0; i < idx; i++) { await editor.keyboard.press('Tab'); await editor.waitForTimeout(80); }
+      }
+    } else if (toText) {
       const dr = await dragCellRange(editor, cellText, toText, { aNth: nth, aPage: cellPage, bNth: toNth, bPage: toPage });
       if (!dr.ok) { out({ cmd: 'table-op', status: 'range_select_failed', cell: cellText, to: toText, reason: dr.reason, ...(dr.hint ? { hint: dr.hint } : {}), docId: editor.__docId || null }); return; }
     } else {
@@ -2214,7 +2450,7 @@ async function cmdTableOp(args) {
     const syncP = watchSave(editor); // 표 구조 변경 전에 무장(메뉴/다이얼로그 처리 중 동기화 놓치지 않게)
     if (op === 'clear-cell') {
       // 셀 지우기 = 셀 내용 비우기(우클릭 전용 항목 → F5 선택 후 Delete 로 동등 처리).
-      if (!toText) { await editor.keyboard.press('F5'); await editor.waitForTimeout(400); }
+      if (!rangeSelected) { await editor.keyboard.press('F5'); await editor.waitForTimeout(400); }
       await editor.keyboard.press('Delete'); await editor.waitForTimeout(500);
     } else if (op === 'split') {
       // 셀 나누기 다이얼로그: 줄/칸 개수로 현재 셀을 분할
@@ -2247,8 +2483,8 @@ async function cmdTableOp(args) {
       if (!item) throw new Error('블록 계산식 항목 탐색 실패: ' + CALC[calc]);
       await editor.mouse.click(item.x, item.y); await editor.waitForTimeout(1200);
     } else if (op === 'thousands') {
-      // 1,000 단위 구분 쉼표 → 자릿점 넣기/빼기 (--to 없으면 F5 단일 셀)
-      if (!toText) { await editor.keyboard.press('F5'); await editor.waitForTimeout(400); }
+      // 1,000 단위 구분 쉼표 → 자릿점 넣기/빼기 (단일 셀이면 F5 선택)
+      if (!rangeSelected) { await editor.keyboard.press('F5'); await editor.waitForTimeout(400); }
       await openMenu(editor, '표');
       const parent = await menuItemXY(editor, '1,000 단위 구분 쉼표');
       if (!parent) throw new Error('1,000 단위 구분 쉼표 탐색 실패 (셀 선택 안 됨?)');
@@ -3036,14 +3272,63 @@ async function cmdResizeObject(args) {
 // chart-data: 차트의 '데이터 편집' 스프레드시트(DOM 그리드)에서 셀 값을 바꾼다 → 차트가 갱신됨.
 // --at "x,y"(차트 안 한 점) · --set "B2=9.9,C3=4"(엑셀식 열문자+행번호=값, 콤마구분) · --apply.
 // 셀 위치 = 열 헤더(A~D)의 x ∩ 행 헤더(1~N)의 y. 더블클릭 → 전체선택 → 타이핑 → Enter.
+// 차트 데이터 편집기 그리드의 행/열 헤더 위치 — kind 'col'(A~) 또는 'row'(1~). 그리드는 변형되니 매번 라이브로 읽음.
+// ⚠️ 행번호는 본문 위 '눈금자'에도 있어 → 헤더는 'A 셀보다 왼쪽 & A 셀 y 아래'로 거른다(눈금자=위쪽이라 제외).
+async function chartHeaderXY(ed, kind, label) {
+  return ed.evaluate(({ kind, label }) => {
+    const all = [...document.querySelectorAll('td,th,div,span')].filter((el) => el.childElementCount <= 1 && el.offsetParent !== null);
+    const A = all.find((el) => (el.textContent || '').trim() === 'A'); if (!A) return null;
+    const ar = A.getBoundingClientRect();
+    for (const el of all) {
+      if ((el.textContent || '').trim() !== String(label)) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width < 20 || r.width > 240 || r.height < 12 || r.height > 60) continue;
+      if (kind === 'col') { if (Math.abs(r.y - ar.y) < 12 && r.x >= ar.x - 2) return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; }
+      else { if (r.x < ar.x && r.y > ar.y - 5) return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; }
+    }
+    return null;
+  }, { kind, label });
+}
+// 차트 데이터 그리드 현재 크기 — {cols:['A',...], rows:[1,...]} (cols 첫=항목명열, rows 첫=계열명행).
+async function chartGridDims(ed) {
+  return ed.evaluate(() => {
+    const all = [...document.querySelectorAll('td,th,div,span')].filter((el) => el.childElementCount <= 1 && el.offsetParent !== null);
+    const A = all.find((el) => (el.textContent || '').trim() === 'A'); if (!A) return { cols: [], rows: [] };
+    const ar = A.getBoundingClientRect();
+    const cols = []; for (const L of 'ABCDEFGHIJKLMN') { if (all.find((el) => (el.textContent || '').trim() === L && Math.abs(el.getBoundingClientRect().y - ar.y) < 12)) cols.push(L); else break; }
+    const rows = []; for (let n = 1; n <= 50; n++) { if (all.find((el) => { const r = el.getBoundingClientRect(); return (el.textContent || '').trim() === String(n) && r.x < ar.x && r.y > ar.y - 5; })) rows.push(n); else break; }
+    return { cols, rows };
+  });
+}
+// 헤더 클릭(선택) → 삭제/추가 버튼 클릭. action: 'col-del'|'row-del'|'col-left'|'col-right'|'row-top'|'row-bottom'.
+async function chartHeaderOp(ed, kind, label, action) {
+  const xy = await chartHeaderXY(ed, kind, label);
+  if (!xy) return false;
+  await ed.mouse.click(xy.x, xy.y); await ed.waitForTimeout(500); // 헤더 선택 → 해당 버튼 활성
+  const SEL = { 'col-del': '.c_col_delete', 'row-del': '.c_row_delete', 'col-left': '.c_col_insert_left', 'col-right': '.c_col_insert_right', 'row-top': '.c_row_insert_top', 'row-bottom': '.c_row_insert_bottom' };
+  let clicked = false;
+  try { await clickSel(ed, SEL[action] + '.btn_icon'); clicked = true; } catch (e) { try { await clickSel(ed, SEL[action]); clicked = true; } catch (e2) {} }
+  if (!clicked) return false;
+  await ed.waitForTimeout(1100); // ⚠️ 그리드 변경의 OT 동기화가 끝나길 기다림(연속 변경 시 SERVER_ACTION_SAVE_ERROR 회피)
+  return true;
+}
+
 async function cmdChartData(args) {
   if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
   if (!args.at) throw new Error('--at "x,y" 필요 (차트 안의 한 점, 페이지 좌표)');
-  if (!args.set) throw new Error('--set "B2=9.9,C3=4" 필요 (엑셀식 셀=값)');
+  const delCols = args['del-col'] != null && args['del-col'] !== true ? String(args['del-col']).split(',').map((s) => s.trim().toUpperCase()).filter(Boolean) : [];
+  const delRows = args['del-row'] != null && args['del-row'] !== true ? String(args['del-row']).split(',').map((s) => Number(s.trim())).filter((n) => n > 0) : [];
+  // --data: 데이터만 주면 격자를 그 크기로 자동맞춤(행/열 추가·삭제) + 채움. {"cat":[...],"series":[{"name","values":[...]}]}
+  let chartData = null;
+  if (args.data != null && args.data !== true) {
+    let raw = String(args.data); if (raw.startsWith('@')) raw = fs.readFileSync(raw.slice(1), 'utf8');
+    try { chartData = JSON.parse(raw); } catch (e) { throw new Error('--data JSON 파싱 실패: ' + e.message); }
+    if (!Array.isArray(chartData.cat) || !Array.isArray(chartData.series) || !chartData.series.every((s) => Array.isArray(s.values))) throw new Error('--data 형식: {"cat":["1월",..],"series":[{"name":"매출","values":[120,..]}]}');
+  }
+  if (!args.set && !delCols.length && !delRows.length && !chartData) throw new Error('--set "B2=9.9" / --del-col "C,D" / --del-row "5" / --data {json} 중 하나 이상');
   const [ax, ay] = String(args.at).split(',').map(Number);
   if ([ax, ay].some(Number.isNaN)) throw new Error('--at 형식: "x,y"');
-  const sets = String(args.set).split(',').map((s) => { const m = s.trim().match(/^([A-Za-z]+)(\d+)\s*=\s*(.+)$/); return m ? { col: m[1].toUpperCase(), row: Number(m[2]), value: m[3].trim() } : null; }).filter(Boolean);
-  if (!sets.length) throw new Error('--set 파싱 실패. 예: "B2=9.9,C3=4"');
+  const sets = args.set ? String(args.set).split(',').map((s) => { const m = s.trim().match(/^([A-Za-z]+)(\d+)\s*=\s*(.+)$/); return m ? { col: m[1].toUpperCase(), row: Number(m[2]), value: m[3].trim() } : null; }).filter(Boolean) : [];
   const apply = !!args.apply;
   if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다.');
   const name = String(args.name).normalize('NFC');
@@ -3071,7 +3356,30 @@ async function cmdChartData(args) {
       out({ cmd: 'chart-data', dryRun: true, at: [ax, ay], sets, docId: editor.__docId || null, note: '--apply 시 각 셀에 값 입력. 좌표는 열문자∩행번호.' }); return;
     }
     const done = [];
+    const delDone = [];
+    let autofit = null;
     const syncP = watchSave(editor); // 차트 데이터 변경 전에 무장(모달 닫을 때 동기화 떠도 놓치지 않게)
+    const colL = (i) => String.fromCharCode(65 + i); // 0→A,1→B,...
+    // 0) --data 자동맞춤: 격자를 데이터 크기로 resize(행/열 추가·삭제) 후 채울 셀을 sets 에 적재.
+    if (chartData) {
+      const nCat = chartData.cat.length, nSer = chartData.series.length;
+      let dims = await chartGridDims(editor);
+      autofit = { from: { ser: dims.cols.length - 1, cat: dims.rows.length - 1 }, to: { ser: nSer, cat: nCat }, ops: [] };
+      let curSer = dims.cols.length - 1; // A=항목명열 제외
+      while (curSer > nSer) { const ok = await chartHeaderOp(editor, 'col', colL(curSer), 'col-del'); autofit.ops.push({ delCol: colL(curSer), ok }); if (!ok) break; curSer--; }
+      while (curSer < nSer) { const ok = await chartHeaderOp(editor, 'col', colL(curSer), 'col-right'); autofit.ops.push({ addCol: colL(curSer + 1), ok }); if (!ok) break; curSer++; }
+      dims = await chartGridDims(editor);
+      let lastRow = dims.rows[dims.rows.length - 1] || 1, curCat = dims.rows.length - 1; // 1행=계열명행 제외
+      while (curCat > nCat) { const ok = await chartHeaderOp(editor, 'row', lastRow, 'row-del'); autofit.ops.push({ delRow: lastRow, ok }); if (!ok) break; curCat--; lastRow--; }
+      while (curCat < nCat) { const ok = await chartHeaderOp(editor, 'row', lastRow, 'row-bottom'); autofit.ops.push({ addRow: lastRow + 1, ok }); if (!ok) break; curCat++; lastRow++; }
+      for (let j = 0; j < nSer; j++) sets.push({ col: colL(j + 1), row: 1, value: String(chartData.series[j].name != null ? chartData.series[j].name : '계열 ' + (j + 1)) });
+      for (let i = 0; i < nCat; i++) sets.push({ col: 'A', row: i + 2, value: String(chartData.cat[i]) });
+      for (let j = 0; j < nSer; j++) for (let i = 0; i < nCat; i++) sets.push({ col: colL(j + 1), row: i + 2, value: String(chartData.series[j].values[i] != null ? chartData.series[j].values[i] : '') });
+    }
+    // 1) 삭제 먼저(값 채우기 전). 인덱스 시프트 회피 위해 열은 오른쪽(높은 글자)부터, 행은 아래(높은 번호)부터.
+    for (const L of [...delCols].sort().reverse()) { delDone.push({ delCol: L, ok: await chartHeaderOp(editor, 'col', L, 'col-del') }); }
+    for (const N of [...delRows].sort((a, b) => b - a)) { delDone.push({ delRow: N, ok: await chartHeaderOp(editor, 'row', N, 'row-del') }); }
+    // 2) 값 채우기
     for (const s of sets) {
       const xy = await cellXY(s.col, s.row);
       if (!xy) { done.push({ ...s, ok: false, why: 'cell_not_located' }); continue; }
@@ -3085,7 +3393,7 @@ async function cmdChartData(args) {
     const rect2 = await detectPageRect(editor); await hideOverlays(editor);
     const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_chartdata_${stamp()}.png`);
     await editor.screenshot(rect2 ? { path: shot, clip: rect2 } : { path: shot });
-    out({ cmd: 'chart-data', applied: true, at: [ax, ay], set: done, page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), shot, docId: editor.__docId || null });
+    out({ cmd: 'chart-data', applied: true, at: [ax, ay], ...(autofit ? { autofit } : {}), ...(delDone.length ? { deleted: delDone } : {}), ...(done.length ? { setCount: done.length } : {}), page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), shot, docId: editor.__docId || null });
   });
 }
 
