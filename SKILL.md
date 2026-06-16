@@ -78,7 +78,7 @@ node hancom.js download --name <문서이름>  [--pdf] [--out <로컬경로>]
 node hancom.js upload   --file <로컬경로>
 node hancom.js resize-object --name <문서이름> --at "x,y" [--width <mm>] [--height <mm>] [--apply]
 node hancom.js object-prop   --name <문서이름> --at "x,y" [--pos "x,y"] [--width <mm>] [--height <mm>] [--wrap <배치>] [--fill <색|none>] [--border <색>] [--border-width <mm>] [--apply]
-node hancom.js chart-data    --name <문서이름> --at "x,y" [--data @data.json | --set "B2=9.9,C3=4" | --del-col "C,D" | --del-row "5"] [--apply]
+node hancom.js chart-data    --name <문서이름> --at "x,y" [--data @data.json | --set "B2=9.9,C3=4" | --del-col "C,D" | --del-row "5" | --read-grid] [--apply]
 node hancom.js insert-table  --name <문서이름> --rows R --cols C [--anchor "<텍스트>"] [--apply]
 node hancom.js insert-image  --name <문서이름> --file <이미지경로> [--anchor "<텍스트>"] [--apply]
 node hancom.js insert-chart  --name <문서이름> [--type N] [--anchor "<텍스트>"] [--apply]
@@ -183,7 +183,7 @@ node hancom.js highlight    --name <문서이름> --text "<구절>" --color yell
 - **`chart-data --at "x,y"`**: 차트의 **데이터 편집 그리드**를 바꿔 차트를 갱신. 세 방식:
   - **`--data @data.json` (자동맞춤, 권장)** — 데이터만 주면 격자를 그 크기로 맞추고(항목 행·계열 열 자동 추가/삭제) 채운다. 기본 더미(4항목×3계열) 잔재 없이 깔끔. 형식 `{"cat":["1월",..],"series":[{"name":"매출","values":[120,..]}]}`.
   - **`--set "A2=1월,B1=매출,B2=120"`** — 개별 셀 값(엑셀식). **이미 있는 셀만**(없으면 `cell_not_located`).
-  - **`--del-col "C,D"` / `--del-row "5"`** — 계열(열)·항목(행) 삭제.
+  - **`--del-col "C,D"` / `--del-row "5"`** — 계열(열)·항목(행) 삭제. **`--read-grid`** — 현재 격자 크기만 읽기(`{cat, series}`).
   - ⚠️ **그리드 구조는 차트 종류마다 3갈래**(표준=항목×계열 / 원형=단일계열 / 분산형=X·Y). 종류 인덱스(0~19)·패밀리·그리드 상세·자동맞춤 흐름은 **`references/chart-types.md`**.
   - ⚠️ 편집 직후 캡처는 라벨 재렌더 지연으로 **stale**할 수 있음 → 다시 열어(`around`/`capture`) 검증. 그 좌표에 차트 없으면 `chart_not_found`.
 - **`caption --at "x,y" --text "<캡션>" [--position below|above|left|right]`**: 그 좌표의 **객체(그림/표/차트/도형)에 캡션**을 단다(예: "그림 1. …"). `--position` 기본 `below`(아래). 그 좌표에 객체 없으면 `object_not_selected`. 한글 위치(`"오른쪽 위"` 등)도 그대로 받음.
