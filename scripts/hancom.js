@@ -3337,7 +3337,7 @@ async function cmdChartData(args) {
     try { chartData = JSON.parse(raw); } catch (e) { throw new Error('--data JSON 파싱 실패: ' + e.message); }
     if (!Array.isArray(chartData.cat) || !Array.isArray(chartData.series) || !chartData.series.every((s) => Array.isArray(s.values))) throw new Error('--data 형식: {"cat":["1월",..],"series":[{"name":"매출","values":[120,..]}]}');
   }
-  if (!args.set && !delCols.length && !delRows.length && !chartData) throw new Error('--set "B2=9.9" / --del-col "C,D" / --del-row "5" / --data {json} 중 하나 이상');
+  if (!args.set && !delCols.length && !delRows.length && !chartData && !args['read-grid']) throw new Error('--set "B2=9.9" / --del-col "C,D" / --del-row "5" / --data {json} / --read-grid 중 하나 이상');
   const [ax, ay] = String(args.at).split(',').map(Number);
   if ([ax, ay].some(Number.isNaN)) throw new Error('--at 형식: "x,y"');
   const sets = args.set ? String(args.set).split(',').map((s) => { const m = s.trim().match(/^([A-Za-z]+)(\d+)\s*=\s*(.+)$/); return m ? { col: m[1].toUpperCase(), row: Number(m[2]), value: m[3].trim() } : null; }).filter(Boolean) : [];
@@ -3363,6 +3363,12 @@ async function cmdChartData(args) {
       if (!colEls.length || !rowEls.length) return null;
       return { x: colEls[0].cx, y: rowEls[0].cy };
     }, { col, rownum });
+    if (args['read-grid']) { // 현재 차트의 데이터 격자 크기만 읽음(편집 안 함)
+      const dims = await chartGridDims(editor);
+      await editor.keyboard.press('Escape').catch(() => {});
+      out({ cmd: 'chart-data', readGrid: true, at: [ax, ay], cat: dims.rows.length - 1, series: dims.cols.length - 1, cols: dims.cols, rows: dims.rows.length, docId: editor.__docId || null });
+      return;
+    }
     if (!apply) {
       await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(500);
       out({ cmd: 'chart-data', dryRun: true, at: [ax, ay], sets, docId: editor.__docId || null, note: '--apply 시 각 셀에 값 입력. 좌표는 열문자∩행번호.' }); return;
