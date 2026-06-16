@@ -4147,7 +4147,7 @@ function printHelp() {
   insert-chart  --name <문서> [--type N(0~19)] [--anchor "<텍스트>"] [--apply]
   chart-data    --name <문서> --at "x,y" [--data @data.json | --set "B2=9.9" | --del-col "C,D" | --del-row "5" | --read-grid] [--apply]
   resize-object --name <문서> --at "x,y" [--width <mm>] [--height <mm>] [--apply]
-  object-prop   --name <문서> --at "x,y" [--pos "x,y"] [--width/--height <mm>] [--wrap <배치>] [--fill <색|none>] [--border <색>] [--border-width <mm>] [--apply]
+  object-prop   --name <문서> --at "x,y" [--pos "x,y"] [--width/--height <mm>] [--wrap <배치>] [--margin <mm> | --margin-top/-bottom/-left/-right <mm>] [--fill <색|none>] [--border <색>] [--border-width <mm>] [--apply]
 
 로컬 파서(파일 직접 읽기, 업로드 불필요):
   read.mjs <로컬 .hwp/.hwpx> [--text "<구절>"] [--locate --nth N] [--inspect] [--objects] [--bookmarks]

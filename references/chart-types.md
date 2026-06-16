@@ -74,3 +74,5 @@ node hancom.js object-prop --name <문서> --at "x,y" --wrap topbottom --apply  
 차트 기본 배치는 **어울림**(square, 옆에 글이 흐름) → 보고서용 전체폭은 `object-prop --at "x,y" --wrap topbottom`(자리 차지). 배치 모드: `inline`(글자처럼)·`square`·`topbottom`·`front`·`behind`.
 
 `object-prop --at` 의 좌표도 위 **좌표 찾기**와 동일 — `capture --grid --scale 1` 로 차트 한가운데 좌표를 읽어 짚는다(틀리면 `object_not_found`). 도형·글상자(`shape`/`textbox`)는 anchor 기반이라 삽입할 때 `--wrap` 을 바로 줘서 이 좌표 과정이 없다.
+
+**자리차지(topbottom) 차트가 위/아래 글과 너무 붙으면** → `object-prop --at "x,y" --margin-top <mm> --margin-bottom <mm>`(바깥 여백, 개체 속성 ‘여백/캡션’ 탭). `--margin <mm>` 은 네 변 일괄. 예: `--margin-top 6 --margin-bottom 6`.
