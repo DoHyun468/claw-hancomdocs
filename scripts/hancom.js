@@ -1053,6 +1053,11 @@ async function cmdInsertText(args) {
 // 한컴독스 네이티브 "찾아 바꾸기" 다이얼로그 열기 (편집 메뉴 > 찾기 > 찾아 바꾸기 = .find_replace).
 // 좌표 하드코딩 없이 셀렉터/DOM위치로만 — 메뉴 버전·창크기 바뀌어도 견고.
 async function openReplaceDialog(ed) {
+  // 단축키 우선: Mac=Meta+Shift+H / 그 외=Control+H. 찾을·바꿀 2칸이 뜨면 메뉴 탐색 스킵, 안 뜨면 메뉴 폴백.
+  const key = process.platform === 'darwin' ? 'Meta+Shift+H' : 'Control+H';
+  await ed.keyboard.press(key).catch(() => {});
+  await ed.waitForTimeout(700);
+  if ((await dialogInputs(ed)).length >= 2) return; // 입력칸 2개(찾을/바꿀) = 바꾸기 다이얼로그 열림
   // 편집 탭 클릭(메뉴 열기)
   const editTab = await ed.evaluate(() => {
     for (const el of document.querySelectorAll('*')) {
