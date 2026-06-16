@@ -16,3 +16,6 @@ test_*.hwp
 test_*.hwpx
 _*.json
 _*.js
+
+# 세션 락(병렬 실행 차단, 로컬 전용)
+**/.hancom-session.lock

@@ -8,6 +8,7 @@
 const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
 const DIR = __dirname;
 const AUTH = path.join(DIR, 'auth.json');
@@ -16,6 +17,65 @@ const DLDIR = path.join(DIR, 'downloads');
 const HOME = 'https://www.hancomdocs.com/ko/home';
 const MYDRIVE = 'https://www.hancomdocs.com/ko/mydrive';
 const TRASH = 'https://www.hancomdocs.com/ko/trash';
+
+// ── 세션 락(병렬 실행 차단) ───────────────────────────────────────────────
+// ⚠️ 한컴독스는 같은 계정 동시 다중 로그인을 보안 위반으로 보고 전 세션 로그아웃 + 재로그인 차단
+// → 비밀번호를 바꿔야 복구된다. 브라우저를 띄우는 모든 명령은 로그인을 하므로, 두 개가 겹치면 잠긴다.
+// 그래서 브라우저 명령 시작 시 .hancom-session.lock 을 배타적으로 잡고(이미 활성 세션이 있으면 거부),
+// 끝나면 푼다. 다른 세션(다른 Claude·Codex 등)이 같은 hancom.js 를 쓰면 같은 락을 공유해 충돌을 막는다.
+const SESSION_LOCK = path.join(DIR, '.hancom-session.lock');
+const LOCK_STALE_MS = 20 * 60 * 1000; // cold-verify 등 긴 작업 여유 — 이보다 오래되고 PID도 죽었으면 stale 로 회수
+let HELD_LOCK = false;
+
+function pidAlive(pid) {
+  if (!pid || pid === process.pid) return false;
+  try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } // EPERM=존재하나 권한없음→살아있음
+}
+function readLock() { try { return JSON.parse(fs.readFileSync(SESSION_LOCK, 'utf8')); } catch { return null; } }
+function lockIsActive(l) { return !!l && pidAlive(l.pid) && (Date.now() - (l.ts || 0)) < LOCK_STALE_MS; }
+
+// 활성이면 거부(process.exit(7)). stale(죽었거나 오래됨)면 회수 후 획득. 원자적 'wx' 생성으로 TOCTOU 최소화.
+function acquireSessionLock(cmd) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const fd = fs.openSync(SESSION_LOCK, 'wx'); // 배타적 생성 — 이미 있으면 EEXIST
+      fs.writeSync(fd, JSON.stringify({ pid: process.pid, cmd, startedAt: new Date().toISOString(), ts: Date.now(), host: os.hostname() }));
+      fs.closeSync(fd);
+      HELD_LOCK = true;
+      process.on('exit', releaseSessionLock);
+      process.on('SIGINT', () => process.exit(130));
+      process.on('SIGTERM', () => process.exit(143));
+      return;
+    } catch (e) {
+      if (e.code !== 'EEXIST') throw e;
+      const l = readLock();
+      if (lockIsActive(l)) {
+        out({ status: 'session_busy', heldBy: { pid: l.pid, cmd: l.cmd, startedAt: l.startedAt, ageMin: Math.round((Date.now() - (l.ts || 0)) / 60000), host: l.host },
+              reason: '다른 한컴 세션이 사용 중입니다(headless 백그라운드 활성). 병렬 실행은 동시 로그인→전 세션 로그아웃→재로그인 차단(비번 변경 필요) 위험이라 막습니다. 그 작업이 끝난 뒤 재시도하세요. (상태 확인: node hancom.js session-status)' });
+        process.exit(7);
+      }
+      try { fs.unlinkSync(SESSION_LOCK); } catch {} // stale → 회수 후 재시도
+    }
+  }
+  out({ status: 'session_lock_failed', reason: '세션 락 획득 실패(경합 지속). 잠시 뒤 재시도.' });
+  process.exit(7);
+}
+function releaseSessionLock() {
+  if (!HELD_LOCK) return;
+  const cur = readLock();
+  if (cur && cur.pid === process.pid) { try { fs.unlinkSync(SESSION_LOCK); } catch {} }
+  HELD_LOCK = false;
+}
+// 읽기 전용: 지금 활성 한컴 세션이 있는지 확인(아무것도 실행 안 함). 새 세션이 편집 전에 '인지'하는 용도.
+function cmdSessionStatus() {
+  const l = readLock();
+  if (!l) { out({ cmd: 'session-status', active: false, note: '활성 한컴 세션 없음 — 지금 실행해도 안전.' }); return; }
+  const alive = pidAlive(l.pid), ageMin = Math.round((Date.now() - (l.ts || 0)) / 60000), active = lockIsActive(l);
+  out({ cmd: 'session-status', active, heldBy: { pid: l.pid, cmd: l.cmd, startedAt: l.startedAt, ageMin, host: l.host }, alive,
+        note: active ? '다른 세션이 사용 중 — 병렬 실행 금지(끝난 뒤 재시도). 동시 로그인 시 계정 잠금 위험.' : '락 파일이 남아있으나 프로세스가 죽었거나 오래됨(stale) — 다음 브라우저 명령이 자동 회수.' });
+}
+// ──────────────────────────────────────────────────────────────────────────
+
 // 세로로 긴 뷰포트: A4 한 장이 통째로 들어가게
 const VIEW = { width: 1280, height: 1500 };
 const PAGE_H = 1143; // 100% 줌·A4 기준 페이지당 스크롤 높이(px), 문서 무관 일정
@@ -3216,6 +3276,12 @@ async function cmdObjectProp(args) {
   if (borderArg && !borderRGB) throw new Error('--border 색 인식 실패: ' + borderArg + ' (이름·#RRGGBB)');
   const borderW = args['border-width'] !== undefined ? Number(args['border-width']) : null;
   if (borderW !== null && Number.isNaN(borderW)) throw new Error('--border-width 는 mm 숫자');
+  // 바깥 여백(개체와 본문 글 사이 간격, mm) — 여백/캡션 탭. --margin 은 네 변 일괄, 변별 옵션이 우선.
+  const mAll = args.margin !== undefined ? Number(args.margin) : null;
+  const marginOf = (k) => (args[k] !== undefined ? Number(args[k]) : mAll);
+  const margins = { '위쪽': marginOf('margin-top'), '아래쪽': marginOf('margin-bottom'), '왼쪽': marginOf('margin-left'), '오른쪽': marginOf('margin-right') };
+  for (const [k, v] of Object.entries(margins)) if (v !== null && Number.isNaN(v)) throw new Error('--margin* 는 mm 숫자: ' + k);
+  const hasMargin = Object.values(margins).some((v) => v !== null);
   const apply = !!args.apply;
   if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용.');
   const name = String(args.name).normalize('NFC');
@@ -3246,8 +3312,8 @@ async function cmdObjectProp(args) {
       width: fields['너비'] && fields['너비'].val, height: fields['높이'] && fields['높이'].val,
       posX: fields.pos[0] ? fields.pos[0].val : null, posY: fields.pos[1] ? fields.pos[1].val : null,
     };
-    const nothing = W === null && H === null && PX === null && !wrap && !fillArg && !borderArg && borderW === null;
-    const req = { width: W, height: H, pos: PX !== null ? [PX, PY] : null, wrap, fill: fillArg, border: borderArg, borderWidth: borderW };
+    const nothing = W === null && H === null && PX === null && !wrap && !fillArg && !borderArg && borderW === null && !hasMargin;
+    const req = { width: W, height: H, pos: PX !== null ? [PX, PY] : null, wrap, fill: fillArg, border: borderArg, borderWidth: borderW, ...(hasMargin ? { margins } : {}) };
     if (!apply || nothing) {
       await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(400);
       out({ cmd: 'object-prop', dryRun: !apply, at: [ax, ay], current: cur, requested: req, docId: editor.__docId || null,
@@ -3295,6 +3361,12 @@ async function cmdObjectProp(args) {
         styled.border = picked;
       }
       if (borderW !== null) await setDialogField(editor, '굵기', borderW);
+    }
+    // 바깥 여백 — 여백/캡션 탭의 위쪽/아래쪽/왼쪽/오른쪽(mm). 자리차지 차트가 글에 바짝 붙는 것 등 해결.
+    if (hasMargin) {
+      if (!await dlgClickText(editor, '여백/캡션')) throw new Error("'여백/캡션' 탭 탐색 실패");
+      await editor.waitForTimeout(400);
+      for (const [label, val] of Object.entries(margins)) { if (val !== null) { try { await setDialogField(editor, label, String(val)); } catch (e) {} } }
     }
     await editor.waitForTimeout(300);
     const syncP = watchSave(editor); // 적용(확인) 전에 무장
@@ -4090,7 +4162,11 @@ function printHelp() {
   SLOWMO = args.slowmo ? Number(args.slowmo) : (HEADED ? 400 : 0); // headed면 동작을 천천히
   try {
     if (!args._ || args._ === 'help' || args._ === '--help' || args._ === '-h') { printHelp(); process.exit(args._ ? 0 : 2); }
-    if (args._ === 'capture') await cmdCapture(args);
+    // 브라우저(=로그인)를 쓰지 않는 순수 로컬 명령은 락 면제. 그 외는 모두 세션 락을 잡아 병렬 로그인 차단.
+    const LOCK_FREE = new Set(['session-status', 'prune-captures']);
+    if (!LOCK_FREE.has(args._)) acquireSessionLock(args._);
+    if (args._ === 'session-status') cmdSessionStatus();
+    else if (args._ === 'capture') await cmdCapture(args);
     else if (args._ === 'zoom') await cmdZoom(args);
     else if (args._ === 'around') await cmdAround(args);
     else if (args._ === 'pinpoint') await cmdPinpoint(args);
