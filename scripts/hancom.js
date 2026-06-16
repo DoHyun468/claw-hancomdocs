@@ -22,6 +22,8 @@ const PAGE_H = 1143; // 100% 줌·A4 기준 페이지당 스크롤 높이(px), �
 // 브라우저 표시 모드 — 기본은 headless(창 없음). --headed면 창을 띄워 동작을 눈으로 볼 수 있다(디버그용).
 // (OS 분기 아님 — 런타임 옵션. headed일 때만 slowMo로 동작을 천천히 보여줌.)
 let HEADED = false, SLOWMO = 0;
+const START_MS = Date.now();   // 명령 시작 시각 — 진행로그/elapsedMs 기준
+let CURRENT_CMD = null;          // dispatch 가 채움 — out() 에서 cmd 누락 시 폴백
 
 function parseArgs(argv) {
   const a = { _: argv[0] };
@@ -40,6 +42,8 @@ function stamp() {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
 }
 const log = (...x) => console.log(...x);
+// 긴 명령이 침묵하지 않게 단계별 경과시간 로그(RESULT_JSON 전에 찍힘 — 래퍼는 마지막 RESULT_JSON 줄만 파싱하면 됨).
+const progress = (step, detail = '') => log(`[${((Date.now() - START_MS) / 1000).toFixed(1)}s] ${step}${detail ? ': ' + detail : ''}`);
 // RESULT_JSON은 기계 판독용 — 비ASCII를 \uXXXX로 이스케이프해 어떤 콘솔 코드페이지(Win CP949 등)서도
 // 깨지지 않게 한다. 여전히 유효한 JSON이라 파싱하면 한글이 그대로 복원됨. (OS 무관)
 const asciiSafe = (s) => Array.from(s).map((c) => c.charCodeAt(0) > 126 ? '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0') : c).join('');
@@ -66,7 +70,11 @@ async function clampImage(ed, filePath, maxPx = SHOT_MAXPX) {
     return { w: nw, h: nh, scaled: true, from: { w, h } };
   } catch (e) { return { w, h, scaled: false }; }
 }
-const out = (o) => log('RESULT_JSON=' + asciiSafe(JSON.stringify(o)));
+const out = (o) => {
+  const elapsedMs = Date.now() - START_MS;                      // 모든 RESULT_JSON 에 총 소요시간
+  const body = { ...o, elapsedMs, ...(CURRENT_CMD && !o.cmd && !o.error && !o.status ? { cmd: CURRENT_CMD } : {}) };
+  log('RESULT_JSON=' + asciiSafe(JSON.stringify(body)));
+};
 
 async function ensureLoggedIn(page, url) {
   await page.goto(url, { waitUntil: 'domcontentloaded' });
@@ -229,6 +237,7 @@ async function openDoc(ctx, page, name) {
   // 파일명을 NFC로 정규화 — NFD(분해형 자모) 파일명(Mac 생성/다운로드 흔함)은 한컴독스가
   // NFC로 표시해 getByText 매칭이 깨진다. NFC면 양쪽이 일치(OS 분기 아님, 유니코드 정규화).
   name = String(name).normalize('NFC');
+  progress('문서 열기', name);
   await ensureLoggedIn(page, MYDRIVE);
   const row = page.getByText(name, { exact: false }).first();
   // 고정 대기 대신 행이 뜰 때까지만 (없으면 null → 업로드 경로)
@@ -242,6 +251,7 @@ async function openDoc(ctx, page, name) {
   await editor.waitForLoadState('networkidle').catch(() => {});
   // 고정 대기 대신 "준비되면 진행"(내용 렌더 or 에러 다이얼로그 즉시 감지) — 매 호출 ~5초 절약
   const st = await waitForReady(editor);
+  progress('에디터 준비', st);
   if (st === 'error') throw new CannotOpenError(name);
   // 엉뚱한 문서 차단: 편집기는 docId 로 신원이 정해진다.
   //   URL  = https://webhwp.hancomdocs.com/webhwp/?mode=HWP_EDITOR&docId=<id>&lang=ko_KR
@@ -291,6 +301,7 @@ async function waitForReady(ed, maxMs = 12000) {
 }
 
 async function uploadFile(page, filePath) {
+  progress('업로드', path.basename(filePath));
   await ensureLoggedIn(page, HOME);
   const [chooser] = await Promise.all([
     page.waitForEvent('filechooser', { timeout: 10000 }),
@@ -4000,6 +4011,7 @@ function printHelp() {
 
 (async () => {
   const args = parseArgs(process.argv.slice(2));
+  CURRENT_CMD = args._ || null;                              // out() cmd 폴백용
   HEADED = !!args.headed;                                    // --headed: 창 띄워 보기(디버그)
   SLOWMO = args.slowmo ? Number(args.slowmo) : (HEADED ? 400 : 0); // headed면 동작을 천천히
   try {
