@@ -3571,7 +3571,9 @@ async function trashOne(page, rawName) {
   await page.waitForTimeout(600);
   const del = page.getByRole('menuitem', { name: '삭제', exact: true }); // 컨텍스트 메뉴의 삭제(툴바 삭제와 구분: menuitem 역할)
   if (!(await del.count())) { await page.keyboard.press('Escape').catch(() => {}); return { name, status: 'menu_failed' }; }
-  await del.first().click().catch(() => {});
+  // 편집 직후/세션 잠금 문서는 '삭제'가 aria-disabled — 클릭하면 30s 행. 비활성이면 빠르게 잠금 보고(잠금 풀리면 재시도).
+  if ((await del.first().getAttribute('aria-disabled').catch(() => null)) === 'true') { await page.keyboard.press('Escape').catch(() => {}); return { name, status: 'delete_disabled' }; }
+  await del.first().click({ timeout: 5000 }).catch(() => {});
   await page.waitForTimeout(1400); // '휴지통으로 이동' 토스트 / 행 제거 반영 대기
   const gone = (await page.getByText(name, { exact: false }).count()) === 0;
   return { name, status: gone ? 'trashed' : 'maybe_failed' };
