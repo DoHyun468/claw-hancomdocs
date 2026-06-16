@@ -75,4 +75,4 @@ node hancom.js object-prop --name <문서> --at "x,y" --wrap topbottom --apply  
 
 `object-prop --at` 의 좌표도 위 **좌표 찾기**와 동일 — `capture --grid --scale 1` 로 차트 한가운데 좌표를 읽어 짚는다(틀리면 `object_not_found`). 도형·글상자(`shape`/`textbox`)는 anchor 기반이라 삽입할 때 `--wrap` 을 바로 줘서 이 좌표 과정이 없다.
 
-**자리차지(topbottom) 차트가 위/아래 글과 너무 붙으면** → `object-prop --at "x,y" --margin-top <mm> --margin-bottom <mm>`(바깥 여백, 개체 속성 ‘여백/캡션’ 탭). `--margin <mm>` 은 네 변 일괄. 예: `--margin-top 6 --margin-bottom 6`.
+**`--margin*` = 바깥 여백**(개체와 본문 글 사이 간격, mm — 개체 속성 ‘여백/캡션’ 탭). **객체 종류·배치 무관**하게 적용된다(자리차지 차트가 위/아래 글에 바짝 붙을 때 특히 유용). `--margin <mm>` 네 변 일괄, `--margin-top/-bottom/-left/-right <mm>` 변별(우선). 예: 차트 아래 글과 안 붙게 `object-prop --at "x,y" --margin-bottom 8 --apply`.

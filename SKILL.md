@@ -199,6 +199,7 @@ node hancom.js highlight    --name <문서이름> --text "<구절>" --color yell
 객체(그림/차트)는 본문 **canvas에 픽셀로** 그려져 DOM으로 못 짚는다 → **페이지 좌표 `--at "x,y"`** 로 클릭(객체 안 한 점이면 됨).
 - **`find-objects`** (좌표 자동 탐지 — 눈대중 불필요): 페이지를 우클릭 격자로 훑어 **그림·차트 객체의 중앙 좌표**를 찾아준다. 반환 `{count, objects:[{page, at:"x,y", bbox, hits}]}` — 그 **`at` 을 `object-prop`/`chart-data`/`resize-object` 의 `--at` 에 그대로** 넣으면 된다. `--page N`(기본 1)·`--pages "1,2,3"`·`--step <px>`(기본 80, 작을수록 정밀·느림). 표·본문은 안 잡히고 그림/차트만. (한 페이지 스캔에 ~30–60초 — 좌표 눈대중·재시도 대신 한 방.)
 - 수동으로 짚을 땐 **`capture --grid --scale 1`** 로 객체 한가운데 좌표를 읽는다(기본 1.5배는 격자 라벨이 `--at`과 안 맞음).
+- **`object-prop --margin*`** = **바깥 여백**(객체와 본문 글 사이 간격, mm). 객체 종류·배치 무관. `--margin <mm>`(네 변) / `--margin-top/-bottom/-left/-right <mm>`(변별). 예: 차트 아래 글이 붙으면 `--margin-bottom 8`.
 - **`resize-object`**: 객체 크기를 **개체 속성 다이얼로그의 너비/높이(mm 숫자)** 로 설정 — 드래그보다 정밀.
   - `--apply` 없으면 현재 크기만 읽음(`currentSize`). `--width`/`--height` 중 하나만도 가능. 그 좌표에 객체 없으면 `object_not_found`.
 - **`object-prop`** (통합 — 크기+위치+배치+도형 스타일을 한 번에): `--pos "x,y"`(mm, **종이 왼쪽/위쪽 기준** 절대 위치) · `--width`/`--height`(mm) · `--wrap`(배치, textbox와 동일 모드) · **`--fill <색|none>`**(도형 채우기 면 색, `none`=채우기 없음) · **`--border <색>`**(선/테두리 색) · **`--border-width <mm>`**(선 굵기).
