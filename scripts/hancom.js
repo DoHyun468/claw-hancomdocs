@@ -15,6 +15,7 @@ const CAPDIR = path.join(DIR, 'captures');
 const DLDIR = path.join(DIR, 'downloads');
 const HOME = 'https://www.hancomdocs.com/ko/home';
 const MYDRIVE = 'https://www.hancomdocs.com/ko/mydrive';
+const TRASH = 'https://www.hancomdocs.com/ko/trash';
 // 세로로 긴 뷰포트: A4 한 장이 통째로 들어가게
 const VIEW = { width: 1280, height: 1500 };
 const PAGE_H = 1143; // 100% 줌·A4 기준 페이지당 스크롤 높이(px), 문서 무관 일정
@@ -3519,11 +3520,33 @@ async function enumerateDocNames(page) {
 async function cmdTrash(args) {
   const apply = !!args.apply;
   if (apply && HEADED) throw new Error('삭제(--apply)는 headless 전용입니다. --headed 는 보기 전용 — 삭제 금지.');
+  // --empty: 휴지통 비우기(영구삭제, 복원 불가). 휴지통 탭의 '휴지통 비우기' → 확인 '완전히 삭제'.
+  if (args.empty) {
+    const browser = await chromium.launch({ headless: !HEADED, slowMo: SLOWMO });
+    const ctx = await browser.newContext({ storageState: AUTH, viewport: VIEW, deviceScaleFactor: 1, acceptDownloads: true });
+    try {
+      const page = await ctx.newPage();
+      await ensureLoggedIn(page, TRASH);
+      await page.waitForTimeout(1800);
+      const items = await enumerateDocNames(page);
+      if (!apply) { out({ cmd: 'trash', empty: true, dryRun: true, inTrash: items.length, sample: items.slice(0, 12), note: '--apply 시 휴지통을 완전히 비움(영구삭제·복원 불가). 휴지통 항목은 원래 30일 후 자동 영구삭제됨.' }); return; }
+      if (!items.length) { out({ cmd: 'trash', empty: true, applied: true, emptied: 0, note: '휴지통이 이미 비어 있음.' }); return; }
+      const emptyBtn = page.getByRole('button', { name: '휴지통 비우기' }).first();
+      if (!(await emptyBtn.count())) throw new Error('휴지통 비우기 버튼 탐색 실패');
+      await emptyBtn.click(); await page.waitForTimeout(900);
+      const confirm = page.getByRole('button', { name: '완전히 삭제' }).first(); // 확인 다이얼로그 "완전히 삭제할까요?"
+      if (!(await confirm.count())) throw new Error('확인 다이얼로그(완전히 삭제) 탐색 실패');
+      await confirm.click(); await page.waitForTimeout(2800);
+      const left = (await enumerateDocNames(page)).length;
+      out({ cmd: 'trash', empty: true, applied: true, before: items.length, remaining: left, emptied: items.length - left, note: '휴지통 비움(영구삭제 완료, 복원 불가).' });
+    } finally { await browser.close(); }
+    return;
+  }
   let targets = [];
   if (args.name) targets.push(String(args.name));
   if (args.names) targets.push(...String(args.names).split(',').map((s) => s.trim()).filter(Boolean));
   const matchPrefixes = args.match ? String(args.match).split(',').map((s) => s.trim().normalize('NFC')).filter(Boolean) : [];
-  if (!targets.length && !matchPrefixes.length) throw new Error('--name "<문서>" / --names "a,b" / --match "접두어1,접두어2" 중 하나 필요');
+  if (!targets.length && !matchPrefixes.length) throw new Error('--name "<문서>" / --names "a,b" / --match "접두어1,접두어2" / --empty(휴지통 비우기) 중 하나 필요');
   const browser = await chromium.launch({ headless: !HEADED, slowMo: SLOWMO });
   const ctx = await browser.newContext({ storageState: AUTH, viewport: VIEW, deviceScaleFactor: 1, acceptDownloads: true });
   try {
@@ -3540,8 +3563,33 @@ async function cmdTrash(args) {
     const results = [];
     for (const name of targets) { results.push(await trashOne(page, name)); await page.waitForTimeout(400); }
     const trashed = results.filter((r) => r.status === 'trashed').length;
-    out({ cmd: 'trash', applied: true, requested: targets.length, trashed, results, note: '휴지통으로 이동 완료 — 한컴독스 웹 휴지통 탭에서 복구/영구삭제 가능.' });
+    out({ cmd: 'trash', applied: true, requested: targets.length, trashed, results, note: '휴지통으로 이동 완료 — 한컴독스 웹 휴지통 탭에서 복구/영구삭제(trash --empty) 가능.' });
   } finally { await browser.close(); }
+}
+
+// prune-captures: 로컬 캡처 폴더(scripts/captures) 청소 — 기본 3일보다 오래된 PNG 삭제. (gitignore 로컬 스크래치)
+// 보호: 파일명에 'keep' 포함 또는 하위폴더(captures/keep/ 등)에 둔 것은 절대 안 지움 — 남기고 싶으면 거기로.
+// 기본은 드라이런(지울 개수·샘플만 출력). 실제 삭제는 --apply. (로컬 파일이라 즉시 영구삭제 — 단 캡처는 언제든 재생성 가능.)
+async function cmdPruneCaptures(args) {
+  const days = args.days !== undefined ? Number(args.days) : 3;
+  if (!Number.isFinite(days) || days < 0) throw new Error('--days 는 0 이상 숫자');
+  const apply = !!args.apply;
+  const cutoff = Date.now() - days * 86400000;
+  if (!fs.existsSync(CAPDIR)) { out({ cmd: 'prune-captures', dir: CAPDIR, status: 'no_dir', note: '캡처 폴더 없음.' }); return; }
+  const entries = fs.readdirSync(CAPDIR, { withFileTypes: true });
+  const candidates = []; let keptRecent = 0, protectedCount = 0;
+  for (const e of entries) {
+    if (e.isDirectory()) continue;                 // 하위폴더(keep/ 등)는 통째로 보호
+    if (/keep/i.test(e.name)) { protectedCount++; continue; } // 이름에 'keep' → 보호
+    const st = fs.statSync(path.join(CAPDIR, e.name));
+    if (st.mtimeMs >= cutoff) { keptRecent++; continue; }     // 최근 N일 → 보존
+    candidates.push({ name: e.name, bytes: st.size });
+  }
+  const totalBytes = candidates.reduce((s, c) => s + c.bytes, 0);
+  if (!apply) { out({ cmd: 'prune-captures', dryRun: true, dir: CAPDIR, days, willDelete: candidates.length, keptRecent, protected: protectedCount, freeBytesEst: totalBytes, sample: candidates.slice(0, 10).map((c) => c.name), note: `--apply 시 ${days}일보다 오래된 캡처 ${candidates.length}개 삭제. 'keep' 포함/하위폴더는 보호.` }); return; }
+  let deleted = 0, freed = 0;
+  for (const c of candidates) { try { fs.unlinkSync(path.join(CAPDIR, c.name)); deleted++; freed += c.bytes; } catch {} }
+  out({ cmd: 'prune-captures', applied: true, dir: CAPDIR, days, deleted, keptRecent, protected: protectedCount, freedBytes: freed, note: `${days}일보다 오래된 캡처 삭제 완료. 'keep' 포함/하위폴더 보호.` });
 }
 
 // 오른쪽 개체 사이드바(.side_bar)가 열려 있으면 닫는다. 사이드바는 객체 포커스가 풀려도 남아 본문을
@@ -3892,6 +3940,7 @@ async function cmdFind(args) {
     else if (args._ === 'download') await cmdDownload(args);
     else if (args._ === 'upload') await cmdUpload(args);
     else if (args._ === 'trash') await cmdTrash(args);
+    else if (args._ === 'prune-captures') await cmdPruneCaptures(args);
     else if (args._ === 'resize-object') await cmdResizeObject(args);
     else if (args._ === 'object-prop') await cmdObjectProp(args);
     else if (args._ === 'chart-data') await cmdChartData(args);

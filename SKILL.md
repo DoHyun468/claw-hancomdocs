@@ -76,7 +76,8 @@ node hancom.js find    --name <문서이름>  --text "<구절>"
 node hancom.js pinpoint --file <로컬 .hwp/.hwpx> --text "<구절>" [--nth N] [--name <문서이름>] [--replace "<새 텍스트>" [--apply]] [--band N] [--scale N] [--out <png>]
 node hancom.js download --name <문서이름>  [--pdf] [--out <로컬경로>]
 node hancom.js upload   --file <로컬경로>
-node hancom.js trash    [--name <문서이름> | --names "a.hwpx,b.hwpx" | --match "접두어1,접두어2"] [--apply]
+node hancom.js trash    [--name <문서이름> | --names "a.hwpx,b.hwpx" | --match "접두어1,접두어2" | --empty] [--apply]
+node hancom.js prune-captures [--days N] [--apply]
 node hancom.js resize-object --name <문서이름> --at "x,y" [--width <mm>] [--height <mm>] [--apply]
 node hancom.js object-prop   --name <문서이름> --at "x,y" [--pos "x,y"] [--width <mm>] [--height <mm>] [--wrap <배치>] [--fill <색|none>] [--border <색>] [--border-width <mm>] [--apply]
 node hancom.js chart-data    --name <문서이름> --at "x,y" [--data @data.json | --set "B2=9.9,C3=4" | --del-col "C,D" | --del-row "5" | --read-grid] [--apply]
@@ -175,6 +176,9 @@ node hancom.js highlight    --name <문서이름> --text "<구절>" --color yell
   - 대상 지정 셋 중 하나: `--name "<문서>"`(한 개) · `--names "a.hwpx,b.hwpx"`(여러 개, **확장자까지** 정확히) · `--match "cg,ctype"`(이름이 그 **접두어로 시작**하는 드라이브 문서 전부).
   - **기본은 드라이런** — 지울 목록(`willTrash`)만 출력하고 안 지운다. 목록 확인 후 **`--apply`** 로 실제 이동(**headless 전용**, 파괴적 작업). `--match` 는 startsWith 라 의도 밖 문서가 걸릴 수 있으니 드라이런 목록을 꼭 확인.
   - 가상 스크롤로 한 번에 다 안 잡힐 수 있다 → `--apply` 후 같은 `--match` 드라이런을 **한 번 더** 돌려 잔여 0 확인(남으면 재실행).
+  - **`--empty`** (휴지통 비우기): 휴지통의 모든 항목을 **영구 삭제(복원 불가)**. 드라이런은 휴지통에 든 개수(`inTrash`)만 보여주고, `--apply` 로 실제 비움(headless 전용). 안 비워도 휴지통 항목은 **30일 후 자동 영구삭제**된다.
+
+- **`prune-captures`** (로컬 캡처 청소): `scripts/captures/`(gitignore 로컬 스크래치)에 쌓인 검증 캡처를 **기본 3일보다 오래된 것만** 삭제. `--days N` 으로 보존 기간 조절. **기본 드라이런**(지울 개수·샘플), `--apply` 로 실제 삭제(캡처는 언제든 재생성 가능). **남기고 싶은 캡처**는 파일명에 `keep` 을 넣거나 `captures/keep/` 하위로 옮기면 보호된다(절대 안 지움). 즉시 삭제보다 **롤링 3일 + 보호**가 권장 — 같은 작업 중 캡처를 다시 참조/비교하는 흐름을 깨지 않으면서 무한정 쌓이는 것만 막는다.
 
 ### 🖼 그림·차트 객체 — `resize-object` · `object-prop` · `chart-data`
 객체(그림/차트)는 본문 **canvas에 픽셀로** 그려져 DOM으로 못 짚는다 → **페이지 좌표 `--at "x,y"`** 로 클릭(객체 안 한 점이면 됨, `capture --grid`로 좌표 확인). 위치 자동탐색은 안 됨.
