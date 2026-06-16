@@ -3471,6 +3471,79 @@ async function cmdUpload(args) {
   } finally { await browser.close(); }
 }
 
+// trash: 드라이브 문서를 '휴지통으로 이동'(삭제). 복구 가능(한컴독스 웹 '휴지통' 탭 / 직후 '실행 취소' 스낵바).
+// 메커니즘: 내 드라이브에서 그 문서 행을 우클릭 → 컨텍스트 메뉴 '삭제' 클릭 → 즉시 휴지통 이동(확인 다이얼로그 없음).
+//   --name "<문서>"            한 개
+//   --names "a.hwpx,b.hwpx"    여러 개(정확한 전체 이름 콤마. 확장자까지 줘야 동명 접두 충돌이 없음)
+//   --match "cg,ctype"         이름이 해당 접두어로 '시작'하는 드라이브의 모든 문서(열거 후 startsWith 필터)
+// 기본은 드라이런(지울 목록만 출력) — 안전하게 목록 확인 후 --apply 로 실제 이동. (파괴적이라 --apply 는 headless 전용.)
+async function trashOne(page, rawName) {
+  const name = String(rawName).normalize('NFC');
+  const row = page.getByText(name, { exact: false }).first();
+  if (!(await row.count())) return { name, status: 'not_found' };
+  await row.scrollIntoViewIfNeeded().catch(() => {});
+  await page.keyboard.press('Escape').catch(() => {}); // 이전 메뉴 잔상 닫기
+  await row.click({ button: 'right' }).catch(async () => { await row.click({ button: 'right', force: true }).catch(() => {}); });
+  await page.waitForTimeout(600);
+  const del = page.getByRole('menuitem', { name: '삭제', exact: true }); // 컨텍스트 메뉴의 삭제(툴바 삭제와 구분: menuitem 역할)
+  if (!(await del.count())) { await page.keyboard.press('Escape').catch(() => {}); return { name, status: 'menu_failed' }; }
+  await del.first().click().catch(() => {});
+  await page.waitForTimeout(1400); // '휴지통으로 이동' 토스트 / 행 제거 반영 대기
+  const gone = (await page.getByText(name, { exact: false }).count()) === 0;
+  return { name, status: gone ? 'trashed' : 'maybe_failed' };
+}
+
+async function enumerateDocNames(page) {
+  // 내 드라이브 목록을 끝까지 스크롤하며 문서 이름(.hwp/.hwpx 리프 텍스트) 수집(가상 스크롤 대비 안정될 때까지).
+  const names = new Set();
+  let stable = 0;
+  for (let i = 0; i < 40 && stable < 3; i++) {
+    const batch = await page.evaluate(() => {
+      const out = [];
+      for (const e of document.querySelectorAll('*')) {
+        if (e.childElementCount !== 0) continue;
+        const t = (e.textContent || '').trim();
+        if (/\.hwpx?$/i.test(t) && t.length < 80) out.push(t);
+      }
+      return out;
+    });
+    const before = names.size;
+    batch.forEach((n) => names.add(n.normalize('NFC')));
+    if (names.size === before) stable++; else stable = 0;
+    await page.mouse.wheel(0, 1600);
+    await page.waitForTimeout(500);
+  }
+  return [...names];
+}
+
+async function cmdTrash(args) {
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('삭제(--apply)는 headless 전용입니다. --headed 는 보기 전용 — 삭제 금지.');
+  let targets = [];
+  if (args.name) targets.push(String(args.name));
+  if (args.names) targets.push(...String(args.names).split(',').map((s) => s.trim()).filter(Boolean));
+  const matchPrefixes = args.match ? String(args.match).split(',').map((s) => s.trim().normalize('NFC')).filter(Boolean) : [];
+  if (!targets.length && !matchPrefixes.length) throw new Error('--name "<문서>" / --names "a,b" / --match "접두어1,접두어2" 중 하나 필요');
+  const browser = await chromium.launch({ headless: !HEADED, slowMo: SLOWMO });
+  const ctx = await browser.newContext({ storageState: AUTH, viewport: VIEW, deviceScaleFactor: 1, acceptDownloads: true });
+  try {
+    const page = await ctx.newPage();
+    await ensureLoggedIn(page, MYDRIVE);
+    await page.waitForTimeout(1500);
+    if (matchPrefixes.length) {
+      const all = await enumerateDocNames(page);
+      targets.push(...all.filter((n) => matchPrefixes.some((p) => n.startsWith(p))));
+    }
+    targets = [...new Set(targets.map((s) => String(s).normalize('NFC')))];
+    if (!targets.length) { out({ cmd: 'trash', status: 'no_match', match: matchPrefixes, note: '대상 문서 없음(접두어 일치 0).' }); return; }
+    if (!apply) { out({ cmd: 'trash', dryRun: true, willTrash: targets, count: targets.length, note: '--apply 시 위 문서를 휴지통으로 이동(복구 가능). --match 는 startsWith — 목록 확인 후 실행.' }); return; }
+    const results = [];
+    for (const name of targets) { results.push(await trashOne(page, name)); await page.waitForTimeout(400); }
+    const trashed = results.filter((r) => r.status === 'trashed').length;
+    out({ cmd: 'trash', applied: true, requested: targets.length, trashed, results, note: '휴지통으로 이동 완료 — 한컴독스 웹 휴지통 탭에서 복구/영구삭제 가능.' });
+  } finally { await browser.close(); }
+}
+
 // 오른쪽 개체 사이드바(.side_bar)가 열려 있으면 닫는다. 사이드바는 객체 포커스가 풀려도 남아 본문을
 // 왼쪽으로 밀어 캡처/좌표를 틀어지게 하므로(차트 더블클릭 등에서 열림), 캡처 전에 닫아 정상 레이아웃 보장.
 async function closeSidebar(ed) {
@@ -3818,6 +3891,7 @@ async function cmdFind(args) {
     else if (args._ === 'find') await cmdFind(args);
     else if (args._ === 'download') await cmdDownload(args);
     else if (args._ === 'upload') await cmdUpload(args);
+    else if (args._ === 'trash') await cmdTrash(args);
     else if (args._ === 'resize-object') await cmdResizeObject(args);
     else if (args._ === 'object-prop') await cmdObjectProp(args);
     else if (args._ === 'chart-data') await cmdChartData(args);

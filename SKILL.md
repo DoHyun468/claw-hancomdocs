@@ -76,6 +76,7 @@ node hancom.js find    --name <문서이름>  --text "<구절>"
 node hancom.js pinpoint --file <로컬 .hwp/.hwpx> --text "<구절>" [--nth N] [--name <문서이름>] [--replace "<새 텍스트>" [--apply]] [--band N] [--scale N] [--out <png>]
 node hancom.js download --name <문서이름>  [--pdf] [--out <로컬경로>]
 node hancom.js upload   --file <로컬경로>
+node hancom.js trash    [--name <문서이름> | --names "a.hwpx,b.hwpx" | --match "접두어1,접두어2"] [--apply]
 node hancom.js resize-object --name <문서이름> --at "x,y" [--width <mm>] [--height <mm>] [--apply]
 node hancom.js object-prop   --name <문서이름> --at "x,y" [--pos "x,y"] [--width <mm>] [--height <mm>] [--wrap <배치>] [--fill <색|none>] [--border <색>] [--border-width <mm>] [--apply]
 node hancom.js chart-data    --name <문서이름> --at "x,y" [--data @data.json | --set "B2=9.9,C3=4" | --del-col "C,D" | --del-row "5" | --read-grid] [--apply]
@@ -169,6 +170,11 @@ node hancom.js highlight    --name <문서이름> --text "<구절>" --color yell
     - **`--pdf`**: 원본 형식 대신 **PDF로 내보내기**(파일›PDF로 다운로드). 변환이라 조금 더 걸릴 수 있음(반환 `pdf:true`). read.mjs는 PDF를 못 읽으니, 내용 확인용이 아니라 **최종 산출물(공유·인쇄용)** 일 때 쓴다.
   - `node hancom.js upload --file <로컬경로>` → 로컬 파일을 드라이브에 **새 문서**로 올림(같은 이름이어도 교체 아님 → 중복 생성 주의).
   - **루프**: `download` 로 현재 상태를 받아 → `read.mjs` 로 occurrence-맵 → `pinpoint`/편집은 한컴독스 UI(자동저장). 편집 뒤 다시 읽어야 하면 **재 `download`**(로컬은 편집하면 stale). 편집 자체는 UI 에서 하므로 보통 재업로드는 불필요.
+
+- **`trash`** (드라이브 문서 삭제): 드라이브 문서를 **휴지통으로 이동**(영구삭제 아님 — 한컴독스 웹 **휴지통** 탭에서 복구/영구삭제, 직후엔 '실행 취소' 스낵바). 주로 테스트로 올린 문서 정리에 쓴다.
+  - 대상 지정 셋 중 하나: `--name "<문서>"`(한 개) · `--names "a.hwpx,b.hwpx"`(여러 개, **확장자까지** 정확히) · `--match "cg,ctype"`(이름이 그 **접두어로 시작**하는 드라이브 문서 전부).
+  - **기본은 드라이런** — 지울 목록(`willTrash`)만 출력하고 안 지운다. 목록 확인 후 **`--apply`** 로 실제 이동(**headless 전용**, 파괴적 작업). `--match` 는 startsWith 라 의도 밖 문서가 걸릴 수 있으니 드라이런 목록을 꼭 확인.
+  - 가상 스크롤로 한 번에 다 안 잡힐 수 있다 → `--apply` 후 같은 `--match` 드라이런을 **한 번 더** 돌려 잔여 0 확인(남으면 재실행).
 
 ### 🖼 그림·차트 객체 — `resize-object` · `object-prop` · `chart-data`
 객체(그림/차트)는 본문 **canvas에 픽셀로** 그려져 DOM으로 못 짚는다 → **페이지 좌표 `--at "x,y"`** 로 클릭(객체 안 한 점이면 됨, `capture --grid`로 좌표 확인). 위치 자동탐색은 안 됨.
