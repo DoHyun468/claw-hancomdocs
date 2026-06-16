@@ -21,9 +21,12 @@ const TRASH = 'https://www.hancomdocs.com/ko/trash';
 // ── 세션 락(병렬 실행 차단) ───────────────────────────────────────────────
 // ⚠️ 한컴독스는 같은 계정 동시 다중 로그인을 보안 위반으로 보고 전 세션 로그아웃 + 재로그인 차단
 // → 비밀번호를 바꿔야 복구된다. 브라우저를 띄우는 모든 명령은 로그인을 하므로, 두 개가 겹치면 잠긴다.
-// 그래서 브라우저 명령 시작 시 .hancom-session.lock 을 배타적으로 잡고(이미 활성 세션이 있으면 거부),
-// 끝나면 푼다. 다른 세션(다른 Claude·Codex 등)이 같은 hancom.js 를 쓰면 같은 락을 공유해 충돌을 막는다.
-const SESSION_LOCK = path.join(DIR, '.hancom-session.lock');
+// 그래서 브라우저 명령 시작 시 락 파일을 배타적으로 잡고(이미 활성 세션이 있으면 거부), 끝나면 푼다.
+// 락 경로는 머신 공유 절대경로(os.tmpdir)다 — 이렇게 해야 *다른 repo의 도구*(예: 캡처 전용 플러그인
+// hancomdocs-capture)와도 같은 락을 보고 충돌을 막는다(캡처↔편집 동시 로그인까지 차단). 같은 계정으로
+// 로그인하는 모든 한컴 자동화가 이 경로를 공유. ⚠️ 연동 도구는 반드시 '동일한' 경로 문자열을 써야 함:
+//   const SESSION_LOCK = path.join(os.tmpdir(), 'hancom-session.lock')
+const SESSION_LOCK = path.join(os.tmpdir(), 'hancom-session.lock');
 const LOCK_STALE_MS = 20 * 60 * 1000; // cold-verify 등 긴 작업 여유 — 이보다 오래되고 PID도 죽었으면 stale 로 회수
 let HELD_LOCK = false;
 
