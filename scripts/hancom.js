@@ -3926,11 +3926,84 @@ async function cmdFind(args) {
   });
 }
 
+// --help / help / 인자없음 / 모르는 명령 → 전체 명령 일람(SKILL.md 명령 블록과 동기화).
+function printHelp() {
+  log(`사용법: node hancom.js <명령> [옵션]   (편집 --apply 는 headless 전용 · 같은 문서엔 순차 실행)
+
+조회·캡처:
+  capture   --file <절대경로> [--page N] [--grid] [--scale N] [--page-height N] [--out <png>]
+  zoom      --name <문서> --clip "x,y,w,h" [--page N] [--scale N] [--out <png>]
+  around    --name <문서> --text "<검색어>" [--zoom [--band N]] [--grid] [--out <png>]
+  locate    --name <문서> --clues "a,b,c" [--grid] [--out <png>]
+  find      --name <문서> --text "<구절>"
+  pinpoint  --file <로컬 .hwp/.hwpx> --text "<구절>" [--nth N] [--name <문서>] [--replace "<새 텍스트>" [--apply]] [--band N] [--scale N]
+
+드라이브·살림:
+  download  --name <문서> [--pdf] [--out <로컬경로>]
+  upload    --file <로컬경로>
+  trash     [--name <문서> | --names "a,b" | --match "접두어1,접두어2" | --empty] [--apply]
+  prune-captures [--days N] [--apply]
+
+본문 편집:
+  insert-text   --name <문서> --anchor "<기준 텍스트>" --text "<추가할 한 줄>" [--apply]
+  replace-text  --name <문서> --find "<대상>" --to "<교체>" [--apply]
+  set-cell-text --name <문서> --cell "<기준 셀 텍스트>" --text "<값>" [--tab N] [--apply]
+
+글자·문단 서식:
+  format-text  --name <문서> --text "<구절>" --bold|--italic|--underline|--strike [--apply]
+  font-family  --name <문서> --text "<구절>" --font "<글꼴명>" [--nth N] [--apply]
+  font-size    --name <문서> --text "<구절>" --size <pt> [--apply]
+  font-color   --name <문서> --text "<구절>" --color <색> [--apply]
+  highlight    --name <문서> --text "<구절>" --color <색> [--apply]
+  char-shape   --name <문서> --text "<구절>" [--spacing N] [--width N] [--apply]
+  align        --name <문서> --anchor "<단락 텍스트>" --to left|center|right|justify|distribute|divide [--apply]
+  line-spacing --name <문서> --anchor "<단락 텍스트>" --to <percent> [--apply]
+  para-shape   --name <문서> --anchor "<단락 텍스트>" [--left N] [--right N] [--before N] [--after N] [--apply]
+  list         --name <문서> --anchor "<단락 텍스트>" --type bullet|number [--shape N] [--apply]
+  level        --name <문서> --anchor "<단락 텍스트>" --to increase|decrease [--by N] [--apply]
+  style        --name <문서> --anchor "<단락 텍스트>" --style "<스타일명>" [--apply]
+
+표:
+  insert-table    --name <문서> --rows R --cols C [--anchor "<텍스트>"] [--apply]
+  table-op        --name <문서> --cell "<셀 텍스트>" [--page N] [--nth N] [--to "<끝 셀>" --to-page N] --op <op> [--apply]
+  cell-style      --name <문서> --cell "<셀 텍스트>" [--page N] [--nth N] [--fill <색|none>] [--border <색> --border-type/--border-width/--border-where] [--diagonal <방향> --diagonal-type/--diagonal-width/--diagonal-color] [--apply]
+  table-cell-prop --name <문서> --cell "<셀 텍스트>" [--page N] [--nth N] [--cell-width <mm>] [--cell-height <mm>] [--valign top|middle|bottom] [--apply]
+
+쪽:
+  page-setup   --name <문서> [--orientation portrait|landscape] [--width/--height <mm>] [--top/--bottom/--left/--right/--header/--footer <mm>] [--apply]
+  page-number  --name <문서> --where header|footer --align left|center|right [--apply]
+  page-break   --name <문서> --anchor "<단락 텍스트>" [--apply]
+
+입력·객체:
+  para-line   --name <문서> --anchor "<단락 텍스트>" [--apply]
+  field       --name <문서> --anchor "<단락 텍스트>" --guide "<안내문>" [--field-name "<이름>"] [--apply]
+  bookmark    --name <문서> --anchor "<단락 텍스트>" --mark-name "<책갈피 이름>" [--apply]
+  footnote    --name <문서> --anchor "<단락 텍스트>" --text "<각주 내용>" [--apply]
+  endnote     --name <문서> --anchor "<단락 텍스트>" --text "<미주 내용>" [--apply]
+  hyperlink   --name <문서> --text "<구절>" --url "<주소>" [--apply]
+  memo        --name <문서> --anchor "<단락 텍스트>" --text "<메모 내용>" [--apply]
+  equation    --name <문서> --anchor "<단락 텍스트>" --script "<한컴 수식 스크립트>" [--apply]
+  textbox     --name <문서> --anchor "<근처 텍스트>" --text "<내용>" [--wrap inline|square|behind|front|topbottom] [--apply]
+  shape       --name <문서> --anchor "<근처 텍스트>" --shape rect|ellipse|line|arc [--wrap <배치>] [--apply]
+  caption     --name <문서> --at "x,y" --text "<캡션>" [--position below|above|left|right] [--apply]
+  insert-image  --name <문서> --file <이미지경로> [--anchor "<텍스트>"] [--apply]
+  insert-chart  --name <문서> [--type N(0~19)] [--anchor "<텍스트>"] [--apply]
+  chart-data    --name <문서> --at "x,y" [--data @data.json | --set "B2=9.9" | --del-col "C,D" | --del-row "5" | --read-grid] [--apply]
+  resize-object --name <문서> --at "x,y" [--width <mm>] [--height <mm>] [--apply]
+  object-prop   --name <문서> --at "x,y" [--pos "x,y"] [--width/--height <mm>] [--wrap <배치>] [--fill <색|none>] [--border <색>] [--border-width <mm>] [--apply]
+
+로컬 파서(파일 직접 읽기, 업로드 불필요):
+  read.mjs <로컬 .hwp/.hwpx> [--text "<구절>"] [--locate --nth N] [--inspect] [--objects] [--bookmarks]
+
+자세한 설명·예시는 SKILL.md / references/ 참고.`);
+}
+
 (async () => {
   const args = parseArgs(process.argv.slice(2));
   HEADED = !!args.headed;                                    // --headed: 창 띄워 보기(디버그)
   SLOWMO = args.slowmo ? Number(args.slowmo) : (HEADED ? 400 : 0); // headed면 동작을 천천히
   try {
+    if (!args._ || args._ === 'help' || args._ === '--help' || args._ === '-h') { printHelp(); process.exit(args._ ? 0 : 2); }
     if (args._ === 'capture') await cmdCapture(args);
     else if (args._ === 'zoom') await cmdZoom(args);
     else if (args._ === 'around') await cmdAround(args);
@@ -3979,7 +4052,7 @@ async function cmdFind(args) {
     else if (args._ === 'font-size') await cmdFontSize(args);
     else if (args._ === 'line-spacing') await cmdLineSpacing(args);
     else if (args._ === 'font-color') await cmdFontColor(args);
-    else { log('사용법: capture --file <경로> [--page N] [--grid] | zoom --name <이름> --clip "x,y,w,h" [--page N] | around --name <이름> --text "<검색어>" [--grid] | locate --name <이름> --clues "a,b,c" [--grid] | insert-text --name <이름> --anchor "<기준 텍스트>" --text "<추가할 줄>" [--apply] | replace-text --name <이름> --find "<대상>" --to "<교체>" [--apply] | set-cell-text --name <이름> --cell "<기준 셀 텍스트>" --text "<값>" [--tab N] [--apply] | format-text --name <이름> --text "<구절>" --bold|--italic|--underline [--apply]'); process.exit(2); }
+    else { log('모르는 명령: ' + args._ + '\n'); printHelp(); process.exit(2); }
     process.exit(0);
   } catch (e) {
     if (e instanceof CannotOpenError || e.message === 'CANNOT_OPEN') {
