@@ -80,7 +80,7 @@ doctor는 node(풀경로)·playwright·chromium·auth.json·프로파일잠금�
 모든 명령은 `scripts/`에서 `node hancom.js <subcommand> ...`. 결과는 마지막 줄 `RESULT_JSON={...}`.
 
 ```
-node hancom.js capture --file <절대경로> [--page N] [--grid] [--scale N] [--page-height N] [--out <png>]
+node hancom.js capture [--file <절대경로> | --name <드라이브문서>] [--page N] [--grid] [--scale N] [--page-height N] [--out <png>]
 node hancom.js zoom    --name <문서이름>  --clip "x,y,w,h" [--page N] [--scale N] [--out <png>]
 node hancom.js around  --name <문서이름>  --text "<검색어>" [--zoom [--band N]] [--grid] [--out <png>]
 node hancom.js locate  --name <문서이름>  --clues "a,b,c" [--grid] [--out <png>]
@@ -141,7 +141,7 @@ node hancom.js highlight    --name <문서이름> --text "<구절>" --color yell
   - **`--zoom`**: 페이지 전체 대신 **매치 줄을 그 자리에서 확대**해 잘라낸다(가로 밴드, 기본 높이 180px·`--band`로 조절, 기본 scale 2.5). **격자 읽기·좌표 입력 없이** "이 텍스트를 가까이 보여줘"가 한 번에 됨.
 - **locate**: 여러 단서를 각각 검색해 **가장 많이 모이는(최빈) 페이지**를 찾아 캡처. 한 단어가 TOC/반복에 걸려도 다수결로 버팀.
 
-> **`--file` vs `--name`:** `capture`의 `--file`은 **절대경로**(없으면 업로드). `zoom`/`around`/`locate`의 `--name`은 **이미 올라간 문서의 파일명**(= capture 결과 `RESULT_JSON.docName`, 보통 파일 basename 예: `test_win.hwp`).
+> **`--file` vs `--name`:** `capture`의 `--file`은 **절대경로**(같은 이름 문서가 드라이브에 없으면 업로드, 있으면 그걸 연다 — 재업로드 안 함). 드라이브에 이미 있는 문서는 **`capture --name <문서>`** 로 로컬 파일 없이 바로 캡처(업로드 안 함). `zoom`/`around`/`locate`/`find-objects` 등은 원래 `--name`(= capture 결과 `RESULT_JSON.docName`, 보통 파일 basename 예: `test_win.hwp`).
 
 > **어느 걸 쓰나:** 쪽 번호 알면 `capture --page`(가장 쌈·정확). 고유한 구절 있으면 `around`(검색 1회). 흔한 단어만 있으면 `locate`(N회 검색이라 느리지만 다수결로 정확). 한 단어는 TOC·반복에 약하니 **구체적 구절 > 단어**.
 

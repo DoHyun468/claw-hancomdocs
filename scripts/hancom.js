@@ -393,13 +393,16 @@ async function withEditor(scale, fn) {
 }
 
 async function cmdCapture(args) {
-  if (!args.file) throw new Error('--file 필요');
+  if (!args.file && !(args.name && args.name !== true)) throw new Error('--file <로컬경로> 또는 --name <드라이브 문서> 필요');
   const scale = Number(args.scale) || 1.5;
-  const name = path.basename(args.file).normalize('NFC'); // 출력 docName도 NFC로(후속 --name 일치)
+  // --name: 드라이브 문서 직접 캡처(로컬 파일 불필요, 업로드 안 함). --file: 파일명으로 드라이브 확인 후 없으면 업로드.
+  const byName = !!(args.name && args.name !== true);
+  const name = (byName ? String(args.name) : path.basename(args.file)).normalize('NFC');
   fs.mkdirSync(CAPDIR, { recursive: true });
   await withEditor(scale, async (ctx, page) => {
     let editor = await openDoc(ctx, page, name);
     if (!editor) {
+      if (byName) throw new Error('드라이브에서 문서 못 찾음: ' + name + ' (--name 은 업로드 안 함 — 로컬에서 올리려면 --file)');
       log('드라이브에 없음 → 업로드:', name);
       await uploadFile(page, args.file);
       editor = await openDoc(ctx, page, name);
@@ -4141,7 +4144,7 @@ function printHelp() {
   log(`사용법: node hancom.js <명령> [옵션]   (편집 --apply 는 headless 전용 · 같은 문서엔 순차 실행)
 
 조회·캡처:
-  capture   --file <절대경로> [--page N] [--grid] [--scale N] [--page-height N] [--out <png>]
+  capture   [--file <절대경로> | --name <드라이브문서>] [--page N] [--grid] [--scale N] [--page-height N] [--out <png>]
   zoom      --name <문서> --clip "x,y,w,h" [--page N] [--scale N] [--out <png>]
   around    --name <문서> --text "<검색어>" [--zoom [--band N]] [--grid] [--out <png>]
   locate    --name <문서> --clues "a,b,c" [--grid] [--out <png>]
