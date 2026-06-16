@@ -2971,17 +2971,29 @@ async function cmdTextbox(args) {
 // 페이지좌표(at) → 우클릭 → 메뉴 항목(itemText) 클릭. 반환 true(항목 클릭)|false(그 좌표에 객체 없음).
 // 열린 '개체 속성' 다이얼로그(기본 탭)에서 본문과의 배치를 설정. inline=글자처럼 취급(체크박스),
 // square=어울림 · topbottom=자리 차지 · front=글 앞으로 · behind=글 뒤로 (DIV.e_object_properties, aria-label).
+
 async function setObjectWrap(ed, mode) {
+  // ⚠️ 본문과의 배치 버튼은 aria-label 이 비어있고(라벨은 title 속성) 클래스로 식별해야 함 —
+  //   s_flow_text(어울림)/s_topandbottom_text(자리 차지=전체폭)/s_front_text(글 앞)/s_behind_text(글 뒤).
+  //   글자처럼 취급은 체크박스(aria-label='글자처럼 취급'). (옛 aria-label 매칭은 빈 라벨이라 실패했음.)
   if (mode === 'inline') {
-    const xy = await ed.evaluate(() => { for (const el of document.querySelectorAll('input[type=checkbox]')) { const lab = el.closest('label') || el.parentElement; if (lab && /글자처럼 취급/.test(lab.textContent || '')) { if (el.checked) return 'already'; const r = el.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; } } return null; });
-    if (!xy) throw new Error("'글자처럼 취급' 체크박스 탐색 실패");
-    if (xy !== 'already') { await ed.mouse.click(xy.x, xy.y); await ed.waitForTimeout(300); }
+    const res = await ed.evaluate(() => {
+      for (const e of document.querySelectorAll('.e_object_properties.checkbox_wrap')) {
+        if ((e.getAttribute('aria-label') || '') === '글자처럼 취급' && e.offsetParent !== null) {
+          const inp = e.querySelector('input[type=checkbox]'); if (inp && inp.checked) return 'already';
+          const r = e.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+        }
+      }
+      return null;
+    });
+    if (!res) throw new Error("'글자처럼 취급' 탐색 실패");
+    if (res !== 'already') { await ed.mouse.click(res.x, res.y); await ed.waitForTimeout(300); }
     return;
   }
-  const AL = { square: '어울림', topbottom: '자리 차지', front: '글 앞으로', behind: '글 뒤로' };
-  const al = AL[mode]; if (!al) throw new Error('--wrap 는 inline|square|topbottom|front|behind');
-  const xy = await ed.evaluate((label) => { for (const e of document.querySelectorAll('.e_object_properties')) { if ((e.getAttribute('aria-label') || '') === label) { const r = e.getBoundingClientRect(); if (r.width > 5 && e.offsetParent !== null) return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; } } return null; }, al);
-  if (!xy) throw new Error('본문과의 배치 버튼 탐색 실패: ' + al);
+  const CLS = { square: 's_flow_text', topbottom: 's_topandbottom_text', front: 's_front_text', behind: 's_behind_text' };
+  const cls = CLS[mode]; if (!cls) throw new Error('--wrap 는 inline|square|topbottom|front|behind');
+  const xy = await ed.evaluate((c) => { for (const e of document.querySelectorAll('.' + c)) { if (e.offsetParent !== null) { const r = e.getBoundingClientRect(); if (r.width > 5) return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; } } return null; }, cls);
+  if (!xy) throw new Error('본문과의 배치 버튼 탐색 실패: ' + mode);
   await ed.mouse.click(xy.x, xy.y); await ed.waitForTimeout(300);
 }
 
