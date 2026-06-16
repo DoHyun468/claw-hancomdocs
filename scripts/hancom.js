@@ -403,6 +403,16 @@ async function cmdZoom(args) {
 // 찾기 다이얼로그 열기 — 툴바 '찾기' 버튼을 DOM 셀렉터(title)로, 드롭다운의 '찾기...' 항목은
 // 실제 위치를 DOM에서 읽어 클릭. (기존 하드코딩 좌표 click(309,95)/(335,167)는 창크기·UI버전·
 // 배율에 따라 어긋나 다이얼로그가 안 열려 실패 → 셀렉터/DOM-위치로 견고화. OS 무관.)
+// 다이얼로그에 특정 라벨의 입력칸이 떴는지(단축키로 다이얼로그가 실제로 열렸는지 판정용).
+async function hasDialogField(ed, label) {
+  return await ed.evaluate((al) => {
+    for (const el of document.querySelectorAll('input')) {
+      const r = el.getBoundingClientRect();
+      if ((el.getAttribute('aria-label') || '') === al && r.width > 10 && r.height > 10 && el.offsetParent !== null) return true;
+    }
+    return false;
+  }, label).catch(() => false);
+}
 // 찾기 검색칸이 화면에 떴는지 탐지(단축키 성공 판정용). 가시 input 중 본문 아래(y>300) 가장 넓은 것.
 // ⚠️ '문서 편집 영역' input 은 제외 — 단축키 실패 시 거기에 블라인드 입력하면 문서가 망가진다(DEBUG 안전교훈).
 async function findSearchInputBox(ed) {
@@ -2752,8 +2762,12 @@ async function cmdCharShape(args) {
     for (let i = 0; i < 2 && !sel.selChars; i++) sel = await dragSelectPhrase(editor, phrase);
     if (!sel.selChars) { out({ cmd: 'char-shape', status: 'selection_failed', text: phrase, docId: editor.__docId || null }); return; }
     const n = sel.page || 1;
-    await openMenu(editor, '서식');
-    await clickSel(editor, '.char_shape'); await editor.waitForTimeout(1000);
+    // 단축키 우선: Mac=Meta+L / 그 외=Alt+L 로 글자 모양 다이얼로그. '자간' 칸이 뜨면 메뉴 스킵, 아니면 서식›글자모양 폴백.
+    await editor.keyboard.press(process.platform === 'darwin' ? 'Meta+KeyL' : 'Alt+KeyL'); await editor.waitForTimeout(900);
+    if (!await hasDialogField(editor, '자간')) {
+      await openMenu(editor, '서식');
+      await clickSel(editor, '.char_shape'); await editor.waitForTimeout(1000);
+    }
     for (const [label, value] of fields) { try { await setDialogField(editor, label, value); } catch (e) {} }
     await editor.waitForTimeout(200);
     const syncP = watchSave(editor);
@@ -2790,8 +2804,12 @@ async function cmdParaShape(args) {
     if (!apply) { out({ cmd: 'para-shape', dryRun: true, anchor, fields: Object.fromEntries(fields), foundPage: n, docId: editor.__docId || null, note: '--apply 시 그 단락에 문단 모양 적용(mm).' }); return; }
     await focusBody(editor);
     await editor.mouse.click(r.caret.x, r.caret.y + 6); await editor.waitForTimeout(250); // 그 단락에 캐럿
-    await openMenu(editor, '서식');
-    await clickSel(editor, '.para_shape'); await editor.waitForTimeout(1000);
+    // 단축키 우선: Alt+T 로 문단 모양 다이얼로그. '왼쪽'(여백) 칸이 뜨면 메뉴 스킵, 아니면 서식›문단모양 폴백.
+    await editor.keyboard.press('Alt+KeyT'); await editor.waitForTimeout(900);
+    if (!await hasDialogField(editor, '왼쪽')) {
+      await openMenu(editor, '서식');
+      await clickSel(editor, '.para_shape'); await editor.waitForTimeout(1000);
+    }
     for (const [label, value] of fields) { try { await setDialogField(editor, label, value); } catch (e) {} }
     await editor.waitForTimeout(200);
     const syncP = watchSave(editor);
