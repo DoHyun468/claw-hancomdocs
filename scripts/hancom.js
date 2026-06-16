@@ -1786,15 +1786,21 @@ async function caretParagraphOp(args, cmd, sel, extra) {
     const n = r.page || 1;
     if (!apply) { out({ cmd, dryRun: true, anchor, ...extra, foundPage: n, docId: editor.__docId || null, note: '--apply 없으면 read-only.' }); return; }
     await focusBody(editor);
-    await clickSel(editor, sel);
-    const saved = await confirmSaved(editor); // 단락 op 적용 후 저장 확정
+    // 캐럿을 앵커 단락에 명확히 둔다(findText 가 남긴 캐럿에만 의존하지 않게 — 타겟 확정).
+    if (r.caret) { await editor.mouse.click(r.caret.x, r.caret.y + Math.round((r.caret.h || 12) / 2)); await editor.waitForTimeout(300); }
+    // set 의미: 버튼 aria-pressed(=현재 단락이 이미 그 목록인가)를 읽어, 이미 켜져 있으면 누르지 않는다(토글로 꺼지는 것 방지).
+    const pressed = () => editor.evaluate((s) => { const el = document.querySelector(s); return !!el && (el.getAttribute('aria-pressed') === 'true' || /\bon\b/.test(el.className || '')); }, sel);
+    const wasOn = await pressed();
+    let saved = true;
+    if (!wasOn) { await clickSel(editor, sel); await editor.waitForTimeout(450); saved = await confirmSaved(editor); } // 켜야 할 때만 클릭+저장확정
+    const listActive = await pressed(); // 적용 후 실제 상태 검증(applied:true 만으로 안 믿음)
     const pc = await readPageCount(editor);
     await gotoPage(editor, n);
     const rect2 = await detectPageRect(editor);
     await hideOverlays(editor);
     const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_${cmd}_p${n}_${stamp()}.png`);
     await editor.screenshot(rect2 ? { path: shot, clip: rect2 } : { path: shot });
-    out({ cmd, applied: true, anchor, ...extra, page: n, totalPages: pc ? pc.total : null, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), docId: editor.__docId || null, shot });
+    out({ cmd, applied: true, listActive, alreadyOn: wasOn, anchor, ...extra, page: n, totalPages: pc ? pc.total : null, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), ...(listActive ? {} : { warning2: 'list_not_active_after_apply' }), docId: editor.__docId || null, shot });
   });
 }
 
