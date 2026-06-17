@@ -2676,6 +2676,54 @@ async function setLabeledInput(ed, label, value) {
   await ed.keyboard.type(String(value), { delay: 25 }); await ed.keyboard.press('Tab'); return true;
 }
 
+// columns: 다단(쪽›단) — 본문을 N단으로. 쪽 메뉴의 '단' 그룹 버튼(.p_column_one/two/three, 비대칭 left/right).
+// 단은 구역 전체에 적용(단락 앵커 불필요). 라디오식 SET(토글 아님) — 'on' 클래스로 현재 단 상태 검증.
+async function cmdColumns(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  const layout = args.type != null && args.type !== true ? String(args.type).toLowerCase() : null;
+  const SEL = { 1: '.p_column_one', 2: '.p_column_two', 3: '.p_column_three' };
+  const LAYOUT = { left: '.p_column_left', right: '.p_column_right' };
+  let sel, count = null;
+  if (layout) { sel = LAYOUT[layout]; if (!sel) throw new Error('--type 은 left | right (비대칭 2단)'); }
+  else { count = args.count !== undefined ? Number(args.count) : 2; sel = SEL[count]; if (!sel) throw new Error('--count 는 1 | 2 | 3 (또는 --type left|right)'); }
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
+  const name = String(args.name).normalize('NFC');
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    if (!apply) { out({ cmd: 'columns', dryRun: true, count, type: layout, docId: editor.__docId || null, note: '--apply 시 본문을 ' + (layout || count + '단') + '으로 설정.' }); return; }
+    const btnXY = async () => editor.evaluate((s) => { const el = document.querySelector(s); if (!el || el.offsetParent === null) return null; const r = el.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; }, sel);
+    const isOn = () => editor.evaluate((s) => { const el = document.querySelector(s); return !!el && /\bon\b/.test(el.className || ''); }, sel);
+    // 쪽 메뉴를 열고, '단' 그룹(.p_columns)에 hover 해 하위 버튼(하나/둘/셋)을 펼친 뒤 sel 버튼 위치 반환.
+    const openColGroup = async () => {
+      await openMenu(editor, '쪽');
+      const grp = await editor.evaluate(() => { const el = document.querySelector('.p_columns'); if (!el || el.offsetParent === null) return null; const r = el.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; });
+      if (!grp) throw new Error('쪽 › 단 그룹(.p_columns) 탐색 실패 — 쪽 메뉴 안 열림?');
+      await editor.mouse.move(grp.x, grp.y); await editor.waitForTimeout(500); // hover 로 펼침
+      let xy = await btnXY();
+      if (!xy) { await editor.mouse.click(grp.x, grp.y); await editor.waitForTimeout(500); xy = await btnXY(); }
+      return xy;
+    };
+    await focusBody(editor);
+    const syncP = watchSave(editor);
+    const xy = await openColGroup();
+    if (!xy) throw new Error('쪽 › 단 › ' + sel + ' 탐색 실패(서브메뉴 펼침 실패)');
+    await editor.mouse.click(xy.x, xy.y); await editor.waitForTimeout(800);
+    const saved = await confirmSaved(editor, syncP);
+    // 검증: 쪽 메뉴 › 단 다시 펼쳐 그 버튼이 'on'인지(현재 단 설정).
+    await openColGroup();
+    const columnsActive = await isOn();
+    await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(200);
+    const nn = (await readCurrentPage(editor)) || 1; await gotoPage(editor, nn);
+    const rect = await detectPageRect(editor); await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_columns_${stamp()}.png`);
+    await editor.screenshot(rect ? { path: shot, clip: rect } : { path: shot });
+    out({ cmd: 'columns', applied: columnsActive, columnsActive, count, type: layout, page: nn, saved, ...(columnsActive ? {} : { warning: 'columns_not_active' }), docId: editor.__docId || null, shot });
+  });
+}
+
 // page-setup: 편집 용지(쪽›편집 용지) — 용지 크기(폭/길이 mm)·방향(세로/가로)·여백(위/아래/좌/우/머리말/꼬리말/제본 mm).
 async function cmdPageSetup(args) {
   if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
@@ -4224,6 +4272,7 @@ function printHelp() {
 
 쪽:
   page-setup   --name <문서> [--orientation portrait|landscape] [--width/--height <mm>] [--top/--bottom/--left/--right/--header/--footer <mm>] [--apply]
+  columns      --name <문서> [--count 1|2|3 | --type left|right] [--apply]   (다단 — 본문을 N단으로)
   page-number  --name <문서> --where header|footer --align left|center|right [--apply]
   page-break   --name <문서> --anchor "<단락 텍스트>" [--apply]
 
@@ -4284,6 +4333,7 @@ function printHelp() {
     else if (args._ === 'table-cell-prop') await cmdTableCellProp(args);
     else if (args._ === 'page-number') await cmdPageNumber(args);
     else if (args._ === 'page-setup') await cmdPageSetup(args);
+    else if (args._ === 'columns') await cmdColumns(args);
     else if (args._ === 'page-break') await cmdPageBreak(args);
     else if (args._ === 'char-shape') await cmdCharShape(args);
     else if (args._ === 'para-shape') await cmdParaShape(args);

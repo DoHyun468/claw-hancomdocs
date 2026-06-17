@@ -103,6 +103,7 @@ node hancom.js cell-style    --name <문서이름> --cell "<셀 텍스트>" [--p
 node hancom.js table-cell-prop --name <문서이름> --cell "<셀 텍스트>" [--page N] [--nth N] [--cell-width <mm>] [--cell-height <mm>] [--valign top|middle|bottom] [--apply]
 node hancom.js page-number   --name <문서이름> --where header|footer --align left|center|right [--apply]
 node hancom.js page-setup    --name <문서이름> [--orientation portrait|landscape] [--width <mm>] [--height <mm>] [--top/--bottom/--left/--right/--header/--footer <mm>] [--apply]
+node hancom.js columns       --name <문서이름> [--count 1|2|3 | --type left|right] [--apply]
 node hancom.js page-break    --name <문서이름> --anchor "<단락 안 텍스트>" [--apply]
 node hancom.js para-line     --name <문서이름> --anchor "<단락 안 텍스트>" [--apply]
 node hancom.js field         --name <문서이름> --anchor "<단락 안 텍스트>" --guide "<안내문>" [--field-name "<이름>"] [--apply]
