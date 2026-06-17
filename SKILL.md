@@ -275,7 +275,7 @@ node hancom.js table-cell-prop --name <문서이름> --cell "<셀 텍스트>" --
 - **`page-break --anchor "<단락 안 텍스트>"`**: 그 줄 **끝에서 쪽을 나눠** 뒤 내용을 새 쪽으로. `--apply`, **headless 전용**.
 - **`para-line --anchor "<단락 안 텍스트>"`**: 그 줄 **다음에 가로 구분선(문단 띠)**을 새 단락으로 삽입. `--apply`, **headless 전용**.
 - **`field --anchor "<단락 안 텍스트>" --guide "<안내문>" [--field-name "<이름>"]`**: 그 줄 **끝에 누름틀(양식 자리)**을 삽입 — `--guide`가 자리에 표시될 안내문(예: "이름을 입력하세요"), `--field-name`은 양식 식별용 이름(선택). 채우는 양식 템플릿용. `--apply`, **headless 전용**.
-- **`bookmark --anchor "<단락 안 텍스트>" --mark-name "<책갈피 이름>"`**: 그 위치에 **책갈피(이름표)**를 단다 — 본문엔 안 보이는 이동/참조용 표식. `--apply`, **headless 전용**. 확인: `download` 후 `read.mjs <파일> --bookmarks`로 이름 목록 조회(**`.hwpx`만 읽힘** — `.hwp`는 read.mjs가 못 읽어 0으로 나올 수 있으나 삽입은 됨).
+- **`bookmark --anchor "<단락 안 텍스트>" --mark-name "<책갈피 이름>"`**: 그 위치에 **책갈피(이름표)**를 단다 — 본문엔 안 보이는 이동/참조용 표식. `--apply`, **headless 전용**. **삽입 후 op가 책갈피 다이얼로그 목록에서 이름을 확인해 `bookmarkVerified`(true/false)로 보고**(UI 검증 — `.hwp/.hwpx` 무관). 따로 확인하려면 `download` 후 `read.mjs <파일> --bookmarks`(단 **`.hwpx`만 읽힘**).
 - **`shape --anchor "<근처 텍스트>" --shape rect|ellipse|line|arc`**: 그 근처 본문에 **도형**(직사각형·타원·직선·호)을 그린다. `--wrap`으로 본문과의 배치(`inline`/`square`/`behind`/`front`/`topbottom`, 생략 시 떠 있음 — textbox와 동일). `--apply`, **headless 전용**.
 - **`equation --anchor "<단락 안 텍스트>" --script "<수식 스크립트>"`**: 그 줄 **다음에 수식**을 삽입. `--script`는 **한컴 수식 스크립트**(아래 문법). `--apply`, **headless 전용**.
   - **수식 스크립트 문법** (검증됨 — 렌더 확인):

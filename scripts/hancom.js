@@ -3089,6 +3089,7 @@ async function cmdTextbox(args) {
     if (!r.found || !r.caret) { out({ cmd: 'textbox', status: 'anchor_not_found', anchor, docId: editor.__docId || null }); return; }
     const n = r.page || 1;
     if (!apply) { out({ cmd: 'textbox', dryRun: true, anchor, text: boxText, foundPage: n, docId: editor.__docId || null, note: '--apply 시 그 근처에 글상자.' }); return; }
+    const rect0 = await detectPageRect(editor); // 드래그 클램프용 페이지 영역(가장자리 밖으로 안 나가게)
     await focusBody(editor);
     const c = r.caret;
     const syncP = watchSave(editor);
@@ -3096,18 +3097,28 @@ async function cmdTextbox(args) {
     const it = await menuItemXY(editor, '글상자');
     if (!it) throw new Error('입력 › 글상자 메뉴 탐색 실패');
     await editor.mouse.click(it.x, it.y); await editor.waitForTimeout(700); // 그리기 모드 진입
-    // 캐럿 아래쪽에 글상자 드래그(가로 240 × 세로 110px)
-    const x0 = c.x, y0 = c.y + 24;
+    // 글상자 드래그(bw×bh). ⚠️ 끝점이 페이지 밖이면 글상자가 안 만들어진다(applied:true인데 무효) →
+    // 끝점이 페이지 안에 들어오게 시작점 클램프(오른쪽/하단 가장자리면 안쪽으로 당김).
+    const bw = 200, bh = 90, pad = 10;
+    let x0 = c.x, y0 = c.y + 24;
+    if (rect0) {
+      x0 = Math.max(rect0.x + pad, Math.min(x0, rect0.x + rect0.width - bw - pad));
+      y0 = Math.max(rect0.y + pad, Math.min(y0, rect0.y + rect0.height - bh - pad));
+    }
     await editor.mouse.move(x0, y0); await editor.mouse.down();
-    await editor.mouse.move(x0 + 120, y0 + 55, { steps: 6 });
-    await editor.mouse.move(x0 + 240, y0 + 110, { steps: 8 }); await editor.waitForTimeout(150);
+    await editor.mouse.move(x0 + Math.round(bw / 2), y0 + Math.round(bh / 2), { steps: 6 });
+    await editor.mouse.move(x0 + bw, y0 + bh, { steps: 8 }); await editor.waitForTimeout(150);
     await editor.mouse.up(); await editor.waitForTimeout(600);
     if (boxText) await editor.keyboard.type(boxText, { delay: 35 }); // 글상자 안 내용
+    await editor.waitForTimeout(200);
+    await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(350); // 글 편집 빠져나와 객체 선택
+    // 생성 검증: 글상자가 실제로 만들어졌으면 객체가 선택돼 '개체 속성 수정'(.modify_object_properties)이 활성(find-objects 와 동일 신호).
+    const objActive = () => editor.evaluate(() => { const el = document.querySelector('.modify_object_properties'); return !!el && el.getAttribute('aria-disabled') !== 'true' && !/\bdisabled\b/.test(el.className || ''); });
+    const objectCreated = await objActive();
     let saved = await confirmSaved(editor, syncP); // 글상자 생성 저장 확정
-    if (wrap) {
-      // 글상자 객체 선택 상태로 → 개체 속성 → 본문과의 배치 설정 → 확인
-      await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(300); // 글 편집 빠져나와 객체 선택
-      if (!await objMenuClick(editor, x0 + 120, y0 + 55, '개체 속성...')) throw new Error('글상자 개체 속성 진입 실패');
+    if (wrap && objectCreated) {
+      // 이미 객체 선택 상태 → 개체 속성 → 본문과의 배치 설정 → 확인
+      if (!await objMenuClick(editor, x0 + Math.round(bw / 2), y0 + Math.round(bh / 2), '개체 속성...')) throw new Error('글상자 개체 속성 진입 실패');
       await setObjectWrap(editor, wrap);
       await editor.waitForTimeout(150);
       const syncP2 = watchSave(editor);
@@ -3117,7 +3128,8 @@ async function cmdTextbox(args) {
     await gotoPage(editor, n); const rect = await detectPageRect(editor); await hideOverlays(editor);
     const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_textbox_p${n}_${stamp()}.png`);
     await editor.screenshot(rect ? { path: shot, clip: rect } : { path: shot });
-    out({ cmd: 'textbox', applied: true, anchor, text: boxText, wrap, page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), docId: editor.__docId || null, shot });
+    // applied 를 '실제 객체 생성'으로(드래그 시도가 아니라). 안 만들어졌으면 명확히 알림.
+    out({ cmd: 'textbox', applied: objectCreated, objectCreated, anchor, text: boxText, wrap, page: n, saved, ...(objectCreated ? {} : { warning: 'textbox_not_created', note: '드래그가 글상자를 못 만듦 — anchor 를 페이지 안쪽 텍스트로 바꿔 재시도.' }), docId: editor.__docId || null, shot });
   });
 }
 
@@ -4050,7 +4062,26 @@ async function cmdBookmark(args) {
     if (!inserted) throw new Error('책갈피 삽입 버튼(넣기) 탐색 실패');
     await editor.waitForTimeout(500);
     const saved = await confirmSaved(editor, syncP);
-    out({ cmd: 'bookmark', applied: true, anchor, markName, page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), docId: editor.__docId || null, note: '책갈피는 본문에 안 보임 — .hwpx는 다운로드 후 read.mjs --bookmarks로 확인. (.hwp는 read.mjs가 못 읽어 0으로 나올 수 있음 — 삽입은 됨.)' });
+    // 검증(UI — .hwp/.hwpx 무관): 책갈피 다이얼로그를 다시 열어 목록에 markName 이 있는지 확인.
+    // (read.mjs --bookmarks 는 .hwpx만 읽혀 .hwp GT 검증이 안 됐다 → UI 목록 확인으로 대체.)
+    let bookmarkVerified = null;
+    try {
+      await openMenu(editor, '입력');
+      let reopened = false;
+      try { await clickSel(editor, '.bookmark'); reopened = true; } catch (e) {}
+      if (!reopened) { for (const t of ['책갈피...', '책갈피…', '책갈피']) { const it2 = await menuItemXY(editor, t); if (it2) { await editor.mouse.click(it2.x, it2.y); reopened = true; break; } } }
+      if (reopened) {
+        await editor.waitForTimeout(1000);
+        bookmarkVerified = await editor.evaluate((nm) => {
+          const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 120 && r.height > 60; };
+          const dlgs = [...document.querySelectorAll('[role="dialog"], .MuiDialog-paper, [class*="dialog"], [class*="modal"]')].filter(vis);
+          const root = dlgs[dlgs.length - 1];
+          return root ? root.innerText.includes(nm) : false; // input value 는 innerText 에 안 들어가니, 일치 = 목록(삽입된 책갈피)에 있음
+        }, markName);
+        await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(300);
+      }
+    } catch (e) {}
+    out({ cmd: 'bookmark', applied: true, bookmarkVerified, anchor, markName, page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), ...(bookmarkVerified === false ? { warning2: 'bookmark_not_in_list' } : {}), docId: editor.__docId || null, note: '책갈피 다이얼로그 목록에서 이름 확인(UI 검증, .hwp/.hwpx 무관). 본문엔 안 보임.' });
   });
 }
 
