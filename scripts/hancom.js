@@ -3371,6 +3371,36 @@ async function pickObjLineType(ed, title) {
   return true;
 }
 
+// 개체 속성 '선' 탭 화살표 모양(시작=headStyle/끝=tailStyle, 동일 옵션) → UI 옵션 title.
+// HWPX 매핑 실측(2026-06-18, fresh 직선): none→NORMAL · triangle→ARROW · line→SPEAR · sharp→CONCAVE_ARROW ·
+//   diamond/circle/square→EMPTY_DIAMOND/EMPTY_CIRCLE/EMPTY_BOX(+ head/tailfill="1" 채움) ·
+//   empty-*→같은 enum(+ fill="0" 빈모양). 채움/빈모양은 같은 style enum + fill 속성 차이(0/1). 선종류 swap 같은 전치 없음.
+const ARROW_SHAPE = { none: '화살표 없음', triangle: '삼각형 화살표', line: '선형 화살표', sharp: '날카로운 화살표', diamond: '다이아몬드형 화살표', circle: '원형 화살표', square: '사각형 화살표', 'empty-diamond': '빈 마름모 화살표', 'empty-circle': '빈 원형 화살표', 'empty-square': '빈 사각형 화살표' };
+// 화살표 콤보 열기. '시작 모양' 은 유일. '끝 모양' 라벨은 2개(선 끝캡 y위, 화살표 y아래=시작모양과 같은 행) → 화살표 행의 것을 연다.
+async function openArrowCombo(ed, which) {
+  if (which === 'start') return openComboNearLabel(ed, '시작 모양');
+  const xy = await ed.evaluate(() => {
+    const labs = [...document.querySelectorAll('div,span,label')].filter((e) => e.offsetParent !== null && e.childElementCount === 0);
+    const start = labs.find((e) => (e.textContent || '').trim() === '시작 모양'); if (!start) return null;
+    const sy = start.getBoundingClientRect().y + start.getBoundingClientRect().height / 2;
+    let end = null; for (const e of labs) { if ((e.textContent || '').trim() !== '끝 모양') continue; const r = e.getBoundingClientRect(); if (Math.abs((r.y + r.height / 2) - sy) < 8) { end = { right: r.right, cy: r.y + r.height / 2 }; break; } }
+    if (!end) return null;
+    let best = null, bd = 1e9; for (const a of document.querySelectorAll('.btn_combo_arrow')) { if (a.offsetParent === null) continue; const r = a.getBoundingClientRect(); if (Math.abs((r.y + r.height / 2) - end.cy) > 12 || r.x < end.right) continue; const d = r.x - end.right; if (d < bd) { bd = d; best = { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; } }
+    return best;
+  });
+  if (!xy) return false;
+  await ed.mouse.click(xy.x, xy.y); await ed.waitForTimeout(800); return true;
+}
+// 화살표 시작/끝 모양 콤보를 열고 title 정확매칭 옵션 클릭.
+async function pickArrowShape(ed, which, title) {
+  if (!await openArrowCombo(ed, which)) return false;
+  await ed.waitForTimeout(400);
+  const xy = await ed.evaluate((t) => { for (const el of document.querySelectorAll('.dropdown_data')) { if (el.offsetParent !== null && (el.getAttribute('title') || '').trim() === t) { el.scrollIntoView({ block: 'nearest' }); const r = el.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; } } return null; }, title);
+  if (!xy) { await ed.keyboard.press('Escape').catch(() => {}); return false; }
+  await ed.mouse.click(xy.x, xy.y); await ed.waitForTimeout(400);
+  return true;
+}
+
 // 다이얼로그 탭(.btn_tab) 정확 텍스트로 클릭(메뉴바 동명 탭과 충돌 방지 — .btn_tab 한정).
 async function clickDialogTab(ed, text) {
   const xy = await ed.evaluate((t) => { for (const el of document.querySelectorAll('.btn_tab')) { if ((el.textContent || '').trim() === t && el.offsetParent !== null) { const r = el.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; } } return null; }, text);
@@ -3473,6 +3503,10 @@ async function cmdObjectProp(args) {
   if (borderW !== null && Number.isNaN(borderW)) throw new Error('--border-width 는 mm 숫자');
   const borderType = args['border-type'] != null && args['border-type'] !== true ? String(args['border-type']).trim().toLowerCase() : null; // 선 종류(파선·점선 등)
   if (borderType && !OBJ_LINE_TYPE[borderType]) throw new Error('--border-type 값: ' + Object.keys(OBJ_LINE_TYPE).join('|'));
+  const arrowStart = args['arrow-start'] != null && args['arrow-start'] !== true ? String(args['arrow-start']).trim().toLowerCase() : null; // 화살표 시작 모양
+  const arrowEnd = args['arrow-end'] != null && args['arrow-end'] !== true ? String(args['arrow-end']).trim().toLowerCase() : null; // 화살표 끝 모양
+  if (arrowStart && !ARROW_SHAPE[arrowStart]) throw new Error('--arrow-start 값: ' + Object.keys(ARROW_SHAPE).join('|'));
+  if (arrowEnd && !ARROW_SHAPE[arrowEnd]) throw new Error('--arrow-end 값: ' + Object.keys(ARROW_SHAPE).join('|'));
   const fillTransp = args['fill-transparency'] !== undefined ? Number(args['fill-transparency']) : null; // 채우기 투명도 0~100%
   if (fillTransp !== null && (Number.isNaN(fillTransp) || fillTransp < 0 || fillTransp > 100)) throw new Error('--fill-transparency 는 0~100 (%)');
   // 바깥 여백(개체와 본문 글 사이 간격, mm) — 여백/캡션 탭. --margin 은 네 변 일괄, 변별 옵션이 우선.
@@ -3511,8 +3545,8 @@ async function cmdObjectProp(args) {
       width: fields['너비'] && fields['너비'].val, height: fields['높이'] && fields['높이'].val,
       posX: fields.pos[0] ? fields.pos[0].val : null, posY: fields.pos[1] ? fields.pos[1].val : null,
     };
-    const nothing = W === null && H === null && PX === null && !wrap && !fillArg && !borderArg && borderW === null && !borderType && fillTransp === null && !hasMargin;
-    const req = { width: W, height: H, pos: PX !== null ? [PX, PY] : null, wrap, fill: fillArg, border: borderArg, borderType, borderWidth: borderW, fillTransparency: fillTransp, ...(hasMargin ? { margins } : {}) };
+    const nothing = W === null && H === null && PX === null && !wrap && !fillArg && !borderArg && borderW === null && !borderType && !arrowStart && !arrowEnd && fillTransp === null && !hasMargin;
+    const req = { width: W, height: H, pos: PX !== null ? [PX, PY] : null, wrap, fill: fillArg, border: borderArg, borderType, arrowStart, arrowEnd, borderWidth: borderW, fillTransparency: fillTransp, ...(hasMargin ? { margins } : {}) };
     if (!apply || nothing) {
       await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(400);
       out({ cmd: 'object-prop', dryRun: !apply, at: [ax, ay], current: cur, requested: req, docId: editor.__docId || null,
@@ -3555,7 +3589,7 @@ async function cmdObjectProp(args) {
         try { await setDialogField(editor, '투명도', fillTransp); styled.fillTransparency = fillTransp; } catch (e) { styled.fillTransparency = 'unavailable'; }
       }
     }
-    if (borderArg || borderW !== null || borderType) {
+    if (borderArg || borderW !== null || borderType || arrowStart || arrowEnd) {
       if (!await dlgClickText(editor, '선')) throw new Error("'선' 탭 탐색 실패");
       if (borderType) { if (await pickObjLineType(editor, OBJ_LINE_TYPE[borderType])) styled.borderType = borderType; else styled.borderType = 'unavailable'; }
       if (borderArg) {
@@ -3565,6 +3599,9 @@ async function cmdObjectProp(args) {
         styled.border = picked;
       }
       if (borderW !== null) await setDialogField(editor, '굵기', borderW);
+      // 화살표 시작/끝 모양(직선·연결선 객체 전용 — 닫힌 도형엔 비활성일 수 있음)
+      if (arrowStart) { if (await pickArrowShape(editor, 'start', ARROW_SHAPE[arrowStart])) styled.arrowStart = arrowStart; else styled.arrowStart = 'unavailable'; }
+      if (arrowEnd) { if (await pickArrowShape(editor, 'end', ARROW_SHAPE[arrowEnd])) styled.arrowEnd = arrowEnd; else styled.arrowEnd = 'unavailable'; }
     }
     // 바깥 여백 — 여백/캡션 탭의 위쪽/아래쪽/왼쪽/오른쪽(mm). 자리차지 차트가 글에 바짝 붙는 것 등 해결.
     if (hasMargin) {
@@ -4372,7 +4409,7 @@ function printHelp() {
   chart-data    --name <문서> --at "x,y" [--data @data.json | --set "B2=9.9" | --del-col "C,D" | --del-row "5" | --read-grid] [--apply]
   resize-object --name <문서> --at "x,y" [--width <mm>] [--height <mm>] [--apply]
   find-objects  --name <문서> [--page N | --pages "1,2"] [--step <px>]   (그림/차트 위치 자동 탐지 → 각 객체 중앙 at)
-  object-prop   --name <문서> --at "x,y" [--pos "x,y"] [--width/--height <mm>] [--wrap <배치>] [--margin <mm> | --margin-top/-bottom/-left/-right <mm>] [--fill <색|none>] [--border <색>] [--border-width <mm>] [--border-type <종류>] [--fill-transparency 0-100] [--apply]
+  object-prop   --name <문서> --at "x,y" [--pos "x,y"] [--width/--height <mm>] [--wrap <배치>] [--margin <mm> | --margin-top/-bottom/-left/-right <mm>] [--fill <색|none>] [--border <색>] [--border-width <mm>] [--border-type <종류>] [--arrow-start/--arrow-end <모양>] [--fill-transparency 0-100] [--apply]
 
 로컬 파서(파일 직접 읽기, 업로드 불필요):
   read.mjs <로컬 .hwp/.hwpx> [--text "<구절>"] [--locate --nth N] [--inspect] [--objects] [--bookmarks]
