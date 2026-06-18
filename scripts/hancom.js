@@ -3443,6 +3443,8 @@ async function cmdObjectProp(args) {
   if (borderArg && !borderRGB) throw new Error('--border 색 인식 실패: ' + borderArg + ' (이름·#RRGGBB)');
   const borderW = args['border-width'] !== undefined ? Number(args['border-width']) : null;
   if (borderW !== null && Number.isNaN(borderW)) throw new Error('--border-width 는 mm 숫자');
+  const fillTransp = args['fill-transparency'] !== undefined ? Number(args['fill-transparency']) : null; // 채우기 투명도 0~100%
+  if (fillTransp !== null && (Number.isNaN(fillTransp) || fillTransp < 0 || fillTransp > 100)) throw new Error('--fill-transparency 는 0~100 (%)');
   // 바깥 여백(개체와 본문 글 사이 간격, mm) — 여백/캡션 탭. --margin 은 네 변 일괄, 변별 옵션이 우선.
   const mAll = args.margin !== undefined ? Number(args.margin) : null;
   const marginOf = (k) => (args[k] !== undefined ? Number(args[k]) : mAll);
@@ -3479,8 +3481,8 @@ async function cmdObjectProp(args) {
       width: fields['너비'] && fields['너비'].val, height: fields['높이'] && fields['높이'].val,
       posX: fields.pos[0] ? fields.pos[0].val : null, posY: fields.pos[1] ? fields.pos[1].val : null,
     };
-    const nothing = W === null && H === null && PX === null && !wrap && !fillArg && !borderArg && borderW === null && !hasMargin;
-    const req = { width: W, height: H, pos: PX !== null ? [PX, PY] : null, wrap, fill: fillArg, border: borderArg, borderWidth: borderW, ...(hasMargin ? { margins } : {}) };
+    const nothing = W === null && H === null && PX === null && !wrap && !fillArg && !borderArg && borderW === null && fillTransp === null && !hasMargin;
+    const req = { width: W, height: H, pos: PX !== null ? [PX, PY] : null, wrap, fill: fillArg, border: borderArg, borderWidth: borderW, fillTransparency: fillTransp, ...(hasMargin ? { margins } : {}) };
     if (!apply || nothing) {
       await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(400);
       out({ cmd: 'object-prop', dryRun: !apply, at: [ax, ay], current: cur, requested: req, docId: editor.__docId || null,
@@ -3503,7 +3505,7 @@ async function cmdObjectProp(args) {
     }
     // 도형 스타일 — 채우기 탭(면 색) / 선 탭(선 색·굵기). 색은 팔레트에서 요청색에 가장 가까운 스와치.
     const styled = {};
-    if (fillArg) {
+    if (fillArg || fillTransp !== null) {
       if (!await dlgClickText(editor, '채우기')) {
         await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(400);
         out({ cmd: 'object-prop', status: 'fill_unavailable', at: [ax, ay], docId: editor.__docId || null, note: "이 객체엔 '채우기' 탭이 없음(직선/호 등 선 객체) — --border 로 선 색만 가능." }); return;
@@ -3511,12 +3513,16 @@ async function cmdObjectProp(args) {
       if (fillNone) {
         if (!await dlgClickText(editor, '색 채우기 없음')) throw new Error("'색 채우기 없음' 선택 실패");
         styled.fill = 'none';
-      } else {
+      } else if (fillArg) {
         await dlgClickText(editor, '색'); // '색' 라디오(면 색 활성화)
         if (!await openComboNearLabel(editor, '면 색')) throw new Error('면 색 콤보 탐색 실패');
         const picked = await pickNearestSwatch(editor, fillRGB);
         if (!picked) throw new Error('면 색 팔레트 스와치 탐색 실패');
         styled.fill = picked;
+      }
+      if (fillTransp !== null) { // 투명도(%) — '투명도 설정' 켜고 입력
+        try { await ensureDialogCheckOn(editor, '투명도 설정', '투명도'); } catch (e) {}
+        try { await setDialogField(editor, '투명도', fillTransp); styled.fillTransparency = fillTransp; } catch (e) { styled.fillTransparency = 'unavailable'; }
       }
     }
     if (borderArg || borderW !== null) {
@@ -4335,7 +4341,7 @@ function printHelp() {
   chart-data    --name <문서> --at "x,y" [--data @data.json | --set "B2=9.9" | --del-col "C,D" | --del-row "5" | --read-grid] [--apply]
   resize-object --name <문서> --at "x,y" [--width <mm>] [--height <mm>] [--apply]
   find-objects  --name <문서> [--page N | --pages "1,2"] [--step <px>]   (그림/차트 위치 자동 탐지 → 각 객체 중앙 at)
-  object-prop   --name <문서> --at "x,y" [--pos "x,y"] [--width/--height <mm>] [--wrap <배치>] [--margin <mm> | --margin-top/-bottom/-left/-right <mm>] [--fill <색|none>] [--border <색>] [--border-width <mm>] [--apply]
+  object-prop   --name <문서> --at "x,y" [--pos "x,y"] [--width/--height <mm>] [--wrap <배치>] [--margin <mm> | --margin-top/-bottom/-left/-right <mm>] [--fill <색|none>] [--border <색>] [--border-width <mm>] [--fill-transparency 0-100] [--apply]
 
 로컬 파서(파일 직접 읽기, 업로드 불필요):
   read.mjs <로컬 .hwp/.hwpx> [--text "<구절>"] [--locate --nth N] [--inspect] [--objects] [--bookmarks]
