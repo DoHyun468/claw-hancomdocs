@@ -100,7 +100,7 @@ node hancom.js insert-image  --name <문서이름> --file <이미지경로> [--a
 node hancom.js insert-chart  --name <문서이름> [--type N] [--anchor "<텍스트>"] [--apply]
 node hancom.js table-op      --name <문서이름> --cell "<셀 텍스트>" [--page N] [--nth N] [--to "<끝 셀>" --to-page N] --op <op> [--apply]
 node hancom.js cell-style    --name <문서이름> --cell "<셀 텍스트>" [--page N] [--nth N] [--fill <색|none>] [--border <색> --border-type <종류> --border-width <mm> --border-where <위치>] [--diagonal <방향> --diagonal-type/--diagonal-width/--diagonal-color] [--apply]
-node hancom.js table-cell-prop --name <문서이름> --cell "<셀 텍스트>" [--page N] [--nth N] [--cell-width <mm>] [--cell-height <mm>] [--cell-margin "왼,오,위,아래"] [--valign top|middle|bottom] [--title-cell] [--table-width/--table-height <mm>] [--table-wrap inline|square|topbottom|front|behind] [--table-margin "왼,오,위,아래"] [--all-cell-margin "왼,오,위,아래"] [--page-split none|cell|table] [--repeat-header] [--apply]
+node hancom.js table-cell-prop --name <문서이름> --cell "<셀 텍스트>" [--page N] [--nth N] [--cell-width <mm>] [--cell-height <mm>] [--cell-margin "왼,오,위,아래"] [--valign top|middle|bottom] [--title-cell] [--table-width/--table-height <mm>] [--table-wrap inline|square|topbottom|front|behind] [--table-margin "왼,오,위,아래"] [--all-cell-margin "왼,오,위,아래"] [--page-split none|cell|table] [--repeat-header] [--split-border-type <종류>] [--split-border-width <mm>] [--split-border-color <색>] [--apply]
 node hancom.js page-number   --name <문서이름> --where header|footer --align left|center|right [--apply]
 node hancom.js page-setup    --name <문서이름> [--orientation portrait|landscape] [--width <mm>] [--height <mm>] [--top/--bottom/--left/--right/--header/--footer <mm>] [--apply]
 node hancom.js columns       --name <문서이름> [--count 1|2|3 | --type left|right] [--apply]
@@ -270,6 +270,7 @@ node hancom.js cell-style --name <문서이름> --cell "<셀 텍스트>" --diago
 - **표 배치**: `--table-wrap inline|square|topbottom|front|behind` (표를 객체처럼 본문에 배치).
 - **표 바깥 여백**: `--table-margin "왼,오,위,아래"` (표와 둘레 글 사이 간격, mm).
 - **여러 쪽 지원**: `--page-split none|cell|table` (긴 표가 쪽 넘을 때 나눔 방식) · `--repeat-header`(제목 줄 자동 반복, 머리 행에서만 활성).
+- **자동 나뉜 표의 경계선**: `--split-border-type <종류>`(solid/dashed/dotted/double/long-dash/circle/slim-thick/thick-slim/slim-thick-slim) · `--split-border-width <mm>`(0.1~5 프리셋) · `--split-border-color <색>`. 표가 쪽을 넘어 **자동 분할될 때 잘린 가장자리에 그어질 선**의 종류/굵기/색을 정한다. *형식만 지정* — 어디서 잘릴지는 한컴이 자동 결정(에이전트가 분할 위치를 알 필요 없음). 분할(나눔) 모드를 자동으로 켠 뒤 적용된다(표가 짧아 안 나뉘면 화면엔 안 보여도 파일엔 저장됨).
 - **표 전체 크기**: `--table-width <mm>` · `--table-height <mm>`.
 ```bash
 node hancom.js table-cell-prop --name <문서이름> --cell "<셀 텍스트>" --cell-height 30 --valign bottom --apply

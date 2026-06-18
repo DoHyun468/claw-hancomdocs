@@ -2381,8 +2381,17 @@ async function cmdTableCellProp(args) {
   const pageSplit = args['page-split'] != null && args['page-split'] !== true ? String(args['page-split']).toLowerCase() : null; // 표탭 여러 쪽 지원: none|cell|table
   if (pageSplit && !['none', 'cell', 'table'].includes(pageSplit)) throw new Error('--page-split 는 none(나누지 않음)|cell(셀 단위로 나눔)|table(나눔)');
   const repeatHeader = !!args['repeat-header']; // 표탭 제목 줄 자동 반복(머리행에서만 활성)
-  const anySet = cw !== null || ch !== null || tw !== null || th !== null || valign || cellMargin || titleCell || tableWrap || tableMargin || allCellMargin || pageSplit || repeatHeader;
-  if (!anySet) throw new Error('속성 옵션이 없음 — --cell-width/--cell-height/--table-width/--table-height/--valign/--cell-margin/--title-cell/--table-wrap/--table-margin/--all-cell-margin/--page-split/--repeat-header 중 하나 이상');
+  // 표탭 '자동으로 나뉜 표의 경계선' — 페이지 넘어 자동분할되는 표의 잘린 가장자리 선(종류/굵기/색). 분할(나눔) 모드를 켜야 활성.
+  const splitBorderType = args['split-border-type'] != null && args['split-border-type'] !== true ? String(args['split-border-type']).trim().toLowerCase() : null;
+  if (splitBorderType && !LINE_TYPE[splitBorderType]) throw new Error('--split-border-type 값: ' + Object.keys(LINE_TYPE).join('|'));
+  const splitBorderW = args['split-border-width'] !== undefined ? Number(args['split-border-width']) : null;
+  if (splitBorderW !== null && Number.isNaN(splitBorderW)) throw new Error('--split-border-width 는 mm 숫자');
+  const splitBorderColorArg = args['split-border-color'] != null && args['split-border-color'] !== true ? String(args['split-border-color']).trim() : null;
+  const splitBorderRGB = splitBorderColorArg ? parseColor(splitBorderColorArg) : null;
+  if (splitBorderColorArg && !splitBorderRGB) throw new Error('--split-border-color 색 인식 실패: ' + splitBorderColorArg);
+  const splitBorder = splitBorderType || splitBorderW !== null || splitBorderColorArg;
+  const anySet = cw !== null || ch !== null || tw !== null || th !== null || valign || cellMargin || titleCell || tableWrap || tableMargin || allCellMargin || pageSplit || repeatHeader || splitBorder;
+  if (!anySet) throw new Error('속성 옵션이 없음 — --cell-width/--cell-height/--table-width/--table-height/--valign/--cell-margin/--title-cell/--table-wrap/--table-margin/--all-cell-margin/--page-split/--repeat-header/--split-border-type/--split-border-width/--split-border-color 중 하나 이상');
   const apply = !!args.apply;
   if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용.');
   const cellText = String(args.cell).normalize('NFC');
@@ -2402,7 +2411,7 @@ async function cmdTableCellProp(args) {
       r = await anchorCell(editor, cellText, { nth, page: cellPage });
       if (!r.found || !r.caret) { out({ cmd: 'table-cell-prop', status: 'cell_not_found', cell: cellText, nth, page: cellPage, occCount: r.occCount, docId: editor.__docId || null }); return; }
     }
-    if (!apply) { out({ cmd: 'table-cell-prop', dryRun: true, cell: cellText, ...(toText ? { to: toText } : {}), requested: { cellWidth: cw, cellHeight: ch, tableWidth: tw, tableHeight: th, valign, cellMargin, titleCell, tableWrap, tableMargin, allCellMargin, pageSplit, repeatHeader }, ...(r ? { foundPage: r.page } : {}), docId: editor.__docId || null, note: '--apply 시 표/셀 속성 적용.' }); return; }
+    if (!apply) { out({ cmd: 'table-cell-prop', dryRun: true, cell: cellText, ...(toText ? { to: toText } : {}), requested: { cellWidth: cw, cellHeight: ch, tableWidth: tw, tableHeight: th, valign, cellMargin, titleCell, tableWrap, tableMargin, allCellMargin, pageSplit, repeatHeader, splitBorderType, splitBorderWidth: splitBorderW, splitBorderColor: splitBorderColorArg }, ...(r ? { foundPage: r.page } : {}), docId: editor.__docId || null, note: '--apply 시 표/셀 속성 적용.' }); return; }
     await focusBody(editor);
     if (toText) {
       const dr = await dragCellRange(editor, cellText, toText, { aNth: nth, aPage: cellPage, bNth: toNth, bPage: toPage });
@@ -2432,12 +2441,24 @@ async function cmdTableCellProp(args) {
         else { const WRAP = { square: '.t_properties.s_flow_text', topbottom: '.t_properties.s_topandbottom_text', front: '.t_properties.s_front_text', behind: '.t_properties.s_behind_text' }; try { await clickSel(editor, WRAP[tableWrap]); set.tableWrap = tableWrap; } catch (e) { throw new Error('표 배치 아이콘 탐색 실패: ' + tableWrap); } }
       }
     }
-    // ② 표 탭: 여러 쪽 지원 + 제목 줄 자동 반복 (모든 셀 안 여백은 표-탭이 기존 셀을 못 덮어 셀-탭 경로로 처리 — 위 selection 에서 표 전체 선택)
-    if (pageSplit || repeatHeader) {
+    // ② 표 탭: 여러 쪽 지원 + 제목 줄 자동 반복 + 자동 나뉜 표 경계선 (모든 셀 안 여백은 표-탭이 기존 셀을 못 덮어 셀-탭 경로로 처리 — 위 selection 에서 표 전체 선택)
+    if (pageSplit || repeatHeader || splitBorder) {
       if (!await clickDialogTab(editor, '표')) throw new Error("'표' 탭 탐색 실패");
       await editor.waitForTimeout(350);
       if (pageSplit) { const PS = { none: '.t_properties.page_break_none', cell: '.t_properties.page_break_table', table: '.t_properties.page_break_cell' }; try { await clickSel(editor, PS[pageSplit]); set.pageSplit = pageSplit; } catch (e) { throw new Error('여러 쪽 지원 아이콘 탐색 실패: ' + pageSplit); } }
       if (repeatHeader) { const st = await checkboxState('제목 줄 자동 반복'); if (!st.found) set.repeatHeader = 'not_found'; else if (st.disabled) set.repeatHeader = 'disabled'; else { if (!st.checked) await dlgClickText(editor, '제목 줄 자동 반복'); set.repeatHeader = true; } }
+      if (splitBorder) {
+        // 경계선 설정은 '나눔' 모드일 때만 활성 → page_break_cell(나눔) 먼저 켜고, '자동으로 나뉜 표의 경계선 설정' 체크.
+        if (pageSplit !== 'table') { try { await clickSel(editor, '.t_properties.page_break_cell'); set.pageSplit = 'table'; await editor.waitForTimeout(300); } catch (e) {} }
+        const cb = await ensureAriaCheckOn(editor, '자동으로 나뉜 표의 경계선 설정');
+        if (!cb.found) { set.splitBorder = 'not_found'; }
+        else if (cb.disabled) { set.splitBorder = 'disabled(나눔 모드 필요)'; }
+        else {
+          if (splitBorderType) { if (await pickComboOption(editor, '종류', LINE_TYPE[splitBorderType])) set.splitBorderType = splitBorderType; else set.splitBorderType = 'unavailable'; }
+          if (splitBorderW !== null) { if (await pickComboOption(editor, '굵기', widthClass(splitBorderW))) set.splitBorderWidth = splitBorderW; else set.splitBorderWidth = 'unavailable(0.1/0.12/0.15/0.2/0.25/0.3/0.4/0.5/0.6/0.7/1/1.5/2/3/4/5)'; }
+          if (splitBorderColorArg) { if (await openComboNearLabel(editor, '색')) { const p = await pickNearestSwatch(editor, splitBorderRGB); if (p) set.splitBorderColor = p; else set.splitBorderColor = 'unavailable'; } else set.splitBorderColor = 'combo_not_found'; }
+        }
+      }
     }
     // ③ 여백/캡션 탭: 표 바깥 여백
     if (tableMargin) {
@@ -3343,7 +3364,11 @@ async function pickNearestSwatch(ed, target) {
 }
 
 // 셀 테두리/배경·대각선 탭의 선 '종류'(line type) 값 → 옵션 클래스. (각 셀마다 적용 다이얼로그에서 전부 활성)
-const LINE_TYPE = { solid: 'bdr_style_solid', dashed: 'bdr_style_dashed', dotted: 'bdr_style_dotted', double: 'bdr_style_double', 'long-dash': 'bdr_style_long_dash', circle: 'bdr_style_circle', 'slim-thick': 'bdr_style_slim_thick', 'thick-slim': 'bdr_style_thick_slim', 'slim-thick-slim': 'bdr_style_slimthickslim', none: 'bdr_style_none' };
+// ⚠️ Hancom webhwp 직렬화 버그(2026-06-18 실측): 옵션 클래스 `bdr_style_dashed`(파선) 선택 → HWPX type="DOT",
+//   `bdr_style_dotted`(점선) 선택 → type="DASH" 로 두 항목이 전치되어 저장된다(셀 테두리·대각선·표 경계선 등
+//   이 콤보를 쓰는 모든 곳 공통, 개체 '선' 탭과 동일 버그). 다운로드 파일(=결과물) 기준 표준 스타일이 맞도록
+//   dashed→'bdr_style_dotted', dotted→'bdr_style_dashed' 로 매핑한다(나머지는 정상).
+const LINE_TYPE = { solid: 'bdr_style_solid', dashed: 'bdr_style_dotted', dotted: 'bdr_style_dashed', double: 'bdr_style_double', 'long-dash': 'bdr_style_long_dash', circle: 'bdr_style_circle', 'slim-thick': 'bdr_style_slim_thick', 'thick-slim': 'bdr_style_thick_slim', 'slim-thick-slim': 'bdr_style_slimthickslim', none: 'bdr_style_none' };
 // '굵기'(line weight) mm → 옵션 클래스. 가능값: 0.1 0.12 0.15 0.2 0.25 0.3 0.4 0.5 0.6 0.7 1 1.5 2 3 4 5
 const widthClass = (mm) => 'line_weight_' + String(mm).replace(/\./g, '_');
 // 콤보(종류/굵기) 를 라벨로 열고 옵션(클래스)을 클릭. 옵션은 .dropdown_data 가 클릭대상(안쪽 아이콘 말고).
@@ -3420,6 +3445,16 @@ async function ensureDialogCheckOn(ed, checkboxText, probeAria) {
     await dlgClickText(ed, checkboxText); await ed.waitForTimeout(350);
   }
   return await dlgInputDisabled(ed, probeAria) === false;
+}
+// role=checkbox(aria-label) 를 켠다(이미 켜졌으면 no-op). 라벨이 길어 dlgClickText 폭필터에 안 잡히는 체크박스용 —
+// aria-label 로 찾아 박스(왼쪽) 클릭. {found, disabled, checked} 반환.
+async function ensureAriaCheckOn(ed, ariaLabel) {
+  const read = () => ed.evaluate((al) => { const el = [...document.querySelectorAll('[role=checkbox]')].find((e) => e.offsetParent !== null && (e.getAttribute('aria-label') || '') === al); if (!el) return { found: false }; const r = el.getBoundingClientRect(); return { found: true, checked: el.getAttribute('aria-checked') === 'true', disabled: el.getAttribute('aria-disabled') === 'true' || !!el.closest('[class*="disable"]'), x: Math.round(r.x + 9), y: Math.round(r.y + r.height / 2) }; }, ariaLabel);
+  let s = await read();
+  if (!s.found) return { found: false };
+  if (s.disabled) return { found: true, disabled: true };
+  for (let i = 0; i < 2 && !s.checked; i++) { await ed.mouse.click(s.x, s.y); await ed.waitForTimeout(350); s = await read(); }
+  return { found: true, checked: !!s.checked };
 }
 
 // find-objects: 페이지의 그림/차트 객체 위치를 자동 탐지(좌표 눈대중 제거). 본문은 canvas라 객체에 DOM이
@@ -4384,7 +4419,7 @@ function printHelp() {
   insert-table    --name <문서> --rows R --cols C [--anchor "<텍스트>"] [--apply]
   table-op        --name <문서> --cell "<셀 텍스트>" [--page N] [--nth N] [--to "<끝 셀>" --to-page N] --op <op> [--apply]
   cell-style      --name <문서> --cell "<셀 텍스트>" [--page N] [--nth N] [--fill <색|none>] [--border <색> --border-type/--border-width/--border-where] [--diagonal <방향> --diagonal-type/--diagonal-width/--diagonal-color] [--apply]
-  table-cell-prop --name <문서> --cell "<셀 텍스트>" [--cell-width/--cell-height <mm>] [--cell-margin "왼,오,위,아래"] [--valign top|middle|bottom] [--title-cell] [--table-width/--table-height <mm>] [--table-wrap inline|square|topbottom|front|behind] [--table-margin "왼,오,위,아래"] [--all-cell-margin "왼,오,위,아래"] [--page-split none|cell|table] [--repeat-header] [--page N] [--nth N] [--apply]
+  table-cell-prop --name <문서> --cell "<셀 텍스트>" [--cell-width/--cell-height <mm>] [--cell-margin "왼,오,위,아래"] [--valign top|middle|bottom] [--title-cell] [--table-width/--table-height <mm>] [--table-wrap inline|square|topbottom|front|behind] [--table-margin "왼,오,위,아래"] [--all-cell-margin "왼,오,위,아래"] [--page-split none|cell|table] [--repeat-header] [--split-border-type/--split-border-width/--split-border-color] [--page N] [--nth N] [--apply]
 
 쪽:
   page-setup   --name <문서> [--orientation portrait|landscape] [--width/--height <mm>] [--top/--bottom/--left/--right/--header/--footer <mm>] [--apply]
