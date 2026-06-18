@@ -262,8 +262,12 @@ node hancom.js cell-style --name <문서이름> --cell "<셀 텍스트>" --diago
 우클릭 **표/셀 속성** 다이얼로그. `--cell`(+`--to`로 여러 셀)로 잡아 적용. dry-run 기본, `--apply`, **headless 전용**.
 - **셀 크기**: `--cell-width <mm>` · `--cell-height <mm>`('셀 크기 적용' 자동 체크 후 설정).
 - **세로 정렬**: `--valign top|middle|bottom` (셀 안 글의 위/가운데/아래).
-- **셀 안 여백**: `--cell-margin "왼,오,위,아래"` (mm).
-- **제목 셀**: `--title-cell` (쪽 넘어갈 때 자동 반복되는 머리 셀).
+- **셀 안 여백**: `--cell-margin "왼,오,위,아래"` (mm). 선택한 셀(또는 `--to` 범위) 에 적용.
+- **모든 셀 안 여백**: `--all-cell-margin "왼,오,위,아래"` — **`--cell <좌상단> --to <우하단>` 범위 필수**(표 전체면 표의 좌상단·우하단 셀). webhwp가 표 전체 키보드 선택을 지원 안 해 마우스 범위 드래그로만 모든 셀에 일괄 적용된다. (표-탭의 '모든 셀의 안 여백' 필드는 기존 셀을 못 덮어 안 씀.)
+- **제목 셀**: `--title-cell` (쪽 넘어갈 때 자동 반복되는 머리 셀). **머리 행 셀에서만 활성** — 본문 셀이면 `set.titleCell='disabled'` 로 정직 보고(적용 안 됨).
+- **표 배치**: `--table-wrap inline|square|topbottom|front|behind` (표를 객체처럼 본문에 배치).
+- **표 바깥 여백**: `--table-margin "왼,오,위,아래"` (표와 둘레 글 사이 간격, mm).
+- **여러 쪽 지원**: `--page-split none|cell|table` (긴 표가 쪽 넘을 때 나눔 방식) · `--repeat-header`(제목 줄 자동 반복, 머리 행에서만 활성).
 - **표 전체 크기**: `--table-width <mm>` · `--table-height <mm>`.
 ```bash
 node hancom.js table-cell-prop --name <문서이름> --cell "<셀 텍스트>" --cell-height 30 --valign bottom --apply

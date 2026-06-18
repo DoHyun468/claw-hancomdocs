@@ -2373,8 +2373,11 @@ async function cmdTableCellProp(args) {
   if (tableWrap && !['inline', 'square', 'topbottom', 'front', 'behind'].includes(tableWrap)) throw new Error('--table-wrap 는 inline|square|topbottom|front|behind');
   const tableMargin = args['table-margin'] != null && args['table-margin'] !== true ? String(args['table-margin']).split(',').map((s) => Number(s.trim())) : null; // 여백/캡션탭 바깥 여백
   if (tableMargin && (tableMargin.length !== 4 || tableMargin.some(Number.isNaN))) throw new Error('--table-margin 형식: "왼,오,위,아래" mm');
-  const allCellMargin = args['all-cell-margin'] != null && args['all-cell-margin'] !== true ? String(args['all-cell-margin']).split(',').map((s) => Number(s.trim())) : null; // 표탭 모든 셀 안 여백
+  const allCellMargin = args['all-cell-margin'] != null && args['all-cell-margin'] !== true ? String(args['all-cell-margin']).split(',').map((s) => Number(s.trim())) : null; // 모든 셀 안 여백(범위 선택으로 일괄)
   if (allCellMargin && (allCellMargin.length !== 4 || allCellMargin.some(Number.isNaN))) throw new Error('--all-cell-margin 형식: "왼,오,위,아래" mm');
+  // 표-탭 '모든 셀의 안 여백'은 기존 explicit-margin 셀을 안 덮고, webhwp는 표 전체 키보드 선택을 지원 안 함 →
+  // 모든 셀 적용은 '마우스 범위 드래그'로만 된다(검증됨). 그래서 --all-cell-margin 은 좌상단~우하단 범위를 요구한다.
+  if (allCellMargin && !(args.to != null && args.to !== true)) throw new Error('--all-cell-margin 은 범위 필요 — --cell "<좌상단 셀>" --to "<우하단 셀>" 로 표 전체(또는 일부) 셀을 지정하세요. (webhwp는 표 전체 자동선택 미지원)');
   const pageSplit = args['page-split'] != null && args['page-split'] !== true ? String(args['page-split']).toLowerCase() : null; // 표탭 여러 쪽 지원: none|cell|table
   if (pageSplit && !['none', 'cell', 'table'].includes(pageSplit)) throw new Error('--page-split 는 none(나누지 않음)|cell(셀 단위로 나눔)|table(나눔)');
   const repeatHeader = !!args['repeat-header']; // 표탭 제목 줄 자동 반복(머리행에서만 활성)
@@ -2429,11 +2432,10 @@ async function cmdTableCellProp(args) {
         else { const WRAP = { square: '.t_properties.s_flow_text', topbottom: '.t_properties.s_topandbottom_text', front: '.t_properties.s_front_text', behind: '.t_properties.s_behind_text' }; try { await clickSel(editor, WRAP[tableWrap]); set.tableWrap = tableWrap; } catch (e) { throw new Error('표 배치 아이콘 탐색 실패: ' + tableWrap); } }
       }
     }
-    // ② 표 탭: 모든 셀 안 여백 + 여러 쪽 지원 + 제목 줄 자동 반복
-    if (allCellMargin || pageSplit || repeatHeader) {
+    // ② 표 탭: 여러 쪽 지원 + 제목 줄 자동 반복 (모든 셀 안 여백은 표-탭이 기존 셀을 못 덮어 셀-탭 경로로 처리 — 위 selection 에서 표 전체 선택)
+    if (pageSplit || repeatHeader) {
       if (!await clickDialogTab(editor, '표')) throw new Error("'표' 탭 탐색 실패");
       await editor.waitForTimeout(350);
-      if (allCellMargin) { const [L, R2, T, B] = allCellMargin; try { await setDialogField(editor, '왼쪽', L); } catch (e) {} try { await setDialogField(editor, '오른쪽', R2); } catch (e) {} try { await setDialogField(editor, '위쪽', T); } catch (e) {} try { await setDialogField(editor, '아래쪽', B); } catch (e) {} set.allCellMargin = allCellMargin; }
       if (pageSplit) { const PS = { none: '.t_properties.page_break_none', cell: '.t_properties.page_break_table', table: '.t_properties.page_break_cell' }; try { await clickSel(editor, PS[pageSplit]); set.pageSplit = pageSplit; } catch (e) { throw new Error('여러 쪽 지원 아이콘 탐색 실패: ' + pageSplit); } }
       if (repeatHeader) { const st = await checkboxState('제목 줄 자동 반복'); if (!st.found) set.repeatHeader = 'not_found'; else if (st.disabled) set.repeatHeader = 'disabled'; else { if (!st.checked) await dlgClickText(editor, '제목 줄 자동 반복'); set.repeatHeader = true; } }
     }
@@ -2448,8 +2450,8 @@ async function cmdTableCellProp(args) {
       try { await setDialogField(editor, '아래쪽', B); } catch (e) {}
       set.tableMargin = tableMargin;
     }
-    // ④ 셀 탭: 셀 크기 + 셀 안 여백 + 세로 정렬 + 제목 셀
-    if (cw !== null || ch !== null || cellMargin || valign || titleCell) {
+    // ④ 셀 탭: 셀 크기 + 셀/모든-셀 안 여백 + 세로 정렬 + 제목 셀  (allCellMargin = 위에서 표 전체 선택된 상태)
+    if (cw !== null || ch !== null || cellMargin || allCellMargin || valign || titleCell) {
       if (!await clickDialogTab(editor, '셀')) throw new Error("'셀' 탭 탐색 실패");
       await editor.waitForTimeout(300);
       if (cw !== null || ch !== null) {
@@ -2457,14 +2459,15 @@ async function cmdTableCellProp(args) {
         if (cw !== null) { try { await setDialogField(editor, '너비', cw); set.cellWidth = cw; } catch (e) {} }
         if (ch !== null) { try { await setDialogField(editor, '높이', ch); set.cellHeight = ch; } catch (e) {} }
       }
-      if (cellMargin) {
+      const marg = cellMargin || allCellMargin;
+      if (marg) {
         await ensureDialogCheckOn(editor, '안 여백 지정', '왼쪽');
-        const [L, R2, T, B] = cellMargin;
+        const [L, R2, T, B] = marg;
         try { await setDialogField(editor, '왼쪽', L); } catch (e) {}
         try { await setDialogField(editor, '오른쪽', R2); } catch (e) {}
         try { await setDialogField(editor, '위쪽', T); } catch (e) {}
         try { await setDialogField(editor, '아래쪽', B); } catch (e) {}
-        set.cellMargin = cellMargin;
+        if (allCellMargin && !cellMargin) set.allCellMargin = marg; else set.cellMargin = marg;
       }
       if (valign) { const VAL = { top: '.valign_top', middle: '.valign_middle', bottom: '.valign_bottom' }; try { await clickSel(editor, VAL[valign]); set.valign = valign; } catch (e) { throw new Error('세로 정렬 아이콘 탐색 실패: ' + valign); } }
       if (titleCell) { const st = await checkboxState('제목 셀'); if (!st.found) set.titleCell = 'not_found'; else if (st.disabled) set.titleCell = 'disabled'; else { if (!st.checked) await dlgClickText(editor, '제목 셀'); set.titleCell = true; } }
