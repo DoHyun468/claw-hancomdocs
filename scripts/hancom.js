@@ -3381,6 +3381,8 @@ async function pickComboOption(ed, label, optClass) {
   return true;
 }
 
+// 개체 속성 '채우기' 탭 무늬 모양(해칭) → 옵션 클래스(hatch_style_pattern1~7, 순서대로). 면 색 위에 무늬 색으로 그려짐.
+const HATCH_PATTERN = { none: 'hatch_style_pattern1', horizontal: 'hatch_style_pattern2', vertical: 'hatch_style_pattern3', 'down-diagonal': 'hatch_style_pattern4', 'up-diagonal': 'hatch_style_pattern5', grid: 'hatch_style_pattern6', cross: 'hatch_style_pattern7' };
 // 개체 속성 '선' 탭 선 종류 → 클릭할 UI 옵션 title. (셀 다이얼로그와 클래스 체계가 달라 title 정확매칭으로 클릭)
 // ⚠️ Hancom webhwp 직렬화 버그(2026-06-18 실측, 독립 세션 재현): '파선' 선택 → HWPX style="DOT",
 //   '점선' 선택 → style="DASH" 로 두 항목이 뒤바뀌어 저장된다(나머지 항목은 전부 정상 매핑).
@@ -3544,6 +3546,12 @@ async function cmdObjectProp(args) {
   if (arrowEnd && !ARROW_SHAPE[arrowEnd]) throw new Error('--arrow-end 값: ' + Object.keys(ARROW_SHAPE).join('|'));
   const fillTransp = args['fill-transparency'] !== undefined ? Number(args['fill-transparency']) : null; // 채우기 투명도 0~100%
   if (fillTransp !== null && (Number.isNaN(fillTransp) || fillTransp < 0 || fillTransp > 100)) throw new Error('--fill-transparency 는 0~100 (%)');
+  // 채우기 무늬(해칭) — 면 색 위에 무늬 모양 + 무늬 색. '색' 채우기 라디오에서.
+  const fillPattern = args['fill-pattern'] != null && args['fill-pattern'] !== true ? String(args['fill-pattern']).trim().toLowerCase() : null;
+  if (fillPattern && !HATCH_PATTERN[fillPattern]) throw new Error('--fill-pattern 값: ' + Object.keys(HATCH_PATTERN).join('|'));
+  const fillPatternColorArg = args['fill-pattern-color'] != null && args['fill-pattern-color'] !== true ? String(args['fill-pattern-color']).trim() : null;
+  const fillPatternRGB = fillPatternColorArg ? parseColor(fillPatternColorArg) : null;
+  if (fillPatternColorArg && !fillPatternRGB) throw new Error('--fill-pattern-color 색 인식 실패: ' + fillPatternColorArg);
   // 바깥 여백(개체와 본문 글 사이 간격, mm) — 여백/캡션 탭. --margin 은 네 변 일괄, 변별 옵션이 우선.
   const mAll = args.margin !== undefined ? Number(args.margin) : null;
   const marginOf = (k) => (args[k] !== undefined ? Number(args[k]) : mAll);
@@ -3580,8 +3588,8 @@ async function cmdObjectProp(args) {
       width: fields['너비'] && fields['너비'].val, height: fields['높이'] && fields['높이'].val,
       posX: fields.pos[0] ? fields.pos[0].val : null, posY: fields.pos[1] ? fields.pos[1].val : null,
     };
-    const nothing = W === null && H === null && PX === null && !wrap && !fillArg && !borderArg && borderW === null && !borderType && !arrowStart && !arrowEnd && fillTransp === null && !hasMargin;
-    const req = { width: W, height: H, pos: PX !== null ? [PX, PY] : null, wrap, fill: fillArg, border: borderArg, borderType, arrowStart, arrowEnd, borderWidth: borderW, fillTransparency: fillTransp, ...(hasMargin ? { margins } : {}) };
+    const nothing = W === null && H === null && PX === null && !wrap && !fillArg && !borderArg && borderW === null && !borderType && !arrowStart && !arrowEnd && fillTransp === null && !fillPattern && !fillPatternColorArg && !hasMargin;
+    const req = { width: W, height: H, pos: PX !== null ? [PX, PY] : null, wrap, fill: fillArg, border: borderArg, borderType, arrowStart, arrowEnd, borderWidth: borderW, fillTransparency: fillTransp, fillPattern, fillPatternColor: fillPatternColorArg, ...(hasMargin ? { margins } : {}) };
     if (!apply || nothing) {
       await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(400);
       out({ cmd: 'object-prop', dryRun: !apply, at: [ax, ay], current: cur, requested: req, docId: editor.__docId || null,
@@ -3604,7 +3612,7 @@ async function cmdObjectProp(args) {
     }
     // 도형 스타일 — 채우기 탭(면 색) / 선 탭(선 색·굵기). 색은 팔레트에서 요청색에 가장 가까운 스와치.
     const styled = {};
-    if (fillArg || fillTransp !== null) {
+    if (fillArg || fillTransp !== null || fillPattern || fillPatternColorArg) {
       if (!await dlgClickText(editor, '채우기')) {
         await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(400);
         out({ cmd: 'object-prop', status: 'fill_unavailable', at: [ax, ay], docId: editor.__docId || null, note: "이 객체엔 '채우기' 탭이 없음(직선/호 등 선 객체) — --border 로 선 색만 가능." }); return;
@@ -3618,6 +3626,12 @@ async function cmdObjectProp(args) {
         const picked = await pickNearestSwatch(editor, fillRGB);
         if (!picked) throw new Error('면 색 팔레트 스와치 탐색 실패');
         styled.fill = picked;
+      }
+      // 무늬(해칭) — '색' 라디오에서 무늬 모양 + 무늬 색. (면 색 없이 무늬만 줄 수도 있어 '색' 라디오 보장)
+      if (fillPattern || fillPatternColorArg) {
+        if (!fillArg && !fillNone) await dlgClickText(editor, '색');
+        if (fillPattern) { if (await pickComboOption(editor, '무늬 모양', HATCH_PATTERN[fillPattern])) styled.fillPattern = fillPattern; else styled.fillPattern = 'unavailable'; }
+        if (fillPatternColorArg) { if (await openComboNearLabel(editor, '무늬 색')) { const p = await pickNearestSwatch(editor, fillPatternRGB); if (p) styled.fillPatternColor = p; else styled.fillPatternColor = 'unavailable'; } else styled.fillPatternColor = 'combo_not_found'; }
       }
       if (fillTransp !== null) { // 투명도(%) — '투명도 설정' 켜고 입력
         try { await ensureDialogCheckOn(editor, '투명도 설정', '투명도'); } catch (e) {}
@@ -4444,7 +4458,7 @@ function printHelp() {
   chart-data    --name <문서> --at "x,y" [--data @data.json | --set "B2=9.9" | --del-col "C,D" | --del-row "5" | --read-grid] [--apply]
   resize-object --name <문서> --at "x,y" [--width <mm>] [--height <mm>] [--apply]
   find-objects  --name <문서> [--page N | --pages "1,2"] [--step <px>]   (그림/차트 위치 자동 탐지 → 각 객체 중앙 at)
-  object-prop   --name <문서> --at "x,y" [--pos "x,y"] [--width/--height <mm>] [--wrap <배치>] [--margin <mm> | --margin-top/-bottom/-left/-right <mm>] [--fill <색|none>] [--border <색>] [--border-width <mm>] [--border-type <종류>] [--arrow-start/--arrow-end <모양>] [--fill-transparency 0-100] [--apply]
+  object-prop   --name <문서> --at "x,y" [--pos "x,y"] [--width/--height <mm>] [--wrap <배치>] [--margin <mm> | --margin-top/-bottom/-left/-right <mm>] [--fill <색|none>] [--fill-pattern/--fill-pattern-color] [--border <색>] [--border-width <mm>] [--border-type <종류>] [--arrow-start/--arrow-end <모양>] [--fill-transparency 0-100] [--apply]
 
 로컬 파서(파일 직접 읽기, 업로드 불필요):
   read.mjs <로컬 .hwp/.hwpx> [--text "<구절>"] [--locate --nth N] [--inspect] [--objects] [--bookmarks]
