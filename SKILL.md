@@ -93,7 +93,7 @@ node hancom.js prune-captures [--days N] [--apply]
 node hancom.js session-status                # 다른 한컴 세션이 활성인지 확인(병렬 실행 금지 — 동시 로그인=계정 잠금)
 node hancom.js resize-object --name <문서이름> --at "x,y" [--width <mm>] [--height <mm>] [--apply]
 node hancom.js find-objects  --name <문서이름> [--page N | --pages "1,2,3"] [--step <px>]
-node hancom.js object-prop   --name <문서이름> --at "x,y" [--pos "x,y"] [--width <mm>] [--height <mm>] [--wrap <배치>] [--margin <mm> | --margin-top/-bottom/-left/-right <mm>] [--fill <색|none>] [--border <색>] [--border-width <mm>] [--fill-transparency 0-100] [--apply]
+node hancom.js object-prop   --name <문서이름> --at "x,y" [--pos "x,y"] [--width <mm>] [--height <mm>] [--wrap <배치>] [--margin <mm> | --margin-top/-bottom/-left/-right <mm>] [--fill <색|none>] [--border <색>] [--border-width <mm>] [--border-type <종류>] [--fill-transparency 0-100] [--apply]
 node hancom.js chart-data    --name <문서이름> --at "x,y" [--data @data.json | --set "B2=9.9,C3=4" | --del-col "C,D" | --del-row "5" | --read-grid] [--apply]
 node hancom.js insert-table  --name <문서이름> --rows R --cols C [--anchor "<텍스트>"] [--apply]
 node hancom.js insert-image  --name <문서이름> --file <이미지경로> [--anchor "<텍스트>"] [--apply]
@@ -207,7 +207,8 @@ node hancom.js highlight    --name <문서이름> --text "<구절>" --color yell
   - `--apply` 없으면 현재 값(`current`: 크기+위치)만 읽음 — **객체 위치/크기 조회용으로도 유용**.
   - 색은 이름(`red`·`빨강`)·`#RRGGBB` 둘 다. 팔레트에서 **가장 가까운 색**을 고르므로 임의 hex도 근사 적용된다(`styled`에 실제 적용된 rgb 반환).
   - **도형(사각형·타원 등)에 채우기/테두리** — 그림·차트엔 채우기 개념이 없을 수 있다. 선 객체(직선·호)는 `--fill`이 `fill_unavailable`(채우기 탭 없음) → `--border`만 가능.
-  - 위치는 **떠 있는 객체만** 가능 — 글자처럼 취급(인라인) 객체면 `pos_unavailable`(그땐 `--wrap square`를 같이 줘서 떠 있는 배치로 바꾸면서 위치 지정).
+  - **`--border-type <종류>`** = 선/테두리 **종류**(개체 속성 ‘선’ 탭). 값: `solid`(실선) · `dashed`(파선) · `dotted`(점선) · `long-dash`(긴 파선) · `dash-dot`(일점쇄선) · `dash-dot-dot`(이점쇄선) · `double`(이중) · `circle-dot`(원형 점선) · `slim-thick`/`thick-slim`/`slim-thick-slim`(이중·삼중선). 다운로드 파일 기준 표준 HWPX 스타일로 저장되도록 검증됨. `--border`(색)·`--border-width`(굵기)와 함께 쓸 수 있다.
+  - **`--wrap inline`(글자처럼 취급)** 으로 바꾸면 객체가 본문 **글자처럼** 취급되어 자기 anchor 문단의 글 흐름 안으로 들어간다(좌측 정렬, 키 큰 객체는 한 줄 차지). 떠 있던 좌표는 버려지고 이후 **위치는 떠 있는 객체만** 가능 — 인라인 객체에 `--pos`를 주면 `pos_unavailable`(그땐 `--wrap square` 등으로 떠 있는 배치로 바꾸면서 위치 지정).
   - 선(직선·호) 객체는 획이 가늘어 `--at`이 빗나가기 쉬움 — 획 위의 한 점을 줄 것(빗나가면 `object_not_found`).
 - **`chart-data --at "x,y"`**: 차트의 **데이터 편집 그리드**를 바꿔 차트를 갱신. 세 방식:
   - **`--data @data.json` (자동맞춤, 권장)** — 데이터만 주면 격자를 그 크기로 맞추고(항목 행·계열 열 자동 추가/삭제) 채운다. 기본 더미(4항목×3계열) 잔재 없이 깔끔. 형식 `{"cat":["1월",..],"series":[{"name":"매출","values":[120,..]}]}`.

@@ -2691,9 +2691,22 @@ function watchSave(editor, timeoutMs = 6000) {
     (resp) => /\/webhwp\/handler\/action\//.test(resp.url()) && resp.request().method() === 'POST' && resp.status() === 200,
     { timeout: timeoutMs }).then(() => true).catch(() => false);
 }
+// 동기화 충돌(SERVER_ACTION_SAVE_ERROR) 다이얼로그 감지 — "동기화가 필요합니다 / 편집 내용은 임시 저장 / 확인 누르면 복원".
+// 이게 떠 있으면 편집이 서버 draft 엔 들어갔어도 정본엔 머지 안 됨(에디터 라이브뷰는 반영돼 보여도 download 정본은 옛값).
+// 그래서 OT POST 200(synced) 이 떠도 '저장 성공'으로 보고하면 안 된다(오탐). 보통 stale/과편집 문서에서만 발생.
+async function syncConflictPresent(ed) {
+  return ed.evaluate(() => {
+    const t = (document.body && document.body.innerText) || '';
+    return /동기화가\s*필요|SERVER_ACTION_SAVE_ERROR|임시\s*저장되어\s*있습니다/.test(t);
+  }).catch(() => false);
+}
 async function confirmSaved(editor, syncP = null, { settleMs = 450 } = {}) {
   const synced = await (syncP || watchSave(editor)); // syncP 있으면 그걸, 없으면 지금 무장(편집 직후 호출용)
   await editor.waitForTimeout(settleMs); // 서버 커밋 여유
+  if (await syncConflictPresent(editor)) { // 충돌 = 정본 미반영(임시저장만) → 성공 오탐 금지
+    process.stderr.write('[sync] SERVER_ACTION_SAVE_ERROR 감지 — 정본 미반영(임시저장). saved=false 로 보고.\n');
+    return false;
+  }
   return synced;
 }
 
@@ -3343,6 +3356,21 @@ async function pickComboOption(ed, label, optClass) {
   return true;
 }
 
+// 개체 속성 '선' 탭 선 종류 → 클릭할 UI 옵션 title. (셀 다이얼로그와 클래스 체계가 달라 title 정확매칭으로 클릭)
+// ⚠️ Hancom webhwp 직렬화 버그(2026-06-18 실측, 독립 세션 재현): '파선' 선택 → HWPX style="DOT",
+//   '점선' 선택 → style="DASH" 로 두 항목이 뒤바뀌어 저장된다(나머지 항목은 전부 정상 매핑).
+//   다운로드 파일(=결과물) 기준으로 표준 스타일이 맞아야 하므로 dashed→'점선', dotted→'파선' 으로 매핑한다.
+const OBJ_LINE_TYPE = { solid: '실선', dashed: '점선', dotted: '파선', 'dash-dot': '일점쇄선', 'dash-dot-dot': '이점쇄선', 'long-dash': '긴 파선', 'circle-dot': '원형 점선', double: '이중 실선', 'slim-thick': '얇고 굵은 이중선', 'thick-slim': '굵고 얇은 이중선', 'slim-thick-slim': '얇고 굵고 얇은 삼중선', none: '없음' };
+// 개체 속성 선 탭에서 '종류' 콤보를 열고 title 정확매칭 옵션을 클릭(.dropdown_data 가 클릭대상).
+async function pickObjLineType(ed, title) {
+  if (!await openComboNearLabel(ed, '종류')) return false;
+  await ed.waitForTimeout(500);
+  const xy = await ed.evaluate((t) => { for (const el of document.querySelectorAll('.dropdown_data')) { if (el.offsetParent !== null && (el.getAttribute('title') || '').trim() === t) { el.scrollIntoView({ block: 'nearest' }); const r = el.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; } } return null; }, title);
+  if (!xy) { await ed.keyboard.press('Escape').catch(() => {}); return false; }
+  await ed.mouse.click(xy.x, xy.y); await ed.waitForTimeout(400);
+  return true;
+}
+
 // 다이얼로그 탭(.btn_tab) 정확 텍스트로 클릭(메뉴바 동명 탭과 충돌 방지 — .btn_tab 한정).
 async function clickDialogTab(ed, text) {
   const xy = await ed.evaluate((t) => { for (const el of document.querySelectorAll('.btn_tab')) { if ((el.textContent || '').trim() === t && el.offsetParent !== null) { const r = el.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; } } return null; }, text);
@@ -3443,6 +3471,8 @@ async function cmdObjectProp(args) {
   if (borderArg && !borderRGB) throw new Error('--border 색 인식 실패: ' + borderArg + ' (이름·#RRGGBB)');
   const borderW = args['border-width'] !== undefined ? Number(args['border-width']) : null;
   if (borderW !== null && Number.isNaN(borderW)) throw new Error('--border-width 는 mm 숫자');
+  const borderType = args['border-type'] != null && args['border-type'] !== true ? String(args['border-type']).trim().toLowerCase() : null; // 선 종류(파선·점선 등)
+  if (borderType && !OBJ_LINE_TYPE[borderType]) throw new Error('--border-type 값: ' + Object.keys(OBJ_LINE_TYPE).join('|'));
   const fillTransp = args['fill-transparency'] !== undefined ? Number(args['fill-transparency']) : null; // 채우기 투명도 0~100%
   if (fillTransp !== null && (Number.isNaN(fillTransp) || fillTransp < 0 || fillTransp > 100)) throw new Error('--fill-transparency 는 0~100 (%)');
   // 바깥 여백(개체와 본문 글 사이 간격, mm) — 여백/캡션 탭. --margin 은 네 변 일괄, 변별 옵션이 우선.
@@ -3481,8 +3511,8 @@ async function cmdObjectProp(args) {
       width: fields['너비'] && fields['너비'].val, height: fields['높이'] && fields['높이'].val,
       posX: fields.pos[0] ? fields.pos[0].val : null, posY: fields.pos[1] ? fields.pos[1].val : null,
     };
-    const nothing = W === null && H === null && PX === null && !wrap && !fillArg && !borderArg && borderW === null && fillTransp === null && !hasMargin;
-    const req = { width: W, height: H, pos: PX !== null ? [PX, PY] : null, wrap, fill: fillArg, border: borderArg, borderWidth: borderW, fillTransparency: fillTransp, ...(hasMargin ? { margins } : {}) };
+    const nothing = W === null && H === null && PX === null && !wrap && !fillArg && !borderArg && borderW === null && !borderType && fillTransp === null && !hasMargin;
+    const req = { width: W, height: H, pos: PX !== null ? [PX, PY] : null, wrap, fill: fillArg, border: borderArg, borderType, borderWidth: borderW, fillTransparency: fillTransp, ...(hasMargin ? { margins } : {}) };
     if (!apply || nothing) {
       await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(400);
       out({ cmd: 'object-prop', dryRun: !apply, at: [ax, ay], current: cur, requested: req, docId: editor.__docId || null,
@@ -3525,8 +3555,9 @@ async function cmdObjectProp(args) {
         try { await setDialogField(editor, '투명도', fillTransp); styled.fillTransparency = fillTransp; } catch (e) { styled.fillTransparency = 'unavailable'; }
       }
     }
-    if (borderArg || borderW !== null) {
+    if (borderArg || borderW !== null || borderType) {
       if (!await dlgClickText(editor, '선')) throw new Error("'선' 탭 탐색 실패");
+      if (borderType) { if (await pickObjLineType(editor, OBJ_LINE_TYPE[borderType])) styled.borderType = borderType; else styled.borderType = 'unavailable'; }
       if (borderArg) {
         if (!await openComboNearLabel(editor, '색')) throw new Error('선 색 콤보 탐색 실패');
         const picked = await pickNearestSwatch(editor, borderRGB);
@@ -4341,7 +4372,7 @@ function printHelp() {
   chart-data    --name <문서> --at "x,y" [--data @data.json | --set "B2=9.9" | --del-col "C,D" | --del-row "5" | --read-grid] [--apply]
   resize-object --name <문서> --at "x,y" [--width <mm>] [--height <mm>] [--apply]
   find-objects  --name <문서> [--page N | --pages "1,2"] [--step <px>]   (그림/차트 위치 자동 탐지 → 각 객체 중앙 at)
-  object-prop   --name <문서> --at "x,y" [--pos "x,y"] [--width/--height <mm>] [--wrap <배치>] [--margin <mm> | --margin-top/-bottom/-left/-right <mm>] [--fill <색|none>] [--border <색>] [--border-width <mm>] [--fill-transparency 0-100] [--apply]
+  object-prop   --name <문서> --at "x,y" [--pos "x,y"] [--width/--height <mm>] [--wrap <배치>] [--margin <mm> | --margin-top/-bottom/-left/-right <mm>] [--fill <색|none>] [--border <색>] [--border-width <mm>] [--border-type <종류>] [--fill-transparency 0-100] [--apply]
 
 로컬 파서(파일 직접 읽기, 업로드 불필요):
   read.mjs <로컬 .hwp/.hwpx> [--text "<구절>"] [--locate --nth N] [--inspect] [--objects] [--bookmarks]
