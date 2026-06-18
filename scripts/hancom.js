@@ -2369,7 +2369,17 @@ async function cmdTableCellProp(args) {
   const cellMargin = args['cell-margin'] != null && args['cell-margin'] !== true ? String(args['cell-margin']).split(',').map((s) => Number(s.trim())) : null;
   if (cellMargin && (cellMargin.length !== 4 || cellMargin.some(Number.isNaN))) throw new Error('--cell-margin 형식: "왼,오,위,아래" mm');
   const titleCell = !!args['title-cell'];
-  if (cw === null && ch === null && tw === null && th === null && !valign && !cellMargin && !titleCell) throw new Error('--cell-width/--cell-height/--table-width/--table-height/--valign/--cell-margin/--title-cell 중 하나 이상');
+  const tableWrap = args['table-wrap'] != null && args['table-wrap'] !== true ? String(args['table-wrap']).toLowerCase() : null; // 기본탭 본문과의 배치
+  if (tableWrap && !['inline', 'square', 'topbottom', 'front', 'behind'].includes(tableWrap)) throw new Error('--table-wrap 는 inline|square|topbottom|front|behind');
+  const tableMargin = args['table-margin'] != null && args['table-margin'] !== true ? String(args['table-margin']).split(',').map((s) => Number(s.trim())) : null; // 여백/캡션탭 바깥 여백
+  if (tableMargin && (tableMargin.length !== 4 || tableMargin.some(Number.isNaN))) throw new Error('--table-margin 형식: "왼,오,위,아래" mm');
+  const allCellMargin = args['all-cell-margin'] != null && args['all-cell-margin'] !== true ? String(args['all-cell-margin']).split(',').map((s) => Number(s.trim())) : null; // 표탭 모든 셀 안 여백
+  if (allCellMargin && (allCellMargin.length !== 4 || allCellMargin.some(Number.isNaN))) throw new Error('--all-cell-margin 형식: "왼,오,위,아래" mm');
+  const pageSplit = args['page-split'] != null && args['page-split'] !== true ? String(args['page-split']).toLowerCase() : null; // 표탭 여러 쪽 지원: none|cell|table
+  if (pageSplit && !['none', 'cell', 'table'].includes(pageSplit)) throw new Error('--page-split 는 none(나누지 않음)|cell(셀 단위로 나눔)|table(나눔)');
+  const repeatHeader = !!args['repeat-header']; // 표탭 제목 줄 자동 반복(머리행에서만 활성)
+  const anySet = cw !== null || ch !== null || tw !== null || th !== null || valign || cellMargin || titleCell || tableWrap || tableMargin || allCellMargin || pageSplit || repeatHeader;
+  if (!anySet) throw new Error('속성 옵션이 없음 — --cell-width/--cell-height/--table-width/--table-height/--valign/--cell-margin/--title-cell/--table-wrap/--table-margin/--all-cell-margin/--page-split/--repeat-header 중 하나 이상');
   const apply = !!args.apply;
   if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용.');
   const cellText = String(args.cell).normalize('NFC');
@@ -2389,7 +2399,7 @@ async function cmdTableCellProp(args) {
       r = await anchorCell(editor, cellText, { nth, page: cellPage });
       if (!r.found || !r.caret) { out({ cmd: 'table-cell-prop', status: 'cell_not_found', cell: cellText, nth, page: cellPage, occCount: r.occCount, docId: editor.__docId || null }); return; }
     }
-    if (!apply) { out({ cmd: 'table-cell-prop', dryRun: true, cell: cellText, ...(toText ? { to: toText } : {}), requested: { cellWidth: cw, cellHeight: ch, tableWidth: tw, tableHeight: th, valign, cellMargin, titleCell }, ...(r ? { foundPage: r.page } : {}), docId: editor.__docId || null, note: '--apply 시 표/셀 속성 적용.' }); return; }
+    if (!apply) { out({ cmd: 'table-cell-prop', dryRun: true, cell: cellText, ...(toText ? { to: toText } : {}), requested: { cellWidth: cw, cellHeight: ch, tableWidth: tw, tableHeight: th, valign, cellMargin, titleCell, tableWrap, tableMargin, allCellMargin, pageSplit, repeatHeader }, ...(r ? { foundPage: r.page } : {}), docId: editor.__docId || null, note: '--apply 시 표/셀 속성 적용.' }); return; }
     await focusBody(editor);
     if (toText) {
       const dr = await dragCellRange(editor, cellText, toText, { aNth: nth, aPage: cellPage, bNth: toNth, bPage: toPage });
@@ -2404,12 +2414,41 @@ async function cmdTableCellProp(args) {
     if (!p) { out({ cmd: 'table-cell-prop', status: 'menu_not_active', cell: cellText, docId: editor.__docId || null, note: '셀 선택 안 됨(캐럿/선택 실패).' }); return; }
     await editor.mouse.click(p.x, p.y); await editor.waitForTimeout(1200);
     const set = {};
-    if (tw !== null || th !== null) {
+    // 다이얼로그 체크박스 상태(라벨로) — {found, disabled, checked}. 토글 전 활성/현재상태 판정(제목셀/제목줄반복은 머리행에서만 활성).
+    const checkboxState = (label) => editor.evaluate((lab) => { for (const el of document.querySelectorAll('*')) { if (el.childElementCount === 0 && (el.textContent || '').trim() === lab && el.offsetParent !== null) { const wrap = el.closest('.checkbox_wrap') || el.parentElement; const disAnc = !!el.closest('[class*="disable"]'); const inp = wrap && wrap.querySelector('input[type=checkbox]'); return { found: true, disabled: disAnc || /disable/.test((wrap && wrap.className) || ''), checked: !!(inp && inp.checked) }; } } return { found: false }; }, label);
+    // ① 기본 탭: 표 크기 + 배치(본문과의 배치)
+    if (tw !== null || th !== null || tableWrap) {
       await clickDialogTab(editor, '기본'); await editor.waitForTimeout(300);
-      await ensureDialogCheckOn(editor, '크기 고정', '너비');
-      if (tw !== null) { try { await setDialogField(editor, '너비', tw); set.tableWidth = tw; } catch (e) {} }
-      if (th !== null) { try { await setDialogField(editor, '높이', th); set.tableHeight = th; } catch (e) {} }
+      if (tw !== null || th !== null) {
+        await ensureDialogCheckOn(editor, '크기 고정', '너비');
+        if (tw !== null) { try { await setDialogField(editor, '너비', tw); set.tableWidth = tw; } catch (e) {} }
+        if (th !== null) { try { await setDialogField(editor, '높이', th); set.tableHeight = th; } catch (e) {} }
+      }
+      if (tableWrap) {
+        if (tableWrap === 'inline') { const st = await checkboxState('글자처럼 취급'); if (st.found && !st.checked) await dlgClickText(editor, '글자처럼 취급'); set.tableWrap = 'inline'; }
+        else { const WRAP = { square: '.t_properties.s_flow_text', topbottom: '.t_properties.s_topandbottom_text', front: '.t_properties.s_front_text', behind: '.t_properties.s_behind_text' }; try { await clickSel(editor, WRAP[tableWrap]); set.tableWrap = tableWrap; } catch (e) { throw new Error('표 배치 아이콘 탐색 실패: ' + tableWrap); } }
+      }
     }
+    // ② 표 탭: 모든 셀 안 여백 + 여러 쪽 지원 + 제목 줄 자동 반복
+    if (allCellMargin || pageSplit || repeatHeader) {
+      if (!await clickDialogTab(editor, '표')) throw new Error("'표' 탭 탐색 실패");
+      await editor.waitForTimeout(350);
+      if (allCellMargin) { const [L, R2, T, B] = allCellMargin; try { await setDialogField(editor, '왼쪽', L); } catch (e) {} try { await setDialogField(editor, '오른쪽', R2); } catch (e) {} try { await setDialogField(editor, '위쪽', T); } catch (e) {} try { await setDialogField(editor, '아래쪽', B); } catch (e) {} set.allCellMargin = allCellMargin; }
+      if (pageSplit) { const PS = { none: '.t_properties.page_break_none', cell: '.t_properties.page_break_table', table: '.t_properties.page_break_cell' }; try { await clickSel(editor, PS[pageSplit]); set.pageSplit = pageSplit; } catch (e) { throw new Error('여러 쪽 지원 아이콘 탐색 실패: ' + pageSplit); } }
+      if (repeatHeader) { const st = await checkboxState('제목 줄 자동 반복'); if (!st.found) set.repeatHeader = 'not_found'; else if (st.disabled) set.repeatHeader = 'disabled'; else { if (!st.checked) await dlgClickText(editor, '제목 줄 자동 반복'); set.repeatHeader = true; } }
+    }
+    // ③ 여백/캡션 탭: 표 바깥 여백
+    if (tableMargin) {
+      if (!await clickDialogTab(editor, '여백/캡션')) throw new Error("'여백/캡션' 탭 탐색 실패");
+      await editor.waitForTimeout(350);
+      const [L, R2, T, B] = tableMargin;
+      try { await setDialogField(editor, '왼쪽', L); } catch (e) {}
+      try { await setDialogField(editor, '오른쪽', R2); } catch (e) {}
+      try { await setDialogField(editor, '위쪽', T); } catch (e) {}
+      try { await setDialogField(editor, '아래쪽', B); } catch (e) {}
+      set.tableMargin = tableMargin;
+    }
+    // ④ 셀 탭: 셀 크기 + 셀 안 여백 + 세로 정렬 + 제목 셀
     if (cw !== null || ch !== null || cellMargin || valign || titleCell) {
       if (!await clickDialogTab(editor, '셀')) throw new Error("'셀' 탭 탐색 실패");
       await editor.waitForTimeout(300);
@@ -2428,7 +2467,7 @@ async function cmdTableCellProp(args) {
         set.cellMargin = cellMargin;
       }
       if (valign) { const VAL = { top: '.valign_top', middle: '.valign_middle', bottom: '.valign_bottom' }; try { await clickSel(editor, VAL[valign]); set.valign = valign; } catch (e) { throw new Error('세로 정렬 아이콘 탐색 실패: ' + valign); } }
-      if (titleCell) { await dlgClickText(editor, '제목 셀'); set.titleCell = true; }
+      if (titleCell) { const st = await checkboxState('제목 셀'); if (!st.found) set.titleCell = 'not_found'; else if (st.disabled) set.titleCell = 'disabled'; else { if (!st.checked) await dlgClickText(editor, '제목 셀'); set.titleCell = true; } }
     }
     await editor.waitForTimeout(150);
     const syncP = watchSave(editor);
@@ -4268,7 +4307,7 @@ function printHelp() {
   insert-table    --name <문서> --rows R --cols C [--anchor "<텍스트>"] [--apply]
   table-op        --name <문서> --cell "<셀 텍스트>" [--page N] [--nth N] [--to "<끝 셀>" --to-page N] --op <op> [--apply]
   cell-style      --name <문서> --cell "<셀 텍스트>" [--page N] [--nth N] [--fill <색|none>] [--border <색> --border-type/--border-width/--border-where] [--diagonal <방향> --diagonal-type/--diagonal-width/--diagonal-color] [--apply]
-  table-cell-prop --name <문서> --cell "<셀 텍스트>" [--page N] [--nth N] [--cell-width <mm>] [--cell-height <mm>] [--valign top|middle|bottom] [--apply]
+  table-cell-prop --name <문서> --cell "<셀 텍스트>" [--cell-width/--cell-height <mm>] [--cell-margin "왼,오,위,아래"] [--valign top|middle|bottom] [--title-cell] [--table-width/--table-height <mm>] [--table-wrap inline|square|topbottom|front|behind] [--table-margin "왼,오,위,아래"] [--all-cell-margin "왼,오,위,아래"] [--page-split none|cell|table] [--repeat-header] [--page N] [--nth N] [--apply]
 
 쪽:
   page-setup   --name <문서> [--orientation portrait|landscape] [--width/--height <mm>] [--top/--bottom/--left/--right/--header/--footer <mm>] [--apply]
