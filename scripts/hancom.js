@@ -3612,6 +3612,7 @@ async function cmdObjectProp(args) {
     }
     // 도형 스타일 — 채우기 탭(면 색) / 선 탭(선 색·굵기). 색은 팔레트에서 요청색에 가장 가까운 스와치.
     const styled = {};
+    if (wrap) styled.wrap = wrap; // 배치 변경(위 setObjectWrap) 확인 필드 — 결과에서 wrap 적용 확인용
     if (fillArg || fillTransp !== null || fillPattern || fillPatternColorArg) {
       if (!await dlgClickText(editor, '채우기')) {
         await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(400);

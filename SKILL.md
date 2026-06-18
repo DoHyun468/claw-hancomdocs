@@ -198,7 +198,7 @@ node hancom.js highlight    --name <문서이름> --text "<구절>" --color yell
 
 ### 🖼 그림·차트 객체 — `find-objects` · `resize-object` · `object-prop` · `chart-data`
 객체(그림/차트)는 본문 **canvas에 픽셀로** 그려져 DOM으로 못 짚는다 → **페이지 좌표 `--at "x,y"`** 로 클릭(객체 안 한 점이면 됨).
-- **`find-objects`** (좌표 자동 탐지 — 눈대중 불필요): 페이지를 우클릭 격자로 훑어 **그림·차트 객체의 중앙 좌표**를 찾아준다. 반환 `{count, objects:[{page, at:"x,y", bbox, hits}]}` — 그 **`at` 을 `object-prop`/`chart-data`/`resize-object` 의 `--at` 에 그대로** 넣으면 된다. `--page N`(기본 1)·`--pages "1,2,3"`·`--step <px>`(기본 80, 작을수록 정밀·느림). 표·본문은 안 잡히고 그림/차트만. (한 페이지 스캔에 ~30–60초 — 좌표 눈대중·재시도 대신 한 방.)
+- **`find-objects`** (좌표 자동 탐지 — 눈대중 불필요): 페이지를 우클릭 격자로 훑어 **그림·차트·도형 객체의 중앙 좌표**를 찾아준다. 반환 `{count, objects:[{page, at:"x,y", bbox, hits}]}` — 그 **`at` 을 `object-prop`/`chart-data`/`resize-object` 의 `--at` 에 그대로** 넣으면 된다(그림·직사각형 등 면적 있는 객체엔 정확). `--page N`(기본 1)·`--pages "1,2,3"`·`--step <px>`(기본 80, 작을수록 정밀·느림). 표·본문은 안 잡히고 객체만. (한 페이지 스캔에 ~30–60초 — 좌표 눈대중·재시도 대신 한 방.) ⚠️ **가는 직선·호는 중앙 좌표가 획 밖이라 빗나갈 수 있다** → 선 객체는 `capture --grid --scale 1` 로 획 위 한 점을 직접 골라 쓸 것(아래 선 객체 주의 참고).
 - 수동으로 짚을 땐 **`capture --grid --scale 1`** 로 객체 한가운데 좌표를 읽는다(기본 1.5배는 격자 라벨이 `--at`과 안 맞음).
 - **`object-prop --margin*`** = **바깥 여백**(객체와 본문 글 사이 간격, mm). 객체 종류·배치 무관. `--margin <mm>`(네 변) / `--margin-top/-bottom/-left/-right <mm>`(변별). 예: 차트 아래 글이 붙으면 `--margin-bottom 8`.
 - **`resize-object`**: 객체 크기를 **개체 속성 다이얼로그의 너비/높이(mm 숫자)** 로 설정 — 드래그보다 정밀.
@@ -211,7 +211,7 @@ node hancom.js highlight    --name <문서이름> --text "<구절>" --color yell
   - **`--arrow-start <모양>` / `--arrow-end <모양>`** = **선/연결선 끝의 화살표 모양**(개체 속성 ‘선’ 탭의 화살표 시작·끝). **직선·연결선 객체에만** 의미 있음(닫힌 도형은 비활성 → `styled.arrow*: unavailable`). 값: `none`(없음) · `triangle`(삼각형) · `line`(선형) · `sharp`(날카로운) · `diamond`/`circle`/`square`(채운 마름모·원·사각) · `empty-diamond`/`empty-circle`/`empty-square`(빈 마름모·원·사각). 예: 화살표 직선 `object-prop --at "x,y" --arrow-end triangle --apply`.
   - **`--fill-pattern <무늬>` / `--fill-pattern-color <색>`** = **채우기 무늬(해칭)**. 면 색(`--fill`) 위에 무늬 색으로 빗금/격자를 그린다. 무늬 값: `none` · `horizontal`(수평선) · `vertical`(수직선) · `down-diagonal`(하향 대각선) · `up-diagonal`(상향 대각선) · `grid`(눈금) · `cross`(체크/대각 격자). 예: 흰 바탕 빨강 체크무늬 `object-prop --at "x,y" --fill white --fill-pattern cross --fill-pattern-color red --apply`.
   - **`--wrap inline`(글자처럼 취급)** 으로 바꾸면 객체가 본문 **글자처럼** 취급되어 자기 anchor 문단의 글 흐름 안으로 들어간다(좌측 정렬, 키 큰 객체는 한 줄 차지). 떠 있던 좌표는 버려지고 이후 **위치는 떠 있는 객체만** 가능 — 인라인 객체에 `--pos`를 주면 `pos_unavailable`(그땐 `--wrap square` 등으로 떠 있는 배치로 바꾸면서 위치 지정).
-  - 선(직선·호) 객체는 획이 가늘어 `--at`이 빗나가기 쉬움 — 획 위의 한 점을 줄 것(빗나가면 `object_not_found`).
+  - 선(직선·호) 객체는 획이 가늘어 `--at`이 빗나가기 쉬움 — **획 위의 한 점**을 줄 것. ⚠️ **`find-objects` 는 가는 대각선 객체를 잘못 짚을 수 있다**(중앙 좌표가 획 밖). 직선·호엔 `find-objects` 좌표를 그대로 믿지 말고 **`capture --page N --grid --scale 1`** 로 찍어 **보이는 획 위의 한 점**을 골라 `--at` 에 줄 것. 빗나가면 `object_not_found`(객체 없음) 또는 다른 객체를 집어 `'선' 탭 탐색 실패`(선 객체가 아님) 가 날 수 있으니, 둘 다 = 좌표 재확인 신호.
 - **`chart-data --at "x,y"`**: 차트의 **데이터 편집 그리드**를 바꿔 차트를 갱신. 세 방식:
   - **`--data @data.json` (자동맞춤, 권장)** — 데이터만 주면 격자를 그 크기로 맞추고(항목 행·계열 열 자동 추가/삭제) 채운다. 기본 더미(4항목×3계열) 잔재 없이 깔끔. 형식 `{"cat":["1월",..],"series":[{"name":"매출","values":[120,..]}]}`.
   - **`--set "A2=1월,B1=매출,B2=120"`** — 개별 셀 값(엑셀식). **이미 있는 셀만**(없으면 `cell_not_located`).
