@@ -3250,8 +3250,10 @@ async function cmdChartStyle(args) {
       }, theme);
       await editor.waitForTimeout(1000);
     }
+    // 편집모드 종료(Escape)를 먼저 — 차트 변경은 '편집모드 빠져나올 때' 저장이 커밋되는 경우가 있어,
+    // confirmSaved 보다 앞서 Escape 해야 그 저장 신호가 watchSave 감지창 안에 들어온다(안 그러면 saved 오탐).
+    await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(500);
     const saved = await confirmSaved(editor, syncP);
-    await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(400); // 편집모드 빠져나오기
     const n = (await readCurrentPage(editor)) || n0; await gotoPage(editor, n);
     const r2 = await detectPageRect(editor); await hideOverlays(editor);
     const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_chartstyle_${stamp()}.png`);
