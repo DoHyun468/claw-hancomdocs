@@ -3194,6 +3194,73 @@ async function cmdInsertChart(args) {
   });
 }
 
+// chart-style: 차트의 '차트 스타일'(s1/s2/s3) 또는 '차트 테마'(색 팔레트)를 적용한다. 차트를 더블클릭해
+// 편집모드로 들어가 우측 속성 사이드바의 '차트 종류 › 차트 스타일'에서 바꾼다. --at 는 차트 중앙(페이지 좌표;
+// find-objects 로 얻음). ⚠️ 한컴독스 웹엔 '계열 개별 색' UI가 없다 — 막대 하나만 다른 색으로는 못 한다.
+// 색은 '차트 테마' 팔레트(전체)로만 바뀐다. 테마 적용 시 각 계열 <c:spPr> 에 schemeClr(테마 색 참조)가 써진다.
+async function cmdChartStyle(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (!args.at || args.at === true) throw new Error('--at "x,y" 필요 (차트 중앙 페이지 좌표; find-objects 로 확인)');
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
+  const style = args.style != null && args.style !== true ? String(args.style).toLowerCase().trim() : null; // s1|s2|s3
+  const theme = args.theme != null && args.theme !== true ? Math.max(1, Number(args.theme)) : null;          // 팔레트 인덱스(1~)
+  if (style && !/^s[1-9]$/.test(style)) throw new Error('--style 은 s1 | s2 | s3 …');
+  if (!style && !theme) throw new Error('--style s1|s2|s3 또는 --theme N(팔레트 인덱스 1~) 중 하나 이상');
+  const [ax, ay] = String(args.at).split(',').map((s) => Number(s.trim()));
+  if (!Number.isFinite(ax) || !Number.isFinite(ay)) throw new Error('--at 형식 "x,y" (페이지 좌표)');
+  const name = String(args.name).normalize('NFC');
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    const n0 = (await readCurrentPage(editor)) || 1; await gotoPage(editor, n0);
+    const rect = await detectPageRect(editor);
+    if (!rect || rect.width < 100) throw new Error('A4 페이지 영역 검출 실패');
+    if (!apply) { out({ cmd: 'chart-style', dryRun: true, at: [ax, ay], style, theme, docId: editor.__docId || null, note: '--apply 시 그 좌표 차트의 스타일/테마 변경.' }); return; }
+    // 차트 더블클릭 → 편집모드 + 우측 속성 사이드바
+    await editor.mouse.dblclick(rect.x + ax, rect.y + ay); await editor.waitForTimeout(1800);
+    const inEdit = await editor.evaluate(() => { const sb = document.querySelector('.side_bar'); return !!(sb && sb.offsetParent !== null && /차트 종류|차트 레이블/.test(sb.innerText || '')); });
+    if (!inEdit) { out({ cmd: 'chart-style', status: 'chart_not_found', at: [ax, ay], docId: editor.__docId || null, note: '그 좌표에서 차트 편집모드 진입 실패 — find-objects 로 차트 중앙 좌표 재확인(capture --grid 로 한 점).' }); return; }
+    const syncP = watchSave(editor);
+    const clickByText = (txt) => editor.evaluate((tn) => { const sb = document.querySelector('.side_bar'); if (!sb) return false; const norm = (s) => (s || '').replace(/\s+/g, ' ').trim(); const c = [...sb.querySelectorAll('a,span,div,li,button')].filter((e) => e.offsetParent !== null); const el = c.find((e) => e.childElementCount === 0 && norm(e.textContent) === tn) || c.find((e) => norm(e.textContent) === tn) || c.find((e) => norm(e.getAttribute('title')) === tn); if (!el) return false; el.click(); return true; }, txt);
+    // '차트 종류' 탭 → '차트 스타일' 하위탭(s1/s2/s3 + 차트 테마 콤보 노출)
+    await clickByText('차트 종류'); await editor.waitForTimeout(800);
+    await clickByText('차트 스타일'); await editor.waitForTimeout(900);
+    let styleApplied = null, themeApplied = null;
+    if (style) {
+      styleApplied = await editor.evaluate((sn) => { const sb = document.querySelector('.side_bar'); if (!sb) return false; const el = [...sb.querySelectorAll('[title],[aria-label]')].find((e) => e.offsetParent !== null && ((e.getAttribute('title') || e.getAttribute('aria-label') || '').trim() === sn)); if (!el) return false; el.click(); return true; }, style);
+      await editor.waitForTimeout(900);
+    }
+    if (theme) {
+      await clickByText('차트 테마'); await editor.waitForTimeout(900);
+      // 팔레트 팝업의 색 스와치(차트타입 썸네일/흰색 제외, 팝업 영역만) 중 pick 번째 클릭
+      themeApplied = await editor.evaluate((pick) => {
+        const sw = [];
+        for (const e of document.querySelectorAll('div,a,span,li,button')) {
+          if (e.offsetParent === null) continue; const r = e.getBoundingClientRect();
+          if (r.width < 8 || r.width > 30 || r.height < 8 || r.height > 30) continue;
+          if (r.x < 1120 || r.y < 500) continue;
+          const cls = (e.className || '').toString(); if (/e_chart_type_style|btn_/.test(cls)) continue;
+          const bg = getComputedStyle(e).backgroundColor; if (!bg || bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent') continue;
+          const m = bg.match(/(\d+), (\d+), (\d+)/); if (m && Number(m[1]) > 244 && Number(m[2]) > 244 && Number(m[3]) > 244) continue;
+          sw.push({ e, bg });
+        }
+        const t = sw[pick - 1]; if (!t) return { ok: false, count: sw.length }; t.e.click(); return { ok: true, bg: t.bg };
+      }, theme);
+      await editor.waitForTimeout(1000);
+    }
+    const saved = await confirmSaved(editor, syncP);
+    await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(400); // 편집모드 빠져나오기
+    const n = (await readCurrentPage(editor)) || n0; await gotoPage(editor, n);
+    const r2 = await detectPageRect(editor); await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_chartstyle_${stamp()}.png`);
+    await editor.screenshot(r2 ? { path: shot, clip: r2 } : { path: shot });
+    await clampImage(editor, shot);
+    out({ cmd: 'chart-style', applied: true, at: [ax, ay], style: style || null, styleApplied, theme: theme || null, themeApplied, page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), shot, docId: editor.__docId || null, note: '한컴독스 웹은 계열 개별 색 UI 없음 — 테마 팔레트로 전체 색 변경(직렬화: 계열 spPr 에 schemeClr).' });
+  });
+}
+
 // textbox: 입력 › 글상자(그리기 모드) → 캔버스에 드래그로 글상자를 그리고 내용 입력. --anchor 근처에 배치.
 async function cmdTextbox(args) {
   if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
@@ -4457,6 +4524,7 @@ function printHelp() {
   insert-image  --name <문서> --file <이미지경로> [--anchor "<텍스트>"] [--apply]
   insert-chart  --name <문서> [--type N(0~19)] [--anchor "<텍스트>"] [--apply]
   chart-data    --name <문서> --at "x,y" [--data @data.json | --set "B2=9.9" | --del-col "C,D" | --del-row "5" | --read-grid] [--apply]
+  chart-style   --name <문서> --at "x,y" [--style s1|s2|s3] [--theme N] [--apply]   (차트 스타일/색 테마 — 계열 개별 색은 웹 불가)
   resize-object --name <문서> --at "x,y" [--width <mm>] [--height <mm>] [--apply]
   find-objects  --name <문서> [--page N | --pages "1,2"] [--step <px>]   (그림/차트 위치 자동 탐지 → 각 객체 중앙 at)
   object-prop   --name <문서> --at "x,y" [--pos "x,y"] [--width/--height <mm>] [--wrap <배치>] [--margin <mm> | --margin-top/-bottom/-left/-right <mm>] [--fill <색|none>] [--fill-pattern/--fill-pattern-color] [--border <색>] [--border-width <mm>] [--border-type <종류>] [--arrow-start/--arrow-end <모양>] [--fill-transparency 0-100] [--apply]
@@ -4508,6 +4576,7 @@ function printHelp() {
     else if (args._ === 'hyperlink') await cmdHyperlink(args);
     else if (args._ === 'memo') await cmdMemo(args);
     else if (args._ === 'insert-chart') await cmdInsertChart(args);
+    else if (args._ === 'chart-style') await cmdChartStyle(args);
     else if (args._ === 'para-line') await cmdParaLine(args);
     else if (args._ === 'field') await cmdField(args);
     else if (args._ === 'bookmark') await cmdBookmark(args);

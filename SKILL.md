@@ -95,6 +95,7 @@ node hancom.js resize-object --name <문서이름> --at "x,y" [--width <mm>] [--
 node hancom.js find-objects  --name <문서이름> [--page N | --pages "1,2,3"] [--step <px>]
 node hancom.js object-prop   --name <문서이름> --at "x,y" [--pos "x,y"] [--width <mm>] [--height <mm>] [--wrap <배치>] [--margin <mm> | --margin-top/-bottom/-left/-right <mm>] [--fill <색|none>] [--fill-pattern <무늬>] [--fill-pattern-color <색>] [--border <색>] [--border-width <mm>] [--border-type <종류>] [--arrow-start <모양>] [--arrow-end <모양>] [--fill-transparency 0-100] [--apply]
 node hancom.js chart-data    --name <문서이름> --at "x,y" [--data @data.json | --set "B2=9.9,C3=4" | --del-col "C,D" | --del-row "5" | --read-grid] [--apply]
+node hancom.js chart-style   --name <문서이름> --at "x,y" [--style s1|s2|s3] [--theme N] [--apply]
 node hancom.js insert-table  --name <문서이름> --rows R --cols C [--anchor "<텍스트>"] [--apply]
 node hancom.js insert-image  --name <문서이름> --file <이미지경로> [--anchor "<텍스트>"] [--apply]
 node hancom.js insert-chart  --name <문서이름> [--type N] [--anchor "<텍스트>"] [--apply]
@@ -196,7 +197,7 @@ node hancom.js highlight    --name <문서이름> --text "<구절>" --color yell
 
 - **`prune-captures`** (로컬 캡처 청소): `scripts/captures/`(gitignore 로컬 스크래치)에 쌓인 검증 캡처를 **기본 3일보다 오래된 것만** 삭제. `--days N` 으로 보존 기간 조절. **기본 드라이런**(지울 개수·샘플), `--apply` 로 실제 삭제(캡처는 언제든 재생성 가능). **남기고 싶은 캡처**는 파일명에 `keep` 을 넣거나 `captures/keep/` 하위로 옮기면 보호된다(절대 안 지움). 즉시 삭제보다 **롤링 3일 + 보호**가 권장 — 같은 작업 중 캡처를 다시 참조/비교하는 흐름을 깨지 않으면서 무한정 쌓이는 것만 막는다.
 
-### 🖼 그림·차트 객체 — `find-objects` · `resize-object` · `object-prop` · `chart-data`
+### 🖼 그림·차트 객체 — `find-objects` · `resize-object` · `object-prop` · `chart-data` · `chart-style`
 객체(그림/차트)는 본문 **canvas에 픽셀로** 그려져 DOM으로 못 짚는다 → **페이지 좌표 `--at "x,y"`** 로 클릭(객체 안 한 점이면 됨).
 - **`find-objects`** (좌표 자동 탐지 — 눈대중 불필요): 페이지를 우클릭 격자로 훑어 **그림·차트·도형 객체의 중앙 좌표**를 찾아준다. 반환 `{count, objects:[{page, at:"x,y", bbox, hits}]}` — 그 **`at` 을 `object-prop`/`chart-data`/`resize-object` 의 `--at` 에 그대로** 넣으면 된다(그림·직사각형 등 면적 있는 객체엔 정확). `--page N`(기본 1)·`--pages "1,2,3"`·`--step <px>`(기본 80, 작을수록 정밀·느림). 표·본문은 안 잡히고 객체만. (한 페이지 스캔에 ~30–60초 — 좌표 눈대중·재시도 대신 한 방.) ⚠️ **가는 직선·호는 중앙 좌표가 획 밖이라 빗나갈 수 있다** → 선 객체는 `capture --grid --scale 1` 로 획 위 한 점을 직접 골라 쓸 것(아래 선 객체 주의 참고).
 - 수동으로 짚을 땐 **`capture --grid --scale 1`** 로 객체 한가운데 좌표를 읽는다(기본 1.5배는 격자 라벨이 `--at`과 안 맞음).
@@ -218,6 +219,10 @@ node hancom.js highlight    --name <문서이름> --text "<구절>" --color yell
   - **`--del-col "C,D"` / `--del-row "5"`** — 계열(열)·항목(행) 삭제. **`--read-grid`** — 현재 격자 크기만 읽기(`{cat, series}`).
   - ⚠️ **그리드 구조는 차트 종류마다 3갈래**(표준=항목×계열 / 원형=단일계열 / 분산형=X·Y). 종류 인덱스(0~19)·패밀리·그리드 상세·자동맞춤 흐름은 **`references/chart-types.md`**.
   - ⚠️ 편집 직후 캡처는 라벨 재렌더 지연으로 **stale**할 수 있음 → 다시 열어(`around`/`capture`) 검증. 그 좌표에 차트 없으면 `chart_not_found`.
+- **`chart-style --at "x,y"`**: 차트의 **모양·색 테마**를 바꾼다(차트를 더블클릭해 편집모드로 들어가 적용). `--at` 은 차트 중앙(먼저 `find-objects` 로 확인).
+  - **`--style s1|s2|s3`** — 차트 스타일 프리셋(외곽선·강조 등 시각 스타일).
+  - **`--theme N`** — **색 팔레트**(1~ 인덱스; 팔레트 묶음의 N번째). 차트 전체 색이 그 팔레트로 한 번에 바뀐다.
+  - ⚠️ **계열(막대) 하나만 다른 색으로는 못 한다** — 한컴독스 웹엔 계열 개별 색 UI가 없다. 색은 테마 팔레트로 **전체**만. (계열 개별 색이 꼭 필요하면 데스크톱 한컴오피스가 필요.) 그 좌표에 차트 없으면 `chart_not_found`.
 - **`caption --at "x,y" --text "<캡션>" [--position below|above|left|right]`**: 그 좌표의 **객체(그림/표/차트/도형)에 캡션**을 단다(예: "그림 1. …"). `--position` 기본 `below`(아래). 그 좌표에 객체 없으면 `object_not_selected`. 한글 위치(`"오른쪽 위"` 등)도 그대로 받음.
 - ⚠️ 편집은 **headless 전용**. 표 셀은 작아 좌표클릭이 빗나가니 셀은 `set-cell-text`(셀 텍스트로 찾기)가 정확.
 
