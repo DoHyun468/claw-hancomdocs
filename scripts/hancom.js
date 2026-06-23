@@ -3373,6 +3373,49 @@ async function objMenuClick(ed, vx, vy, itemText) {
   return true;
 }
 
+// delete: 떠다니는 객체(차트·그림·도형·글상자)를 통째로 삭제한다. --at "x,y"(객체 안 한 점, 페이지 좌표;
+// find-objects 로 확인)를 우클릭 → '지우기'(없으면 선택 후 Delete 키)로 제거. 다른 대상은 전용 op으로:
+// 본문 텍스트=replace-text --to "" · 표 줄/칸=table-op delete-row/-col · 차트 계열=chart-data --del-col/-row.
+async function cmdDelete(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (!args.at || args.at === true) throw new Error('--at "x,y" 필요 (지울 객체 안 한 점, 페이지 좌표; find-objects 로 확인)');
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
+  const [ax, ay] = String(args.at).split(',').map((s) => Number(s.trim()));
+  if (!Number.isFinite(ax) || !Number.isFinite(ay)) throw new Error('--at 형식 "x,y" (페이지 좌표)');
+  const name = String(args.name).normalize('NFC');
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    const pg = Math.max(1, Number(args.page) || 1); await gotoPage(editor, pg); // --at 는 이 페이지 기준
+    const rect = await detectPageRect(editor);
+    if (!rect || rect.width < 100) throw new Error('A4 페이지 영역 검출 실패');
+    const vx = rect.x + ax, vy = rect.y + ay;
+    // 그 점에 '진짜 객체'가 있는지 = 우클릭 메뉴에 '개체 속성'(차트/그림/도형/글상자만 가짐).
+    const objHere = async () => { await editor.mouse.click(vx, vy, { button: 'right' }); await editor.waitForTimeout(500); const has = await editor.evaluate(() => { for (const el of document.querySelectorAll('a,div,span,li,button')) { const t = (el.textContent || '').trim(); if (/^개체 속성/.test(t) && t.length < 12 && el.offsetParent !== null && el.childElementCount === 0) return true; } return false; }); return has; };
+    const present = await objHere();
+    await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(150);
+    if (!present) { out({ cmd: 'delete', status: 'object_not_found', at: [ax, ay], docId: editor.__docId || null, note: '그 좌표에 객체 없음(우클릭 메뉴에 "개체 속성" 없음). find-objects/capture --grid 로 좌표 재확인. 본문 텍스트=replace-text --to "", 표 줄/칸=table-op delete-*, 차트 계열=chart-data --del-*.' }); return; }
+    if (!apply) { out({ cmd: 'delete', dryRun: true, at: [ax, ay], docId: editor.__docId || null, note: '--apply 시 그 좌표 객체(차트/그림/도형/글상자) 삭제.' }); return; }
+    const syncP = watchSave(editor);
+    // 우클릭 → '지우기'. 메뉴에 없으면(객체는 선택됨) 좌클릭 재선택 후 Delete 키.
+    let via = '지우기';
+    const ok = await objMenuClick(editor, vx, vy, '지우기');
+    if (!ok) { via = 'Delete'; await editor.mouse.click(vx, vy); await editor.waitForTimeout(300); await editor.keyboard.press('Delete').catch(() => {}); await editor.waitForTimeout(700); }
+    const saved = await confirmSaved(editor, syncP);
+    // 검증: 그 점에 더 이상 객체가 없으면 삭제 성공
+    await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(150);
+    const gone = !(await objHere()); await editor.keyboard.press('Escape').catch(() => {}); await editor.waitForTimeout(150);
+    await gotoPage(editor, pg); const n = pg;
+    const r2 = await detectPageRect(editor); await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_delete_${stamp()}.png`);
+    await editor.screenshot(r2 ? { path: shot, clip: r2 } : { path: shot });
+    await clampImage(editor, shot);
+    out({ cmd: 'delete', applied: gone, deleted: gone, via, at: [ax, ay], page: n, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), ...(gone ? {} : { warning2: 'object_still_present', note: '삭제 후에도 객체 감지 — 좌표/대상 재확인 후 재시도.' }), shot, docId: editor.__docId || null });
+  });
+}
+
 // object-prop: '개체 속성' 다이얼로그 한 번 열어 크기(--width/--height mm)·위치(--pos "x,y" mm, 종이 기준
 // 왼쪽/위쪽)·본문과의 배치(--wrap)를 같이 설정하는 통합 op. resize-object 의 상위 호환.
 // 위치 입력칸(aria-label '기준' 2개: 첫째=가로, 둘째=세로)은 떠 있는 객체에서만 활성 — 글자처럼 취급이면 불가.
@@ -4529,6 +4572,7 @@ function printHelp() {
   chart-style   --name <문서> --at "x,y" [--style s1|s2|s3] [--theme N] [--apply]   (차트 스타일/색 테마 — 계열 개별 색은 웹 불가)
   resize-object --name <문서> --at "x,y" [--width <mm>] [--height <mm>] [--apply]
   find-objects  --name <문서> [--page N | --pages "1,2"] [--step <px>]   (그림/차트 위치 자동 탐지 → 각 객체 중앙 at)
+  delete        --name <문서> --at "x,y" [--page N] [--apply]   (그 좌표의 객체=차트/그림/도형/글상자 통째 삭제)
   object-prop   --name <문서> --at "x,y" [--pos "x,y"] [--width/--height <mm>] [--wrap <배치>] [--margin <mm> | --margin-top/-bottom/-left/-right <mm>] [--fill <색|none>] [--fill-pattern/--fill-pattern-color] [--border <색>] [--border-width <mm>] [--border-type <종류>] [--arrow-start/--arrow-end <모양>] [--fill-transparency 0-100] [--apply]
 
 로컬 파서(파일 직접 읽기, 업로드 불필요):
@@ -4561,6 +4605,7 @@ function printHelp() {
     else if (args._ === 'resize-object') await cmdResizeObject(args);
     else if (args._ === 'object-prop') await cmdObjectProp(args);
     else if (args._ === 'find-objects') await cmdFindObjects(args);
+    else if (args._ === 'delete') await cmdDelete(args);
     else if (args._ === 'chart-data') await cmdChartData(args);
     else if (args._ === 'insert-table') await cmdInsertTable(args);
     else if (args._ === 'insert-image') await cmdInsertImage(args);

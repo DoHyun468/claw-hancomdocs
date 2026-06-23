@@ -201,6 +201,7 @@ node hancom.js highlight    --name <문서이름> --text "<구절>" --color yell
 객체(그림/차트)는 본문 **canvas에 픽셀로** 그려져 DOM으로 못 짚는다 → **페이지 좌표 `--at "x,y"`** 로 클릭(객체 안 한 점이면 됨).
 - **`find-objects`** (좌표 자동 탐지 — 눈대중 불필요): 페이지를 우클릭 격자로 훑어 **그림·차트·도형 객체의 중앙 좌표**를 찾아준다. 반환 `{count, objects:[{page, at:"x,y", bbox, hits}]}` — 그 **`at` 을 `object-prop`/`chart-data`/`resize-object` 의 `--at` 에 그대로** 넣으면 된다(그림·직사각형 등 면적 있는 객체엔 정확). `--page N`(기본 1)·`--pages "1,2,3"`·`--step <px>`(기본 80, 작을수록 정밀·느림). 표·본문은 안 잡히고 객체만. (한 페이지 스캔에 ~30–60초 — 좌표 눈대중·재시도 대신 한 방.) ⚠️ **가는 직선·호는 중앙 좌표가 획 밖이라 빗나갈 수 있다** → 선 객체는 `capture --grid --scale 1` 로 획 위 한 점을 직접 골라 쓸 것(아래 선 객체 주의 참고).
 - 수동으로 짚을 땐 **`capture --grid --scale 1`** 로 객체 한가운데 좌표를 읽는다(기본 1.5배는 격자 라벨이 `--at`과 안 맞음).
+- **`delete --at "x,y" [--page N]`**: 그 좌표의 **객체(그림·차트·도형·글상자)를 통째로 삭제**한다(우클릭 '지우기'). `--page` 로 대상 페이지 지정(기본 1). 그 좌표에 객체가 없으면 `object_not_found` → 좌표 재확인(작은 그림은 `find-objects` 가 흐릿하니 `capture --grid` 로 한가운데를 직접 골라라). 삭제 후 그 자리에 객체가 남아있으면 `object_still_present` 경고. **다른 대상은 전용 op으로**: 본문 텍스트=`replace-text --to ""`, 표 줄/칸=`table-op delete-row/-col`, 차트 계열=`chart-data --del-col/-row`.
 - **`object-prop --margin*`** = **바깥 여백**(객체와 본문 글 사이 간격, mm). 객체 종류·배치 무관. `--margin <mm>`(네 변) / `--margin-top/-bottom/-left/-right <mm>`(변별). 예: 차트 아래 글이 붙으면 `--margin-bottom 8`.
 - **`resize-object`**: 객체 크기를 **개체 속성 다이얼로그의 너비/높이(mm 숫자)** 로 설정 — 드래그보다 정밀.
   - `--apply` 없으면 현재 크기만 읽음(`currentSize`). `--width`/`--height` 중 하나만도 가능. 그 좌표에 객체 없으면 `object_not_found`.
