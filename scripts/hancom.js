@@ -2232,6 +2232,82 @@ async function cmdInsertImage(args) {
   });
 }
 
+// place-seal: 도장/서명 PNG 를 앵커 텍스트(예 "서명 또는 인")에 얹는다. 앵커 줄 끝에 그림을 append(새 줄 X)해
+// 그 줄에 앵커링 → '글 앞으로'(front, treatAsChar=0) + 위치로 배치. --mode overlap(앵커 위 동심) | right(오른쪽 평행).
+// ⚠️ 한컴은 vertRelTo=PARA 라 음수 vertOffset(줄 top 위로 올림)을 UI 가 거부 → 키 큰 도장은 줄에 얹혀 약간 아래로
+//   (완전 세로중앙은 한컴 자체 한계). --dx/--dy 로 미세보정.
+async function cmdPlaceSeal(args) {
+  if (!args.name) throw new Error('--name 필요 (드라이브 문서 이름)');
+  if (!args.anchor || args.anchor === true) throw new Error('--anchor 필요 (도장 얹을 기준 텍스트, 예 "서명 또는 인")');
+  if (!args.file) throw new Error('--file 필요 (도장 PNG 경로)');
+  const imgPath = path.resolve(args.file);
+  if (!fs.existsSync(imgPath)) throw new Error('도장 파일 없음: ' + imgPath);
+  const apply = !!args.apply;
+  if (apply && HEADED) throw new Error('편집(--apply)은 headless 전용입니다. --headed 는 보기 전용 — 편집 금지.');
+  const mode = args.mode && args.mode !== true ? String(args.mode).toLowerCase() : 'overlap';
+  if (!['overlap', 'right'].includes(mode)) throw new Error('--mode 는 overlap | right');
+  const sizeMm = args.size != null && args.size !== true ? Number(args.size) : 13;
+  const dxMm = args.dx != null && args.dx !== true ? Number(args.dx) : 0;
+  const dyMm = args.dy != null && args.dy !== true ? Number(args.dy) : 0;
+  const anchor = String(args.anchor).normalize('NFC');
+  const name = String(args.name).normalize('NFC');
+  fs.mkdirSync(CAPDIR, { recursive: true });
+  await withEditor(Number(args.scale) || 1.5, async (ctx, page) => {
+    const editor = await openDoc(ctx, page, name);
+    if (!editor) throw new Error('문서를 못 찾음(드라이브에 없음): ' + name);
+    const r = await findText(editor, anchor);
+    if (!r.found) { out({ cmd: 'place-seal', status: 'anchor_not_found', anchor, docId: editor.__docId || null }); return; }
+    const pageN = r.page || 1;
+    if (!apply) { out({ cmd: 'place-seal', dryRun: true, anchor, mode, sizeMm, foundPage: pageN, docId: editor.__docId || null, note: '--apply 시 도장 삽입+배치.' }); return; }
+    // 앵커 줄 끝에 캐럿 → 그림 삽입(새 줄 X, 같은 단락 append → 그 줄에 앵커링)
+    await focusBody(editor);
+    await editor.keyboard.press('End'); await editor.waitForTimeout(200);
+    await openMenu(editor, '입력');
+    await clickSel(editor, '.insert_image'); await editor.waitForTimeout(900);
+    await editor.locator('input[type="file"]').last().setInputFiles(imgPath);
+    await editor.waitForTimeout(1200);
+    const syncP = watchSave(editor);
+    if (!await clickDialogBtn(editor, '넣기')) throw new Error("'넣기' 버튼 탐색 실패");
+    await editor.waitForTimeout(900);
+    // 삽입 직후 도장은 원본크기(큼)·앵커 줄에 위치. 캐럿 주변을 우클릭 → '개체 속성...' 다이얼로그 열기
+    //   (toolbar '개체 속성 수정' 은 배치 버튼 없는 다른 다이얼로그라 안 됨 — object-prop 과 동일 경로 사용).
+    let dlgOpen = false;
+    if (r.caret) {
+      const cx = r.caret.x, cy = r.caret.y;
+      const tries = [[cx, cy + 40], [cx, cy], [cx - 40, cy + 40], [cx + 30, cy + 30], [cx, cy + 80], [cx - 60, cy + 60]];
+      for (const [px, py] of tries) { if (await objMenuClick(editor, px, py, '개체 속성...')) { dlgOpen = true; break; } }
+    }
+    if (!dlgOpen) { out({ cmd: 'place-seal', status: 'object_not_selected', anchor, docId: editor.__docId || null, note: '삽입 후 도장 선택/개체속성 진입 실패 — 재시도(앵커 줄이 페이지 안쪽인지 확인).' }); return; }
+    await editor.waitForTimeout(400);
+    const readFields = () => editor.evaluate(() => { const f = { pos: [] }; for (const el of document.querySelectorAll('input')) { if (el.offsetParent === null) continue; const al = el.getAttribute('aria-label') || ''; const rr = el.getBoundingClientRect(); const it = { val: el.value, x: Math.round(rr.x + rr.width / 2), y: Math.round(rr.y + rr.height / 2), disabled: el.disabled || el.readOnly }; if (al === '너비' || al === '높이') f[al] = it; else if (al === '기준') f.pos.push(it); } return f; });
+    const typeInto = async (fld, value) => { await editor.mouse.click(fld.x, fld.y); await editor.keyboard.press('ControlOrMeta+A'); await editor.keyboard.press('Delete'); await editor.keyboard.type(String(value), { delay: 30 }); await editor.keyboard.press('Tab'); };
+    // front(글자처럼취급 해제 + 글 앞으로) 먼저 — 위치칸 활성화 + 필드 재독(object-prop 과 동일 순서).
+    await setObjectWrap(editor, 'front'); await editor.waitForTimeout(450);
+    let fields = await readFields();
+    if (fields['너비']) await typeInto(fields['너비'], sizeMm);
+    if (fields['높이']) await typeInto(fields['높이'], sizeMm);
+    fields = await readFields();
+    if (fields.pos.length < 2 || fields.pos[0].disabled) { await editor.keyboard.press('Escape').catch(() => {}); out({ cmd: 'place-seal', status: 'pos_unavailable', anchor, docId: editor.__docId || null, note: 'front 적용 후에도 위치칸 비활성 — 재시도.' }); return; }
+    const defH = Number(fields.pos[0].val) || 0, defV = Number(fields.pos[1].val) || 0;
+    // 앵커 구절 폭 추정(한컴식: CJK=1em, 공백/ascii=0.5em, em≈10pt≈3.53mm)
+    const em = 3.53; let phraseW = 0; for (const ch of anchor) phraseW += (/[　-鿿가-힯ᄀ-ᇿ]/.test(ch) ? em : em * 0.5);
+    let horz, vert;
+    if (mode === 'right') { horz = defH + 2 + dxMm; vert = defV + dyMm; }            // 앵커 오른쪽 2mm gap
+    else { horz = defH - phraseW / 2 - sizeMm / 2 + dxMm; vert = defV + dyMm; }       // overlap=구절 중심 동심
+    if (horz < 0) horz = 0; if (vert < 0) vert = 0;                                    // 한컴 음수 거부 → 0 clamp
+    horz = Math.round(horz * 10) / 10; vert = Math.round(vert * 10) / 10;
+    await typeInto(fields.pos[0], horz);
+    await typeInto(fields.pos[1], vert);
+    if (!await clickDialogApply(editor)) throw new Error('개체 속성 확인 버튼 탐색 실패');
+    const saved = await confirmSaved(editor, syncP);
+    await gotoPage(editor, pageN); const rect = await detectPageRect(editor); await hideOverlays(editor);
+    const shot = args.out || path.join(CAPDIR, `${name.replace(/\.[^.]+$/, '')}_seal_${stamp()}.png`);
+    await editor.screenshot(rect ? { path: shot, clip: rect } : { path: shot });
+    await clampImage(editor, shot);
+    out({ cmd: 'place-seal', applied: true, anchor, mode, sizeMm, defaultPos: [defH, defV], placedPos: [horz, vert], phraseWmm: Math.round(phraseW * 10) / 10, page: pageN, saved, ...(saved ? {} : { warning: 'save_unconfirmed' }), shot, docId: editor.__docId || null, note: '한컴 vertRelTo=PARA·음수 vertOffset 거부 → 키 큰 도장은 줄에 얹혀 약간 아래(완전 세로중앙은 한컴 한계). --dx/--dy 보정.' });
+  });
+}
+
 // cell-style: 표 셀 배경/테두리/대각선. --cell 셀 선택(F5) → 표›셀 테두리/배경›각 셀마다 적용 다이얼로그.
 // 테두리: --border <색> · --border-type <solid|dashed|dotted|double|long-dash|circle|slim-thick|…>(선 종류 콤보)
 //   · --border-width <mm>(굵기 콤보: 0.1~5 프리셋) · --border-where <outer|top,left…>(적용 위치 조합)
@@ -4580,6 +4656,7 @@ function printHelp() {
   shape       --name <문서> --anchor "<근처 텍스트>" --shape rect|ellipse|line|arc [--wrap <배치>] [--apply]
   caption     --name <문서> --at "x,y" --text "<캡션>" [--position below|above|left|right] [--apply]
   insert-image  --name <문서> --file <이미지경로> [--anchor "<텍스트>"] [--apply]
+  place-seal    --name <문서> --anchor "<기준 텍스트>" --file <도장PNG> [--mode overlap|right] [--size <mm>] [--dx/--dy <mm>] [--apply]
   insert-chart  --name <문서> [--type N(0~19)] [--anchor "<텍스트>"] [--apply]
   chart-data    --name <문서> --at "x,y" [--data @data.json | --set "B2=9.9" | --del-col "C,D" | --del-row "5" | --read-grid] [--apply]
   chart-style   --name <문서> --at "x,y" [--style s1|s2|s3] [--theme N] [--apply]   (차트 스타일/색 테마 — 계열 개별 색은 웹 불가)
@@ -4622,6 +4699,7 @@ function printHelp() {
     else if (args._ === 'chart-data') await cmdChartData(args);
     else if (args._ === 'insert-table') await cmdInsertTable(args);
     else if (args._ === 'insert-image') await cmdInsertImage(args);
+    else if (args._ === 'place-seal') await cmdPlaceSeal(args);
     else if (args._ === 'table-op') await cmdTableOp(args);
     else if (args._ === 'cell-style') await cmdCellStyle(args);
     else if (args._ === 'table-cell-prop') await cmdTableCellProp(args);

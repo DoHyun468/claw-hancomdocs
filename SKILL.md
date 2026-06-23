@@ -99,6 +99,7 @@ node hancom.js chart-data    --name <문서이름> --at "x,y" [--data @data.json
 node hancom.js chart-style   --name <문서이름> --at "x,y" [--style s1|s2|s3] [--theme N] [--apply]
 node hancom.js insert-table  --name <문서이름> --rows R --cols C [--anchor "<텍스트>"] [--apply]
 node hancom.js insert-image  --name <문서이름> --file <이미지경로> [--anchor "<텍스트>"] [--apply]
+node hancom.js place-seal    --name <문서이름> --anchor "<기준 텍스트>" --file <도장PNG> [--mode overlap|right] [--size <mm>] [--dx/--dy <mm>] [--apply]
 node hancom.js insert-chart  --name <문서이름> [--type N] [--anchor "<텍스트>"] [--apply]
 node hancom.js table-op      --name <문서이름> --cell "<셀 텍스트>" [--page N] [--nth N] [--to "<끝 셀>" --to-page N] --op <op> [--apply]
 node hancom.js cell-style    --name <문서이름> --cell "<셀 텍스트>" [--page N] [--nth N] [--fill <색|none>] [--border <색> --border-type <종류> --border-width <mm> --border-where <위치>] [--diagonal <방향> --diagonal-type/--diagonal-width/--diagonal-color] [--apply]
@@ -234,6 +235,7 @@ node hancom.js highlight    --name <문서이름> --text "<구절>" --color yell
 입력 메뉴로 새 표/그림/차트를 삽입. `--anchor` 있으면 **그 텍스트 줄 다음에**, 없으면 문서(본문 흐름) 시작에.
 - **`insert-table --rows R --cols C`**: 입력›표 다이얼로그(줄/칸 개수)로 R×C 표 생성.
 - **`insert-image --file <이미지>`**: 입력›그림(장치) 다이얼로그에 로컬 이미지 파일을 넣어 삽입.
+- **`place-seal --anchor "<텍스트>" --file <도장PNG>`**: 도장/서명 PNG 를 기준 텍스트(예 `"서명 또는 인"`)에 얹는다. **`--mode overlap`**(기본; 그 구절 위 동심 겹침) / **`--mode right`**(구절 오른쪽에 평행). `--size <mm>`(기본 13)·`--dx/--dy <mm>`(미세보정). 그림을 그 줄에 앵커링해 **글 앞으로(front)** 로 배치 → 글이 안 밀린다. ⚠️ 도장이 줄보다 크면 줄에 얹혀 **약간 아래로** 내려앉는다(세로 완전중앙은 한컴 한계 — 음수 위치 불가). 더 위로 올리려면 `--dy` 로는 안 되고, 한 줄 위 텍스트를 앵커로 주는 식의 우회가 필요. 앵커 못 찾으면 `anchor_not_found`.
 - **`insert-chart [--type N]`**: 입력›차트의 **종류 그리드**에서 N번째 차트를 삽입(기본 데이터로 생성 — 값은 이후 `chart-data`로 수정). `--type` 0~19(생략=0). 무엇인지 모르면 0으로 두고 삽입 후 캡처로 확인. ⚠️ **`saved:true` 라도 실제 삽입이 안 될 때가 있다(팬텀 성공)** → 삽입 후 반드시 `capture`/`find-objects` 로 차트가 생겼는지 확인하고, **없으면 같은 명령을 한 번 더** 실행. **종류 인덱스**:
   - 0 세로 막대형 · 1 누적 세로 막대형 · 2 꺾은선형 · 3 가로 막대형 · 4 누적 가로 막대형 · 5 분산형 · 6 원형 · 7 쪼개진 원형 · 8 도넛형 · 9 영역형 · 10 누적 영역형 · 11 방사형 · 12~19 3차원(세로막대/누적세로막대/가로막대/누적가로막대/원형/쪼개진원형/영역/누적영역)
 - ⚠️ 편집 **headless 전용**. 떠다니는 객체가 많은 문서는 삽입 위치가 본문 흐름 기준이라 시각적 최상단과 다를 수 있음(`--anchor`로 위치 지정 권장).
