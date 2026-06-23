@@ -3351,6 +3351,19 @@ async function setObjectWrap(ed, mode) {
     if (res !== 'already') { await ed.mouse.click(res.x, res.y); await ed.waitForTimeout(300); }
     return;
   }
+  // ⚠️ 삽입 이미지는 기본 '글자처럼 취급'(inline) 상태 → 배치 버튼(글앞/어울림 등)이 비활성이라
+  //   먼저 체크박스를 풀어 floating 으로 만들어야 한다(글상자는 이미 floating 이라 불필요했음).
+  const uncheckedInline = await ed.evaluate(() => {
+    for (const e of document.querySelectorAll('.e_object_properties.checkbox_wrap')) {
+      if ((e.getAttribute('aria-label') || '') === '글자처럼 취급' && e.offsetParent !== null) {
+        const inp = e.querySelector('input[type=checkbox]');
+        if (inp && inp.checked) { const r = e.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; }
+        return 'notchecked';
+      }
+    }
+    return null;
+  });
+  if (uncheckedInline && uncheckedInline !== 'notchecked') { await ed.mouse.click(uncheckedInline.x, uncheckedInline.y); await ed.waitForTimeout(350); }
   const CLS = { square: 's_flow_text', topbottom: 's_topandbottom_text', front: 's_front_text', behind: 's_behind_text' };
   const cls = CLS[mode]; if (!cls) throw new Error('--wrap 는 inline|square|topbottom|front|behind');
   const xy = await ed.evaluate((c) => { for (const e of document.querySelectorAll('.' + c)) { if (e.offsetParent !== null) { const r = e.getBoundingClientRect(); if (r.width > 5) return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; } } return null; }, cls);
