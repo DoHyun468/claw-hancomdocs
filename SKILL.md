@@ -93,6 +93,7 @@ node hancom.js prune-captures [--days N] [--apply]
 node hancom.js session-status                # 다른 한컴 세션이 활성인지 확인(병렬 실행 금지 — 동시 로그인=계정 잠금)
 node hancom.js resize-object --name <문서이름> --at "x,y" [--width <mm>] [--height <mm>] [--apply]
 node hancom.js find-objects  --name <문서이름> [--page N | --pages "1,2,3"] [--step <px>]
+node hancom.js delete        --name <문서이름> --at "x,y" [--page N] [--apply]
 node hancom.js object-prop   --name <문서이름> --at "x,y" [--pos "x,y"] [--width <mm>] [--height <mm>] [--wrap <배치>] [--margin <mm> | --margin-top/-bottom/-left/-right <mm>] [--fill <색|none>] [--fill-pattern <무늬>] [--fill-pattern-color <색>] [--border <색>] [--border-width <mm>] [--border-type <종류>] [--arrow-start <모양>] [--arrow-end <모양>] [--fill-transparency 0-100] [--apply]
 node hancom.js chart-data    --name <문서이름> --at "x,y" [--data @data.json | --set "B2=9.9,C3=4" | --del-col "C,D" | --del-row "5" | --read-grid] [--apply]
 node hancom.js chart-style   --name <문서이름> --at "x,y" [--style s1|s2|s3] [--theme N] [--apply]
